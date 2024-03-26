@@ -6,8 +6,8 @@ build-backend = "poetry.core.masonry.api"
 name="replit-river"
 version="0.1.0"
 description="Replit river toolkit for Python"
-authors = [{ name = "Replit", email = "eng@replit.com" }]
-license = { file = "LICENSE" }
+authors = ["Replit <eng@replit.com>"]
+license = "LICENSE"
 keywords = ["rpc", "websockets"]
 
 [tool.poetry.scripts]

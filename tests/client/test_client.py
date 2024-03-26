@@ -6,9 +6,8 @@ import os.path
 import subprocess
 from typing import Optional
 
-from websockets.client import connect
-
 import river
+from websockets.client import connect
 
 from .client import test_river
 

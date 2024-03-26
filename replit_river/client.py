@@ -2,17 +2,15 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable, AsyncIterator
 from typing import Any, Callable, Dict, Optional, Union
-from uuid import uuid4
 
 import msgpack  # type: ignore
 import nanoid  # type: ignore
 from aiochannel import Channel
 from pydantic import ValidationError
+from river.error_schema import RiverException
 from websockets import Data
 from websockets.client import WebSocketClientProtocol
 from websockets.exceptions import ConnectionClosed
-
-from river.error_schema import RiverException
 
 from .rpc import (
     STREAM_CLOSED_BIT,

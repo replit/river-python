@@ -4,9 +4,8 @@ import os.path
 import subprocess
 from typing import Any, AsyncIterator
 
-from websockets.server import serve
-
 import river
+from websockets.server import serve
 
 from .server import test_pb2, test_pb2_grpc, test_river
 

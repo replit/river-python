@@ -21,7 +21,6 @@ from typing import (
 import grpc
 from aiochannel import Channel
 from pydantic import BaseModel, ConfigDict, Field
-
 from river.error_schema import RiverError
 
 InitType = TypeVar("InitType")
