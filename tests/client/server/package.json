@@ -1,0 +1,22 @@
+{
+  "name": "server-test",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "scripts": {
+    "test": "tsx src/index.ts",
+    "build": "tsx src/index.ts --dump-schema"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@replit/river": "^0.10.9"
+  },
+  "devDependencies": {
+    "@replit/river-codegen": "^0.0.11",
+    "@types/node": "^20.10.3",
+    "isomorphic-ws": "^5.0.0",
+    "tsx": "^4.6.2",
+    "typescript": "^5.3.3"
+  }
+}

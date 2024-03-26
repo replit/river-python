@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+	"target": "esnext",
+	"module": "esnext",
+	"sourceMap": true,
+	"noEmit": false,
+	"strict": true,
+	"declaration": true,
+	"moduleResolution": "node",
+	"esModuleInterop": true,
+	"skipLibCheck": true,
+	"forceConsistentCasingInFileNames": true
+  },
+  "include": ["src"],
+  "exclude": ["node_modules"]
+}

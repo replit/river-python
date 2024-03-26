@@ -1,0 +1,73 @@
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poetry]
+name = "river"
+version = "1.0.0"
+description = "River toolkit for Python"
+authors = ["Replit <eng@replit.com>"]
+
+[tool.poetry.scripts]
+river-codegen-py = "river.codegen:run"
+
+[tool.poetry.dependencies]
+python = "^3.11"
+grpcio = "^1.59.3"
+grpcio-tools = "^1.59.3"
+protobuf = "^4.24.4"
+black = "^23.11.0"
+msgpack = "^1.0.7"
+aiochannel = "^1.2.1"
+nanoid = "^2.0.0"
+pydantic = "^2.5.2"
+websockets = "^12.0"
+pydantic-core = "^2.16.3"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^7.4.0"
+mypy = "^1.4.0"
+black = "^23.3.0"
+pytest-cov = "^4.1.0"
+ruff = "^0.0.278"
+pytest-mock = "^3.11.1"
+pytest-asyncio = "^0.21.1"
+types-protobuf = "^4.24.0.20240311"
+mypy-protobuf = "^3.5.0"
+deptry = "^0.14.0"
+
+[tool.ruff]
+select = ["F", "E", "W", "I001"]
+
+# Should be kept in sync with mypy.ini in the project root.
+# The VSCode mypy extension can only read /mypy.ini.
+# While mypy run inside the chat container can only see this file.
+[tool.mypy]
+plugins = "pydantic.mypy"
+disallow_untyped_defs = true
+warn_return_any = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"  # auto-detect async tests/fixtures
+addopts = "--tb=short"
+env = [
+	"DD_DOGSTATSD_DISABLE=true",
+	"DD_TRACE_ENABLED=false",
+]
+filterwarnings = [
+	"ignore::DeprecationWarning",  # google SDKs cause this noise
+]
+markers = [
+	"e2e: marks tests as end-to-end (deselect with '-m \"not e2e\"')",
+]
+
+[[tool.mypy.overrides]]
+module = [
+	"google.auth.*",
+	"google.oauth2.*",
+	"google.cloud.sqlalchemy_spanner.sqlalchemy_spanner.*",
+	"grpc.*",
+	"grpc_tools.*",
+	"nanoid.*",
+]
+ignore_missing_imports = true
