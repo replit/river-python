@@ -1,0 +1,36 @@
+[
+  {
+    "name": "test",
+    "state": {},
+    "procedures": {
+      "echo": {
+        "input": {
+          "type": "object",
+          "properties": {
+            "s": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "s"
+          ]
+        },
+        "output": {
+          "type": "object",
+          "properties": {
+            "s": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "s"
+          ]
+        },
+        "errors": {
+          "not": {}
+        },
+        "type": "rpc"
+      }
+    }
+  }
+]
