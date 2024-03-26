@@ -4,11 +4,12 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name="replit-river"
-version="0.1.0"
+version="0.1.1"
 description="Replit river toolkit for Python"
 authors = ["Replit <eng@replit.com>"]
 license = "LICENSE"
 keywords = ["rpc", "websockets"]
+readme = "README.md"
 
 [tool.poetry.scripts]
 river-codegen-py = "river.codegen:run"
