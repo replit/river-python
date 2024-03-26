@@ -3,10 +3,12 @@ requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
-name = "river"
-version = "1.0.0"
-description = "River toolkit for Python"
-authors = ["Replit <eng@replit.com>"]
+name="replit-river"
+version="0.1.0"
+description="Replit river toolkit for Python"
+authors = [{ name = "Replit", email = "eng@replit.com" }]
+license = { file = "LICENSE" }
+keywords = ["rpc", "websockets"]
 
 [tool.poetry.scripts]
 river-codegen-py = "river.codegen:run"
