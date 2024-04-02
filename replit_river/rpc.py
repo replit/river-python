@@ -21,7 +21,7 @@ from typing import (
 import grpc
 from aiochannel import Channel
 from pydantic import BaseModel, ConfigDict, Field
-from river.error_schema import RiverError
+from error_schema import RiverError
 
 InitType = TypeVar("InitType")
 RequestType = TypeVar("RequestType")
@@ -43,8 +43,8 @@ STREAM_CLOSED_BIT = 0x0004
 
 class ControlMessageHandshakeRequest(BaseModel):
     type: Literal["HANDSHAKE_REQ"]
-    protocol_version: str
-    instance_id: str
+    protocolVersion: str
+    instanceId: str
 
 
 class ControlMessageHandshakeResponse(BaseModel):
