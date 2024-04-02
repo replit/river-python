@@ -13,6 +13,7 @@ from websockets.client import WebSocketClientProtocol
 from websockets.exceptions import ConnectionClosed
 
 from .rpc import (
+    ACK_BIT,
     STREAM_CLOSED_BIT,
     STREAM_OPEN_BIT,
     ControlMessageHandshakeRequest,
@@ -24,6 +25,9 @@ from .rpc import (
     TransportMessage,
 )
 
+CROSIS_PREFIX_BYTES = b"\x00\x00"
+PID2_PREFIX_BYTES = b"\xff\xff"
+
 
 class Client:
     def __init__(self, websockets: WebSocketClientProtocol) -> None:
@@ -31,8 +35,11 @@ class Client:
         self._tasks = set()
         self._from = nanoid.generate()
         self._streams: Dict[str, Channel[Dict[str, Any]]] = {}
+        self._seq_lock = asyncio.Lock()
         self._seq = 0
+        self._ack_lock = asyncio.Lock()
         self._ack = 0
+        self._is_handshaked = False
 
         task = asyncio.create_task(self._handle_messages())
         self._tasks.add(task)
@@ -50,35 +57,58 @@ class Client:
         self, service_name: str, procedure_name: str, stream_id: str
     ) -> None:
         # close stream
-        msg = TransportMessage(
-            id=nanoid.generate(),
-            from_=self._from,
-            to="SERVER",
-            serviceName=service_name,
-            procedureName=procedure_name,
-            streamId=stream_id,
-            controlFlags=STREAM_CLOSED_BIT,
-            ack=self._ack,
-            seq=self._seq,
-            payload={
-                "type": "CLOSE",
-            },
+        await self.send_transport_message(
+            self.pack_transport_message(
+                from_=self._from,
+                to="SERVER",
+                serviceName=service_name,
+                procedureName=procedure_name,
+                streamId=stream_id,
+                controlFlags=STREAM_CLOSED_BIT,
+                payload={
+                    "type": "CLOSE",
+                },
+            )
         )
-        await self.ws.send(msgpack.packb(msg.model_dump(by_alias=True), datetime=True))
+
+    def unpack_all(self, byte_data):
+        unpacked_objects = []
+        unpacker = msgpack.Unpacker(raw=True)
+        unpacker.feed(byte_data)
+        for obj in unpacker:
+            unpacked_objects.append(obj)
+        return unpacked_objects
+
+    def print_in_hex(self, byte_data):
+        for byte in byte_data:
+            print(f"0x{byte:02x}", end=" ")
 
     def to_transport_message(self, message: Data) -> TransportMessage:
         unpacked = msgpack.unpackb(message, timestamp=3)
 
         return TransportMessage(**unpacked)
 
-    async def send_transport_message(self, message: TransportMessage) -> None:
+    async def send_transport_message(
+        self, message: TransportMessage, is_handshake: bool = False
+    ) -> None:
+        if not is_handshake:
+            while not self._is_handshaked:
+                await asyncio.sleep(0.01)
+
+        print(
+            "\n\n# sending request : ",
+            message.model_dump(by_alias=True, exclude_none=True),
+        )
         await self.ws.send(
-            msgpack.packb(
-                message.model_dump(by_alias=True),
+            PID2_PREFIX_BYTES
+            + msgpack.packb(
+                message.model_dump(by_alias=True, exclude_none=True),
                 datetime=True,
             )
         )
-        self._seq += 1
+        if not is_handshake:
+            async with self._seq_lock:
+                self._seq += 1
 
     def pack_transport_message(
         self,
@@ -106,11 +136,26 @@ class Client:
     def generate_nanoid(self) -> str:
         return str(nanoid.generate())
 
+    async def _receive_pid2_message(self) -> Data:
+        print("# waiting for response")
+        data = await self.ws.recv()
+        num_received = 1
+        while data[:2] == CROSIS_PREFIX_BYTES:
+            num_received += 1
+            print(f"received {num_received} crosis message : {data}")
+            data = await self.ws.recv()
+
+        return data[2:]
+
     async def _handle_messages(self) -> None:
         handshake_request = ControlMessageHandshakeRequest(
             type="HANDSHAKE_REQ",
-            protocol_version="v1",
-            instance_id="python-client-" + self.generate_nanoid(),
+            protocolVersion="v1",
+            instanceId="python-client-" + self.generate_nanoid(),
+        )
+        print(
+            "# sending handshake request to server",
+            handshake_request.model_dump(exclude_none=True),
         )
         await self.send_transport_message(
             TransportMessage(
@@ -124,9 +169,12 @@ class Client:
                 streamId=self.generate_nanoid(),
                 controlFlags=0,
                 payload=handshake_request.model_dump(),
-            )
+            ),
+            is_handshake=True,
         )
-        first_message = self.to_transport_message(await self.ws.recv())
+        data = await self._receive_pid2_message()
+        first_message = self.to_transport_message(data)
+        print(f"# first_message : {first_message}")
         try:
             handshake_response = ControlMessageHandshakeResponse(
                 **first_message.payload
@@ -136,9 +184,11 @@ class Client:
             # TODO: close the connection here
             return
         if not handshake_response.status["ok"]:
-            logging.error(f"Handshake failed: {handshake_response.status['message']}")
+            logging.error(f"Handshake failed: {handshake_response.status['reason']}")
             # TODO: close the connection here
             return
+        self._is_handshaked = True
+        print("hand shake successful")
 
         async for message in self.ws:
             if isinstance(message, str):
@@ -148,10 +198,16 @@ class Client:
                     message,
                 )
                 continue
+
+            if message[:2] == CROSIS_PREFIX_BYTES:
+                logging.debug("ignored a crosis message")
+                continue
+            message = message[2:]
+
             try:
                 unpacked = msgpack.unpackb(message, timestamp=3)
-
                 msg = TransportMessage(**unpacked)
+                print(f"### received msg : {msg}")
                 if msg.seq != self._ack:
                     logging.debug(
                         "Received out of order message: %d, expected %d",
@@ -159,7 +215,11 @@ class Client:
                         self._ack,
                     )
                     continue
-                self.ack = msg.seq + 1
+                async with self._ack_lock:
+                    self._ack = msg.seq + 1
+                if msg.controlFlags == ACK_BIT:
+                    continue
+
             except ConnectionClosed:
                 logging.info("Connection closed")
                 break
@@ -213,8 +273,6 @@ class Client:
         # Handle potential errors during communication
         try:
             response = await output.get()
-            if response.get("ack", None):
-                response = await output.get()
             if not response.get("ok", False):
                 try:
                     error = error_deserializer(response["payload"])
@@ -285,10 +343,6 @@ class Client:
 
         # Handle potential errors during communication
         try:
-            for _ in range(num_sent_messages):
-                ack_response = await output.get()
-                if not ack_response.get("ack", None):
-                    raise RiverException("ack error", "No ack received")
             response = await output.get()
             if not response.get("ok", False):
                 try:
@@ -334,11 +388,8 @@ class Client:
 
         # Handle potential errors during communication
         try:
-            ack_response = await output.get()
-            if not ack_response.get("ack", None):
-                raise RiverException("ack error", "No ack received")
-
             async for item in output:
+                print(f"# item : {item}")
                 if "type" in item and item["type"] == "CLOSE":
                     break
                 if not item.get("ok", False):
@@ -426,14 +477,10 @@ class Client:
         self._tasks.add(task)
         task.add_done_callback(lambda _: self._tasks.remove(task))
 
-        for _ in range(num_sent_messages):
-            ack_response = await output.get()
-            if not ack_response.get("ack", None):
-                raise RiverException("ack error", "No ack received")
-
         # Handle potential errors during communication
         try:
             async for item in output:
+                print("send stream item in output : ", item)
                 if "type" in item and item["type"] == "CLOSE":
                     # close the stream here
                     self._streams[stream_id].close()

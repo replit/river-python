@@ -43,8 +43,8 @@ STREAM_CLOSED_BIT = 0x0004
 
 class ControlMessageHandshakeRequest(BaseModel):
     type: Literal["HANDSHAKE_REQ"]
-    protocol_version: str
-    instance_id: str
+    protocolVersion: str
+    instanceId: str
 
 
 class ControlMessageHandshakeResponse(BaseModel):
