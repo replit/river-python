@@ -58,30 +58,16 @@ class Client:
     ) -> None:
         # close stream
         await self.send_transport_message(
-            self.pack_transport_message(
-                from_=self._from,
-                to="SERVER",
-                serviceName=service_name,
-                procedureName=procedure_name,
-                streamId=stream_id,
-                controlFlags=STREAM_CLOSED_BIT,
-                payload={
-                    "type": "CLOSE",
-                },
-            )
+            from_=self._from,
+            to="SERVER",
+            serviceName=service_name,
+            procedureName=procedure_name,
+            streamId=stream_id,
+            controlFlags=STREAM_CLOSED_BIT,
+            payload={
+                "type": "CLOSE",
+            },
         )
-
-    def unpack_all(self, byte_data):
-        unpacked_objects = []
-        unpacker = msgpack.Unpacker(raw=True)
-        unpacker.feed(byte_data)
-        for obj in unpacker:
-            unpacked_objects.append(obj)
-        return unpacked_objects
-
-    def print_in_hex(self, byte_data):
-        for byte in byte_data:
-            print(f"0x{byte:02x}", end=" ")
 
     def to_transport_message(self, message: Data) -> TransportMessage:
         unpacked = msgpack.unpackb(message, timestamp=3)
@@ -89,16 +75,37 @@ class Client:
         return TransportMessage(**unpacked)
 
     async def send_transport_message(
-        self, message: TransportMessage, is_handshake: bool = False
+        self,
+        from_: str,
+        to: str,
+        serviceName: Optional[str],
+        procedureName: Optional[str],
+        streamId: str,
+        controlFlags: int,
+        payload: Dict[str, Any],
+        is_handshake: bool = False,
     ) -> None:
+        current_seq = 0
         if not is_handshake:
             while not self._is_handshaked:
                 await asyncio.sleep(0.01)
 
-        print(
-            "\n\n# sending request : ",
-            message.model_dump(by_alias=True, exclude_none=True),
+            async with self._seq_lock:
+                current_seq = self._seq
+                self._seq += 1
+        message = TransportMessage(
+            id=nanoid.generate(),
+            from_=from_,
+            to=to,
+            serviceName=serviceName,
+            procedureName=procedureName,
+            streamId=streamId,
+            controlFlags=controlFlags,
+            payload=payload,
+            seq=current_seq,
+            ack=self._ack,
         )
+
         await self.ws.send(
             PID2_PREFIX_BYTES
             + msgpack.packb(
@@ -106,11 +113,8 @@ class Client:
                 datetime=True,
             )
         )
-        if not is_handshake:
-            async with self._seq_lock:
-                self._seq += 1
 
-    def pack_transport_message(
+    async def pack_transport_message(
         self,
         from_: str,
         to: str,
@@ -120,6 +124,11 @@ class Client:
         controlFlags: int,
         payload: Dict[str, Any],
     ) -> TransportMessage:
+        current_seq = 0
+        async with self._seq_lock:
+            current_seq = self._seq
+            self._seq += 1
+
         return TransportMessage(
             id=nanoid.generate(),
             from_=from_,
@@ -129,7 +138,7 @@ class Client:
             streamId=streamId,
             controlFlags=controlFlags,
             payload=payload,
-            seq=self._seq,
+            seq=current_seq,
             ack=self._ack,
         )
 
@@ -137,12 +146,10 @@ class Client:
         return str(nanoid.generate())
 
     async def _receive_pid2_message(self) -> Data:
-        print("# waiting for response")
         data = await self.ws.recv()
         num_received = 1
         while data[:2] == CROSIS_PREFIX_BYTES:
             num_received += 1
-            print(f"received {num_received} crosis message : {data}")
             data = await self.ws.recv()
 
         return data[2:]
@@ -153,28 +160,18 @@ class Client:
             protocolVersion="v1",
             instanceId="python-client-" + self.generate_nanoid(),
         )
-        print(
-            "# sending handshake request to server",
-            handshake_request.model_dump(exclude_none=True),
-        )
         await self.send_transport_message(
-            TransportMessage(
-                id=self.generate_nanoid(),
-                from_=self._from,
-                to="SERVER",
-                seq=0,
-                ack=0,
-                serviceName=None,
-                procedureName=None,
-                streamId=self.generate_nanoid(),
-                controlFlags=0,
-                payload=handshake_request.model_dump(),
-            ),
+            from_=self._from,
+            to="SERVER",
+            serviceName=None,
+            procedureName=None,
+            streamId=self.generate_nanoid(),
+            controlFlags=0,
+            payload=handshake_request.model_dump(),
             is_handshake=True,
         )
         data = await self._receive_pid2_message()
         first_message = self.to_transport_message(data)
-        print(f"# first_message : {first_message}")
         try:
             handshake_response = ControlMessageHandshakeResponse(
                 **first_message.payload
@@ -188,7 +185,6 @@ class Client:
             # TODO: close the connection here
             return
         self._is_handshaked = True
-        print("hand shake successful")
 
         async for message in self.ws:
             if isinstance(message, str):
@@ -207,7 +203,6 @@ class Client:
             try:
                 unpacked = msgpack.unpackb(message, timestamp=3)
                 msg = TransportMessage(**unpacked)
-                print(f"### received msg : {msg}")
                 if msg.seq != self._ack:
                     logging.debug(
                         "Received out of order message: %d, expected %d",
@@ -259,7 +254,7 @@ class Client:
         output: Channel[Any] = Channel(1)
         self._streams[stream_id] = output
 
-        msg = self.pack_transport_message(
+        msg = self.send_transport_message(
             from_=self._from,
             to="SERVER",
             serviceName=service_name,
@@ -268,7 +263,6 @@ class Client:
             controlFlags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
             payload=request_serializer(request),
         )
-        await self.send_transport_message(msg)
 
         # Handle potential errors during communication
         try:
@@ -310,7 +304,7 @@ class Client:
         num_sent_messages = 0
         if init and init_serializer:
             num_sent_messages += 1
-            msg = self.pack_transport_message(
+            await self.send_transport_message(
                 from_=self._from,
                 to="SERVER",
                 serviceName=service_name,
@@ -319,7 +313,6 @@ class Client:
                 controlFlags=STREAM_OPEN_BIT,
                 payload=init_serializer(init),
             )
-            await self.send_transport_message(msg)
             first_message = False
 
         async for item in request:
@@ -328,7 +321,7 @@ class Client:
                 control_flags = STREAM_OPEN_BIT
                 first_message = False
             num_sent_messages += 1
-            msg = self.pack_transport_message(
+            await self.send_transport_message(
                 from_=self._from,
                 to="SERVER",
                 serviceName=service_name,
@@ -337,7 +330,6 @@ class Client:
                 controlFlags=control_flags,
                 payload=request_serializer(item),
             )
-            await self.send_transport_message(msg)
         num_sent_messages += 1
         await self.send_close_stream(service_name, procedure_name, stream_id)
 
@@ -375,7 +367,7 @@ class Client:
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(1024)
         self._streams[stream_id] = output
-        msg = self.pack_transport_message(
+        await self.send_transport_message(
             from_=self._from,
             to="SERVER",
             serviceName=service_name,
@@ -384,12 +376,10 @@ class Client:
             controlFlags=STREAM_OPEN_BIT,
             payload=request_serializer(request),
         )
-        await self.send_transport_message(msg)
 
         # Handle potential errors during communication
         try:
             async for item in output:
-                print(f"# item : {item}")
                 if "type" in item and item["type"] == "CLOSE":
                     break
                 if not item.get("ok", False):
@@ -425,11 +415,9 @@ class Client:
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(1024)
         self._streams[stream_id] = output
-        num_sent_messages = 0
 
         if init and init_serializer:
-            num_sent_messages += 1
-            msg = self.pack_transport_message(
+            await self.send_transport_message(
                 from_=self._from,
                 to="SERVER",
                 serviceName=service_name,
@@ -438,13 +426,11 @@ class Client:
                 controlFlags=STREAM_OPEN_BIT,
                 payload=init_serializer(init),
             )
-            await self.send_transport_message(msg)
         else:
-            num_sent_messages += 1
             # Get the very first message to open the stream
             request_iter = aiter(request)
             first = await anext(request_iter)
-            msg = self.pack_transport_message(
+            await self.send_transport_message(
                 from_=self._from,
                 to="SERVER",
                 serviceName=service_name,
@@ -453,14 +439,13 @@ class Client:
                 controlFlags=STREAM_OPEN_BIT,
                 payload=request_serializer(first),
             )
-            await self.send_transport_message(msg)
 
         # Create the encoder task
         async def _encode_stream() -> None:
             async for item in request:
-                nonlocal num_sent_messages
-                num_sent_messages += 1
-                msg = self.pack_transport_message(
+                if item is None:
+                    continue
+                await self.send_transport_message(
                     from_=self._from,
                     to="SERVER",
                     serviceName=service_name,
@@ -469,8 +454,6 @@ class Client:
                     controlFlags=0,
                     payload=request_serializer(item),
                 )
-                await self.send_transport_message(msg)
-            num_sent_messages += 1
             await self.send_close_stream(service_name, procedure_name, stream_id)
 
         task = asyncio.create_task(_encode_stream())
@@ -480,10 +463,7 @@ class Client:
         # Handle potential errors during communication
         try:
             async for item in output:
-                print("send stream item in output : ", item)
                 if "type" in item and item["type"] == "CLOSE":
-                    # close the stream here
-                    self._streams[stream_id].close()
                     break
                 if not item.get("ok", False):
                     try:
