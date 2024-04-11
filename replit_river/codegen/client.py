@@ -118,9 +118,9 @@ def generate_river_client_module(
         "from typing import Any, Dict, List, Literal, Optional, Mapping, Union, Tuple",
         "",
         "from pydantic import BaseModel, Field, parse_obj_as",
-        "from river.error_schema import RiverError",
+        "from replit_river.error_schema import RiverError",
         "",
-        "import river",
+        "import replit_river as replit",
         "",
     ]
     for schema in schemas:
