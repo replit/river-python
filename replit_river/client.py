@@ -105,7 +105,7 @@ class Client:
         if is_handshake:
             current_seq = await self._seq_manager.get_seq()
         else:
-            current_seq = await self._seq_manager.increment_seq() - 1
+            current_seq = await self._seq_manager.get_seq_and_increment()
         current_ack = await self._seq_manager.get_ack()
         message = TransportMessage(
             id=nanoid.generate(),
@@ -138,10 +138,8 @@ class Client:
 
     async def _receive_pid2_message(self) -> Data:
         data = await self.ws.recv()
-        num_received = 1
         if self._use_prefix_bytes:
             while data[:2] == CROSIS_PREFIX_BYTES:
-                num_received += 1
                 data = await self.ws.recv()
             return data[2:]
         return data
@@ -307,10 +305,8 @@ class Client:
         output: Channel[Any] = Channel(1024)
         self._streams[stream_id] = output
         first_message = True
-        num_sent_messages = 0
         try:
             if init and init_serializer:
-                num_sent_messages += 1
                 await self.send_transport_message(
                     from_=self._from,
                     to=self._server_id,
@@ -327,7 +323,6 @@ class Client:
                 if first_message:
                     control_flags = STREAM_OPEN_BIT
                     first_message = False
-                num_sent_messages += 1
                 await self.send_transport_message(
                     from_=self._from,
                     to=self._server_id,
@@ -341,7 +336,6 @@ class Client:
             raise RiverException(
                 ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
             )
-        num_sent_messages += 1
         await self.send_close_stream(service_name, procedure_name, stream_id)
 
         # Handle potential errors during communication

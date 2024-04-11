@@ -100,7 +100,7 @@ class Transport(object):
             id=nanoid.generate(),
             from_=initial_message.to,
             to=initial_message.from_,
-            seq=0 if is_hand_shake else await self._seq_manager.increment_seq() - 1,
+            seq=0 if is_hand_shake else await self._seq_manager.get_seq_and_increment(),
             ack=await self._seq_manager.get_ack(),
             controlFlags=control_flags,
             payload=payload,
@@ -285,9 +285,7 @@ class Transport(object):
     async def handle_messages_from_ws(
         self, websocket: WebSocketServerProtocol, tg: asyncio.TaskGroup
     ) -> None:
-        msg_id = 0
         async for message in websocket:
-            msg_id += 1
             try:
                 msg = self._parse_transport_msg(message)
             except IgnoreTransportMessageException:

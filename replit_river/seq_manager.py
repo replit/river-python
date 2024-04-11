@@ -27,6 +27,15 @@ class SeqManager:
         self._ack_lock = asyncio.Lock()
         self.ack = 0
 
+    async def get_seq_and_increment(self) -> int:
+        """Get the current sequence number and increment it.
+        This removes one lock acquire than get_seq and increment_seq separately.
+        """
+        async with self._seq_lock:
+            current_value = self.seq
+            self.seq += 1
+            return current_value
+
     async def increment_seq(self) -> int:
         async with self._seq_lock:
             self.seq += 1
