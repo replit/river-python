@@ -2,6 +2,8 @@ from typing import Any
 
 from pydantic import BaseModel
 
+ERROR_CODE_STREAM_CLOSED = "stream_closed"
+
 
 class RiverError(BaseModel):
     """Error message from the server."""

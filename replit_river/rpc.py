@@ -21,7 +21,8 @@ from typing import (
 import grpc
 from aiochannel import Channel
 from pydantic import BaseModel, ConfigDict, Field
-from error_schema import RiverError
+
+from replit_river.error_schema import RiverError
 
 InitType = TypeVar("InitType")
 RequestType = TypeVar("RequestType")
@@ -42,14 +43,22 @@ STREAM_CLOSED_BIT = 0x0004
 
 
 class ControlMessageHandshakeRequest(BaseModel):
-    type: Literal["HANDSHAKE_REQ"]
+    type: Literal["HANDSHAKE_REQ"] = "HANDSHAKE_REQ"
     protocolVersion: str
     instanceId: str
 
 
+class HandShakeStatus(BaseModel):
+    ok: bool
+    # Instance id should be server level id, each server have one
+    instanceId: Optional[str] = None
+    # Reason for failure
+    reason: Optional[str] = None
+
+
 class ControlMessageHandshakeResponse(BaseModel):
-    type: Literal["HANDSHAKE_RESP"]
-    status: Dict
+    type: Literal["HANDSHAKE_RESP"] = "HANDSHAKE_RESP"
+    status: HandShakeStatus
 
 
 class TransportMessage(BaseModel):
@@ -140,6 +149,24 @@ class GrpcContext(grpc.aio.ServicerContext):
         raise grpc.RpcError()
 
 
+def get_response_or_error_payload(
+    response: Any, response_serializer: Callable[[ResponseType], Any]
+) -> Dict:
+    if isinstance(response, RiverError):
+        return {
+            "ok": False,
+            "payload": {
+                "code": response.code,
+                "message": response.message,
+            },
+        }
+    else:
+        return {
+            "ok": True,
+            "payload": response_serializer(response),
+        }
+
+
 def rpc_method_handler(
     method: Callable[[RequestType, grpc.aio.ServicerContext], Awaitable[ResponseType]],
     request_deserializer: Callable[[str], RequestType],
@@ -155,10 +182,7 @@ def rpc_method_handler(
             request = request_deserializer(await input.get())
             response = await method(request, context)
             await output.put(
-                {
-                    "ok": True,
-                    "payload": response_serializer(response),
-                }
+                get_response_or_error_payload(response, response_serializer)
             )
         except grpc.RpcError:
             await output.put(
@@ -205,10 +229,7 @@ def subscription_method_handler(
             request = request_deserializer(await input.get())
             async for response in method(request, context):
                 await output.put(
-                    {
-                        "ok": True,
-                        "payload": response_serializer(response),
-                    }
+                    get_response_or_error_payload(response, response_serializer)
                 )
         except grpc.RpcError:
             await output.put(
@@ -264,12 +285,9 @@ def upload_method_handler(
 
             async def _convert_outputs() -> None:
                 try:
-                    item = await method(request, context)
+                    response = await method(request, context)
                     await output.put(
-                        {
-                            "ok": True,
-                            "payload": response_serializer(item),
-                        }
+                        get_response_or_error_payload(response, response_serializer)
                     )
                 except Exception as e:
                     print("upload caught exception", e)
@@ -335,10 +353,7 @@ def stream_method_handler(
                 try:
                     async for item in response:
                         await output.put(
-                            {
-                                "ok": True,
-                                "payload": response_serializer(item),
-                            }
+                            get_response_or_error_payload(item, response_serializer)
                         )
                 finally:
                     output.close()

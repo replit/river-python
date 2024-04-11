@@ -7,10 +7,17 @@ import msgpack  # type: ignore
 import nanoid  # type: ignore
 from aiochannel import Channel
 from pydantic import ValidationError
-from river.error_schema import RiverException
 from websockets import Data
 from websockets.client import WebSocketClientProtocol
 from websockets.exceptions import ConnectionClosed
+
+from replit_river.error_schema import ERROR_CODE_STREAM_CLOSED, RiverException
+from replit_river.seq_manager import (
+    IgnoreTransportMessageException,
+    InvalidTransportMessageException,
+    SeqManager,
+)
+from replit_river.transport import FailedSendingMessageException
 
 from .rpc import (
     ACK_BIT,
@@ -30,16 +37,22 @@ PID2_PREFIX_BYTES = b"\xff\xff"
 
 
 class Client:
-    def __init__(self, websockets: WebSocketClientProtocol) -> None:
+    def __init__(
+        self,
+        websockets: WebSocketClientProtocol,
+        use_prefix_bytes: bool = True,
+        client_id: Optional[str] = None,
+        server_id: Optional[str] = None,
+    ) -> None:
         self.ws = websockets
         self._tasks = set()
         self._from = nanoid.generate()
         self._streams: Dict[str, Channel[Dict[str, Any]]] = {}
-        self._seq_lock = asyncio.Lock()
-        self._seq = 0
-        self._ack_lock = asyncio.Lock()
-        self._ack = 0
+        self._seq_manager = SeqManager()
         self._is_handshaked = False
+        self._use_prefix_bytes = use_prefix_bytes
+        self._instance_id = client_id or "python-client-" + self.generate_nanoid()
+        self._server_id = server_id or "SERVER"
 
         task = asyncio.create_task(self._handle_messages())
         self._tasks.add(task)
@@ -59,7 +72,7 @@ class Client:
         # close stream
         await self.send_transport_message(
             from_=self._from,
-            to="SERVER",
+            to=self._server_id,
             serviceName=service_name,
             procedureName=procedure_name,
             streamId=stream_id,
@@ -89,10 +102,11 @@ class Client:
         if not is_handshake:
             while not self._is_handshaked:
                 await asyncio.sleep(0.01)
-
-            async with self._seq_lock:
-                current_seq = self._seq
-                self._seq += 1
+        if is_handshake:
+            current_seq = await self._seq_manager.get_seq()
+        else:
+            current_seq = await self._seq_manager.get_seq_and_increment()
+        current_ack = await self._seq_manager.get_ack()
         message = TransportMessage(
             id=nanoid.generate(),
             from_=from_,
@@ -103,73 +117,54 @@ class Client:
             controlFlags=controlFlags,
             payload=payload,
             seq=current_seq,
-            ack=self._ack,
+            ack=current_ack,
         )
-
-        await self.ws.send(
-            PID2_PREFIX_BYTES
-            + msgpack.packb(
-                message.model_dump(by_alias=True, exclude_none=True),
-                datetime=True,
+        prefix = PID2_PREFIX_BYTES if self._use_prefix_bytes else b""
+        try:
+            await self.ws.send(
+                prefix
+                + msgpack.packb(
+                    message.model_dump(by_alias=True, exclude_none=True),
+                    datetime=True,
+                )
             )
-        )
-
-    async def pack_transport_message(
-        self,
-        from_: str,
-        to: str,
-        serviceName: str,
-        procedureName: str,
-        streamId: str,
-        controlFlags: int,
-        payload: Dict[str, Any],
-    ) -> TransportMessage:
-        current_seq = 0
-        async with self._seq_lock:
-            current_seq = self._seq
-            self._seq += 1
-
-        return TransportMessage(
-            id=nanoid.generate(),
-            from_=from_,
-            to=to,
-            serviceName=serviceName,
-            procedureName=procedureName,
-            streamId=streamId,
-            controlFlags=controlFlags,
-            payload=payload,
-            seq=current_seq,
-            ack=self._ack,
-        )
+        except ConnectionClosed:
+            raise FailedSendingMessageException(
+                "Connection closed while sending message"
+            )
 
     def generate_nanoid(self) -> str:
         return str(nanoid.generate())
 
     async def _receive_pid2_message(self) -> Data:
         data = await self.ws.recv()
-        num_received = 1
-        while data[:2] == CROSIS_PREFIX_BYTES:
-            num_received += 1
-            data = await self.ws.recv()
-
-        return data[2:]
+        if self._use_prefix_bytes:
+            while data[:2] == CROSIS_PREFIX_BYTES:
+                data = await self.ws.recv()
+            return data[2:]
+        return data
 
     async def _handle_messages(self) -> None:
         handshake_request = ControlMessageHandshakeRequest(
             type="HANDSHAKE_REQ",
             protocolVersion="v1",
-            instanceId="python-client-" + self.generate_nanoid(),
+            instanceId=self._instance_id,
         )
-        await self.send_transport_message(
-            from_=self._from,
-            to="SERVER",
-            serviceName=None,
-            procedureName=None,
-            streamId=self.generate_nanoid(),
-            controlFlags=0,
-            payload=handshake_request.model_dump(),
-            is_handshake=True,
-        )
+        try:
+            await self.send_transport_message(
+                from_=self._from,
+                to=self._server_id,
+                serviceName=None,
+                procedureName=None,
+                streamId=self.generate_nanoid(),
+                controlFlags=0,
+                payload=handshake_request.model_dump(),
+                is_handshake=True,
+            )
+        except FailedSendingMessageException:
+            raise RiverException(
+                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+            )
         data = await self._receive_pid2_message()
         first_message = self.to_transport_message(data)
         try:
@@ -180,8 +175,8 @@ class Client:
             logging.error("Failed to parse handshake response")
             # TODO: close the connection here
             return
-        if not handshake_response.status["ok"]:
-            logging.error(f"Handshake failed: {handshake_response.status['reason']}")
+        if not handshake_response.status.ok:
+            logging.error(f"Handshake failed: {handshake_response.status.reason}")
             # TODO: close the connection here
             return
         self._is_handshaked = True
@@ -194,24 +189,21 @@ class Client:
                     message,
                 )
                 continue
-
-            if message[:2] == CROSIS_PREFIX_BYTES:
-                logging.debug("ignored a crosis message")
-                continue
-            message = message[2:]
+            if self._use_prefix_bytes:
+                if message[:2] == CROSIS_PREFIX_BYTES:
+                    logging.debug("ignored a crosis message")
+                    continue
+                message = message[2:]
 
             try:
                 unpacked = msgpack.unpackb(message, timestamp=3)
                 msg = TransportMessage(**unpacked)
-                if msg.seq != self._ack:
-                    logging.debug(
-                        "Received out of order message: %d, expected %d",
-                        msg.seq,
-                        self._ack,
-                    )
+                try:
+                    await self._seq_manager.check_seq_and_update(msg)
+                except IgnoreTransportMessageException:
                     continue
-                async with self._ack_lock:
-                    self._ack = msg.seq + 1
+                except InvalidTransportMessageException:
+                    return
                 if msg.controlFlags == ACK_BIT:
                     continue
 
@@ -223,6 +215,7 @@ class Client:
                 ValidationError,
                 ValueError,
                 msgpack.UnpackException,
+                msgpack.exceptions.ExtraData,
             ):
                 logging.exception("failed to parse message")
                 return
@@ -253,20 +246,31 @@ class Client:
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(1)
         self._streams[stream_id] = output
-
-        msg = self.send_transport_message(
-            from_=self._from,
-            to="SERVER",
-            serviceName=service_name,
-            procedureName=procedure_name,
-            streamId=stream_id,
-            controlFlags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
-            payload=request_serializer(request),
-        )
+        try:
+            await self.send_transport_message(
+                from_=self._from,
+                to=self._server_id,
+                serviceName=service_name,
+                procedureName=procedure_name,
+                streamId=stream_id,
+                controlFlags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
+                payload=request_serializer(request),
+            )
+        except FailedSendingMessageException:
+            raise RiverException(
+                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+            )
 
         # Handle potential errors during communication
         try:
-            response = await output.get()
+            try:
+                response = await output.get()
+            except RuntimeError:
+                # if the stream is closed before we get a response, we will get a
+                # RuntimeError: RuntimeError: Event loop is closed
+                raise RiverException(
+                    ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+                )
             if not response.get("ok", False):
                 try:
                     error = error_deserializer(response["payload"])
@@ -301,41 +305,49 @@ class Client:
         output: Channel[Any] = Channel(1024)
         self._streams[stream_id] = output
         first_message = True
-        num_sent_messages = 0
-        if init and init_serializer:
-            num_sent_messages += 1
-            await self.send_transport_message(
-                from_=self._from,
-                to="SERVER",
-                serviceName=service_name,
-                procedureName=procedure_name,
-                streamId=stream_id,
-                controlFlags=STREAM_OPEN_BIT,
-                payload=init_serializer(init),
-            )
-            first_message = False
-
-        async for item in request:
-            control_flags = 0
-            if first_message:
-                control_flags = STREAM_OPEN_BIT
+        try:
+            if init and init_serializer:
+                await self.send_transport_message(
+                    from_=self._from,
+                    to=self._server_id,
+                    serviceName=service_name,
+                    procedureName=procedure_name,
+                    streamId=stream_id,
+                    controlFlags=STREAM_OPEN_BIT,
+                    payload=init_serializer(init),
+                )
                 first_message = False
-            num_sent_messages += 1
-            await self.send_transport_message(
-                from_=self._from,
-                to="SERVER",
-                serviceName=service_name,
-                procedureName=procedure_name,
-                streamId=stream_id,
-                controlFlags=control_flags,
-                payload=request_serializer(item),
+
+            async for item in request:
+                control_flags = 0
+                if first_message:
+                    control_flags = STREAM_OPEN_BIT
+                    first_message = False
+                await self.send_transport_message(
+                    from_=self._from,
+                    to=self._server_id,
+                    serviceName=service_name,
+                    procedureName=procedure_name,
+                    streamId=stream_id,
+                    controlFlags=control_flags,
+                    payload=request_serializer(item),
+                )
+        except FailedSendingMessageException:
+            raise RiverException(
+                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
             )
-        num_sent_messages += 1
         await self.send_close_stream(service_name, procedure_name, stream_id)
 
         # Handle potential errors during communication
         try:
-            response = await output.get()
+            try:
+                response = await output.get()
+            except RuntimeError:
+                # if the stream is closed before we get a response, we will get a
+                # RuntimeError: RuntimeError: Event loop is closed
+                raise RiverException(
+                    ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+                )
             if not response.get("ok", False):
                 try:
                     error = error_deserializer(response["payload"])
@@ -367,20 +379,25 @@ class Client:
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(1024)
         self._streams[stream_id] = output
-        await self.send_transport_message(
-            from_=self._from,
-            to="SERVER",
-            serviceName=service_name,
-            procedureName=procedure_name,
-            streamId=stream_id,
-            controlFlags=STREAM_OPEN_BIT,
-            payload=request_serializer(request),
-        )
+        try:
+            await self.send_transport_message(
+                from_=self._from,
+                to=self._server_id,
+                serviceName=service_name,
+                procedureName=procedure_name,
+                streamId=stream_id,
+                controlFlags=STREAM_OPEN_BIT,
+                payload=request_serializer(request),
+            )
+        except FailedSendingMessageException:
+            raise RiverException(
+                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+            )
 
         # Handle potential errors during communication
         try:
             async for item in output:
-                if "type" in item and item["type"] == "CLOSE":
+                if item.get("type", None) == "CLOSE":
                     break
                 if not item.get("ok", False):
                     try:
@@ -415,29 +432,34 @@ class Client:
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(1024)
         self._streams[stream_id] = output
+        try:
+            if init and init_serializer:
+                await self.send_transport_message(
+                    from_=self._from,
+                    to=self._server_id,
+                    serviceName=service_name,
+                    procedureName=procedure_name,
+                    streamId=stream_id,
+                    controlFlags=STREAM_OPEN_BIT,
+                    payload=init_serializer(init),
+                )
+            else:
+                # Get the very first message to open the stream
+                request_iter = aiter(request)
+                first = await anext(request_iter)
+                await self.send_transport_message(
+                    from_=self._from,
+                    to=self._server_id,
+                    serviceName=service_name,
+                    procedureName=procedure_name,
+                    streamId=stream_id,
+                    controlFlags=STREAM_OPEN_BIT,
+                    payload=request_serializer(first),
+                )
 
-        if init and init_serializer:
-            await self.send_transport_message(
-                from_=self._from,
-                to="SERVER",
-                serviceName=service_name,
-                procedureName=procedure_name,
-                streamId=stream_id,
-                controlFlags=STREAM_OPEN_BIT,
-                payload=init_serializer(init),
-            )
-        else:
-            # Get the very first message to open the stream
-            request_iter = aiter(request)
-            first = await anext(request_iter)
-            await self.send_transport_message(
-                from_=self._from,
-                to="SERVER",
-                serviceName=service_name,
-                procedureName=procedure_name,
-                streamId=stream_id,
-                controlFlags=STREAM_OPEN_BIT,
-                payload=request_serializer(first),
+        except FailedSendingMessageException:
+            raise RiverException(
+                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
             )
 
         # Create the encoder task
@@ -447,7 +469,7 @@ class Client:
                     continue
                 await self.send_transport_message(
                     from_=self._from,
-                    to="SERVER",
+                    to=self._server_id,
                     serviceName=service_name,
                     procedureName=procedure_name,
                     streamId=stream_id,
