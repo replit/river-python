@@ -8,11 +8,13 @@ from .rpc import (
     upload_method_handler,
 )
 from .server import Server
+from .error_schema import RiverError
 
 __all__ = [
     "Client",
     "Server",
     "GrpcContext",
+    "RiverError",
     "GenericRpcHandler",
     "rpc_method_handler",
     "subscription_method_handler",
