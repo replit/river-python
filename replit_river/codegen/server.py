@@ -230,7 +230,7 @@ def generate_river_module(
         "from google.protobuf import timestamp_pb2",
         "from google.protobuf.wrappers_pb2 import BoolValue",
         "",
-        "import replit_river as replit",
+        "import replit_river as river",
         "",
         f"from . import {module_name}_pb2, {module_name}_pb2_grpc\n\n",
     ]

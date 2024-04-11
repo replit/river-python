@@ -120,7 +120,7 @@ def generate_river_client_module(
         "from pydantic import BaseModel, Field, parse_obj_as",
         "from replit_river.error_schema import RiverError",
         "",
-        "import replit_river as replit",
+        "import replit_river as river",
         "",
     ]
     for schema in schemas:
