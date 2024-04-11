@@ -54,12 +54,14 @@ class SeqManager:
             if msg.seq != self.ack:
                 if msg.seq < self.ack:
                     logging.debug(
-                        f"{msg.from_} received duplicate msg, got {msg.seq} expected {self.ack}"
+                        f"{msg.from_} received duplicate msg, got {msg.seq}"
+                        f" expected {self.ack}"
                     )
                     raise IgnoreTransportMessageException
                 else:
                     logging.error(
-                        f"{msg.from_} received duplicate msg, got {msg.seq} expected {self.ack}"
+                        f"{msg.from_} received duplicate msg, got {msg.seq}"
+                        f" expected {self.ack}"
                     )
                     raise InvalidTransportMessageException
         await self._set_ack(msg.seq + 1)

@@ -1,4 +1,5 @@
 from .client import Client
+from .error_schema import RiverError
 from .rpc import (
     GenericRpcHandler,
     GrpcContext,
@@ -8,7 +9,6 @@ from .rpc import (
     upload_method_handler,
 )
 from .server import Server
-from .error_schema import RiverError
 
 __all__ = [
     "Client",

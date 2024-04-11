@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import traceback
 from typing import Any, Dict, Optional, Set, Tuple
 
 import msgpack  # type: ignore
@@ -302,7 +301,8 @@ class Transport(object):
                     self.is_handshake_success = True
                     self._create_task(self._heartbeat(msg, websocket), tg)
                     logging.debug(
-                        f"handshake success for client_instance_id : {self._client_instance_id}"
+                        "handshake success for client_instance_id :"
+                        f" {self._client_instance_id}"
                     )
 
                     continue

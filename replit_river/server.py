@@ -1,5 +1,4 @@
 import logging
-import traceback
 from typing import Dict, Mapping, Tuple
 
 import nanoid  # type: ignore
