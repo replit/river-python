@@ -169,7 +169,7 @@ def get_response_or_error_payload(
 
 def rpc_method_handler(
     method: Callable[[RequestType, grpc.aio.ServicerContext], Awaitable[ResponseType]],
-    request_deserializer: Callable[[str], RequestType],
+    request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
 ) -> GenericRpcHandler:
     async def wrapped(
