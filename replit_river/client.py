@@ -7,7 +7,7 @@ import msgpack  # type: ignore
 import nanoid  # type: ignore
 from aiochannel import Channel
 from pydantic import ValidationError
-from websockets import Data
+from websockets import ConnectionClosedError, Data
 from websockets.client import WebSocketClientProtocol
 from websockets.exceptions import ConnectionClosed
 
@@ -17,6 +17,7 @@ from replit_river.seq_manager import (
     InvalidTransportMessageException,
     SeqManager,
 )
+from replit_river.task_manager import BackgroundTaskManager
 from replit_river.transport import FailedSendingMessageException
 
 from .rpc import (
@@ -34,6 +35,7 @@ from .rpc import (
 
 CROSIS_PREFIX_BYTES = b"\x00\x00"
 PID2_PREFIX_BYTES = b"\xff\xff"
+HEART_BEAT_INTERVAL_SECS = 2
 
 
 class Client:
@@ -45,26 +47,20 @@ class Client:
         server_id: Optional[str] = None,
     ) -> None:
         self.ws = websockets
-        self._tasks = set()
         self._from = nanoid.generate()
         self._streams: Dict[str, Channel[Dict[str, Any]]] = {}
         self._seq_manager = SeqManager()
         self._is_handshaked = False
         self._use_prefix_bytes = use_prefix_bytes
-        self._instance_id = client_id or "python-client-" + self.generate_nanoid()
+        self._client_id = client_id or "python-client-" + self.generate_nanoid()
         self._server_id = server_id or "SERVER"
+        self._background_task_manager = BackgroundTaskManager()
+        asyncio.create_task(self._start_handle_messages())
 
-        task = asyncio.create_task(self._handle_messages())
-        self._tasks.add(task)
-
-        def _handle_messages_callback(task: asyncio.Task) -> None:
-            self._tasks.remove(task)
-            if task.exception():
-                logging.error(
-                    f"Error in river.client._handle_messages: {task.exception()}"
-                )
-
-        task.add_done_callback(_handle_messages_callback)
+    async def _start_handle_messages(self) -> None:
+        logging.error("## start handling messages")
+        async with asyncio.TaskGroup() as tg:
+            self._background_task_manager.create_task(self._handle_messages(), tg)
 
     async def send_close_stream(
         self, service_name: str, procedure_name: str, stream_id: str
@@ -81,6 +77,29 @@ class Client:
                 "type": "CLOSE",
             },
         )
+
+    async def _heartbeat(
+        self,
+        msg: TransportMessage,
+    ) -> None:
+        logging.debug("Start heartbeat")
+        while True:
+            await asyncio.sleep(HEART_BEAT_INTERVAL_SECS)
+            try:
+                await self.send_transport_message(
+                    self._client_id,
+                    self._server_id,
+                    None,
+                    None,
+                    "heartbeat",
+                    ACK_BIT,
+                    {
+                        "ack": msg.id,
+                    },
+                )
+            except ConnectionClosedError:
+                logging.debug("heartbeat failed")
+                return
 
     def to_transport_message(self, message: Data) -> TransportMessage:
         unpacked = msgpack.unpackb(message, timestamp=3)
@@ -148,7 +167,7 @@ class Client:
         handshake_request = ControlMessageHandshakeRequest(
             type="HANDSHAKE_REQ",
             protocolVersion="v1",
-            instanceId=self._instance_id,
+            instanceId=self._client_id,
         )
         try:
             await self.send_transport_message(
@@ -180,6 +199,11 @@ class Client:
             # TODO: close the connection here
             return
         self._is_handshaked = True
+
+        async with asyncio.TaskGroup() as tg:
+            self._background_task_manager.create_task(
+                self._heartbeat(first_message), tg
+            )
 
         async for message in self.ws:
             if isinstance(message, str):

@@ -16,6 +16,7 @@ from replit_river.seq_manager import (
     InvalidTransportMessageException,
     SeqManager,
 )
+from replit_river.task_manager import BackgroundTaskManager
 
 from .rpc import (
     ACK_BIT,
@@ -80,10 +81,10 @@ class Transport(object):
         self._handlers = handlers
         self.websocket = websocket
         self.streams: Dict[str, Channel[Any]] = {}
-        self.background_tasks: Set[asyncio.Task] = set()
         self.is_handshake_success = False
         self._transports_manager = transports_manager
         self._seq_manager = SeqManager()
+        self._background_task_manager = BackgroundTaskManager()
 
     async def send_message(
         self,
@@ -255,32 +256,6 @@ class Transport(object):
                 logging.debug("heartbeat failed")
                 return
 
-    def remove_task(
-        self,
-        task_to_remove: asyncio.Task[Any],
-        background_tasks: Set[asyncio.Task],
-    ) -> None:
-        if task_to_remove in background_tasks:
-            background_tasks.remove(task_to_remove)
-        try:
-            exception = task_to_remove.exception()
-        except asyncio.CancelledError:
-            logging.debug("Task was cancelled", exc_info=False)
-            return
-        except Exception:
-            logging.error("Error retrieving task exception", exc_info=True)
-            return
-        if exception:
-            logging.error(
-                "Task resulted in an exception",
-                exc_info=exception,
-            )
-
-    def _create_task(self, fn: Any, tg: asyncio.TaskGroup) -> None:
-        task = tg.create_task(fn)
-        self.background_tasks.add(task)
-        task.add_done_callback(lambda x: self.remove_task(x, self.background_tasks))
-
     async def handle_messages_from_ws(
         self, websocket: WebSocketServerProtocol, tg: asyncio.TaskGroup
     ) -> None:
@@ -299,7 +274,9 @@ class Transport(object):
                 try:
                     await self._establish_handshake(msg, websocket)
                     self.is_handshake_success = True
-                    self._create_task(self._heartbeat(msg, websocket), tg)
+                    self._background_task_manager.create_task(
+                        self._heartbeat(msg, websocket), tg
+                    )
                     logging.debug(
                         "handshake success for client_instance_id :"
                         f" {self._client_instance_id}"
@@ -352,10 +329,10 @@ class Transport(object):
                     # We'll need to save it for later.
                     self.streams[msg.streamId] = input_stream
                 # Start the handler.
-                self._create_task(
+                self._background_task_manager.create_task(
                     handler_func(msg.from_, input_stream, output_stream), tg
                 )
-                self._create_task(
+                self._background_task_manager.create_task(
                     self.send_responses(
                         msg, websocket, output_stream, is_streaming_output
                     ),
@@ -407,7 +384,6 @@ class Transport(object):
         for previous_input in self.streams.values():
             previous_input.close()
         self.streams.clear()
-        for task in self.background_tasks:
-            task.cancel()
+        self._background_task_manager.cancel_all_tasks()
         if self.websocket:
             await self.websocket.close()
