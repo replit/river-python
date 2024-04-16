@@ -260,7 +260,7 @@ async def test_close_old_websocket_rpc(server: Server) -> None:
                         await clients[0].send_rpc(
                             "test_service",
                             "rpc_method",
-                            clients[0]._instance_id,
+                            clients[0]._client_id,
                             serialize_request,
                             deserialize_response,
                             deserialize_error,
@@ -268,7 +268,7 @@ async def test_close_old_websocket_rpc(server: Server) -> None:
                     response = await clients[1].send_rpc(
                         "test_service",
                         "rpc_method",
-                        clients[1]._instance_id,
+                        clients[1]._client_id,
                         serialize_request,
                         deserialize_response,
                         deserialize_error,
