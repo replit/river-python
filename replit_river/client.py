@@ -58,7 +58,6 @@ class Client:
         asyncio.create_task(self._start_handle_messages())
 
     async def _start_handle_messages(self) -> None:
-        logging.error("## start handling messages")
         async with asyncio.TaskGroup() as tg:
             self._background_task_manager.create_task(self._handle_messages(), tg)
 
@@ -199,7 +198,6 @@ class Client:
             # TODO: close the connection here
             return
         self._is_handshaked = True
-
         async with asyncio.TaskGroup() as tg:
             self._background_task_manager.create_task(
                 self._heartbeat(first_message), tg
@@ -222,6 +220,7 @@ class Client:
             try:
                 unpacked = msgpack.unpackb(message, timestamp=3)
                 msg = TransportMessage(**unpacked)
+                print(f"msg : {msg}")
                 try:
                     await self._seq_manager.check_seq_and_update(msg)
                 except IgnoreTransportMessageException:
@@ -270,6 +269,7 @@ class Client:
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(1)
         self._streams[stream_id] = output
+        print(f"stream_id : {stream_id}")
         try:
             await self.send_transport_message(
                 from_=self._from,
@@ -288,7 +288,9 @@ class Client:
         # Handle potential errors during communication
         try:
             try:
+                print(f"### waiting for response")
                 response = await output.get()
+                print(f"### response : {response}")
             except RuntimeError:
                 # if the stream is closed before we get a response, we will get a
                 # RuntimeError: RuntimeError: Event loop is closed
@@ -502,9 +504,8 @@ class Client:
                 )
             await self.send_close_stream(service_name, procedure_name, stream_id)
 
-        task = asyncio.create_task(_encode_stream())
-        self._tasks.add(task)
-        task.add_done_callback(lambda _: self._tasks.remove(task))
+        async with asyncio.TaskGroup() as tg:
+            self._background_task_manager.create_task(_encode_stream(), tg)
 
         # Handle potential errors during communication
         try:

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import AsyncGenerator
 
 import pytest
@@ -113,6 +114,7 @@ async def client(server: Server) -> AsyncGenerator[Client, None]:
 
 @pytest.mark.asyncio
 async def test_rpc_method(client: Client) -> None:
+    logging.error("???")
     response = await client.send_rpc(
         "test_service",
         "rpc_method",

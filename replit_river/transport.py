@@ -108,6 +108,7 @@ class Transport(object):
             procedureName=initial_message.procedureName,
         )
         logging.debug("sent a message %r", msg)
+        print(f"sent a message : {msg}")
         try:
             await ws.send(
                 msgpack.packb(
