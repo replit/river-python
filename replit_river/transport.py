@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import msgpack  # type: ignore
 import nanoid  # type: ignore
@@ -108,7 +108,6 @@ class Transport(object):
             procedureName=initial_message.procedureName,
         )
         logging.debug("sent a message %r", msg)
-        print(f"sent a message : {msg}")
         try:
             await ws.send(
                 msgpack.packb(
@@ -275,7 +274,7 @@ class Transport(object):
                 try:
                     await self._establish_handshake(msg, websocket)
                     self.is_handshake_success = True
-                    self._background_task_manager.create_task(
+                    await self._background_task_manager.create_task(
                         self._heartbeat(msg, websocket), tg
                     )
                     logging.debug(
@@ -330,10 +329,10 @@ class Transport(object):
                     # We'll need to save it for later.
                     self.streams[msg.streamId] = input_stream
                 # Start the handler.
-                self._background_task_manager.create_task(
+                await self._background_task_manager.create_task(
                     handler_func(msg.from_, input_stream, output_stream), tg
                 )
-                self._background_task_manager.create_task(
+                await self._background_task_manager.create_task(
                     self.send_responses(
                         msg, websocket, output_stream, is_streaming_output
                     ),
@@ -385,6 +384,6 @@ class Transport(object):
         for previous_input in self.streams.values():
             previous_input.close()
         self.streams.clear()
-        self._background_task_manager.cancel_all_tasks()
+        await self._background_task_manager.cancel_all_tasks()
         if self.websocket:
             await self.websocket.close()

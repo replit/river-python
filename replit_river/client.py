@@ -58,8 +58,7 @@ class Client:
         asyncio.create_task(self._start_handle_messages())
 
     async def _start_handle_messages(self) -> None:
-        async with asyncio.TaskGroup() as tg:
-            self._background_task_manager.create_task(self._handle_messages(), tg)
+        await self._background_task_manager.create_task(self._handle_messages())
 
     async def send_close_stream(
         self, service_name: str, procedure_name: str, stream_id: str
@@ -198,59 +197,60 @@ class Client:
             # TODO: close the connection here
             return
         self._is_handshaked = True
-        async with asyncio.TaskGroup() as tg:
-            self._background_task_manager.create_task(
-                self._heartbeat(first_message), tg
-            )
+        await self._background_task_manager.create_task(self._heartbeat(first_message))
 
-        async for message in self.ws:
-            if isinstance(message, str):
-                # Not something we will try to handle.
-                logging.debug(
-                    "ignored a message beacuse it was a text frame: %r",
-                    message,
-                )
-                continue
-            if self._use_prefix_bytes:
-                if message[:2] == CROSIS_PREFIX_BYTES:
-                    logging.debug("ignored a crosis message")
+        try:
+            async for message in self.ws:
+                if isinstance(message, str):
+                    # Not something we will try to handle.
+                    logging.debug(
+                        "ignored a message beacuse it was a text frame: %r",
+                        message,
+                    )
                     continue
-                message = message[2:]
+                if self._use_prefix_bytes:
+                    if message[:2] == CROSIS_PREFIX_BYTES:
+                        logging.debug("ignored a crosis message")
+                        continue
+                    message = message[2:]
 
-            try:
-                unpacked = msgpack.unpackb(message, timestamp=3)
-                msg = TransportMessage(**unpacked)
-                print(f"msg : {msg}")
                 try:
-                    await self._seq_manager.check_seq_and_update(msg)
-                except IgnoreTransportMessageException:
-                    continue
-                except InvalidTransportMessageException:
+                    unpacked = msgpack.unpackb(message, timestamp=3)
+                    msg = TransportMessage(**unpacked)
+                    try:
+                        await self._seq_manager.check_seq_and_update(msg)
+                    except IgnoreTransportMessageException:
+                        continue
+                    except InvalidTransportMessageException:
+                        return
+                    if msg.controlFlags == ACK_BIT:
+                        continue
+
+                except ConnectionClosed:
+                    logging.info("Connection closed")
+                    break
+
+                except (
+                    ValidationError,
+                    ValueError,
+                    msgpack.UnpackException,
+                    msgpack.exceptions.ExtraData,
+                ):
+                    logging.exception("failed to parse message")
                     return
-                if msg.controlFlags == ACK_BIT:
+                previous_output = self._streams.get(msg.streamId, None)
+                if not previous_output:
+                    logging.warning("no stream for %s", msg.streamId)
                     continue
-
-            except ConnectionClosed:
-                logging.info("Connection closed")
-                break
-
-            except (
-                ValidationError,
-                ValueError,
-                msgpack.UnpackException,
-                msgpack.exceptions.ExtraData,
-            ):
-                logging.exception("failed to parse message")
-                return
-            previous_output = self._streams.get(msg.streamId, None)
-            if not previous_output:
-                logging.warning("no stream for %s", msg.streamId)
-                continue
-            await previous_output.put(msg.payload)
-            if msg.controlFlags & STREAM_CLOSED_BIT != 0:
-                logging.info("Closing stream %s", msg.streamId)
-                previous_output.close()
-                del self._streams[msg.streamId]
+                await previous_output.put(msg.payload)
+                if msg.controlFlags & STREAM_CLOSED_BIT != 0:
+                    logging.info("Closing stream %s", msg.streamId)
+                    previous_output.close()
+                    del self._streams[msg.streamId]
+        except asyncio.CancelledError:
+            logging.debug("Client loop was successfully cancelled", exc_info=False)
+        finally:
+            await self._background_task_manager.cancel_all_tasks()
 
     async def send_rpc(
         self,
@@ -269,7 +269,6 @@ class Client:
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(1)
         self._streams[stream_id] = output
-        print(f"stream_id : {stream_id}")
         try:
             await self.send_transport_message(
                 from_=self._from,
@@ -288,9 +287,7 @@ class Client:
         # Handle potential errors during communication
         try:
             try:
-                print(f"### waiting for response")
                 response = await output.get()
-                print(f"### response : {response}")
             except RuntimeError:
                 # if the stream is closed before we get a response, we will get a
                 # RuntimeError: RuntimeError: Event loop is closed
@@ -504,8 +501,7 @@ class Client:
                 )
             await self.send_close_stream(service_name, procedure_name, stream_id)
 
-        async with asyncio.TaskGroup() as tg:
-            self._background_task_manager.create_task(_encode_stream(), tg)
+        await self._background_task_manager.create_task(_encode_stream())
 
         # Handle potential errors during communication
         try:
