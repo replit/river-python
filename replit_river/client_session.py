@@ -4,7 +4,7 @@ from typing import Any, Callable, Optional, Union
 
 import nanoid  # type: ignore
 from aiochannel import Channel
-
+from aiochannel.errors import ChannelClosed
 from replit_river.error_schema import ERROR_CODE_STREAM_CLOSED, RiverException
 from replit_river.session import FailedSendingMessageException, Session
 
@@ -32,7 +32,6 @@ class ClientSession(Session):
 
         Expects the input and output be messages that will be msgpacked.
         """
-
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(1)
         self._streams[stream_id] = output
@@ -54,7 +53,7 @@ class ClientSession(Session):
         try:
             try:
                 response = await output.get()
-            except RuntimeError:
+            except (RuntimeError, ChannelClosed) as e:
                 # if the stream is closed before we get a response, we will get a
                 # RuntimeError: RuntimeError: Event loop is closed
                 raise RiverException(
@@ -130,7 +129,7 @@ class ClientSession(Session):
         try:
             try:
                 response = await output.get()
-            except RuntimeError:
+            except (RuntimeError, ChannelClosed):
                 # if the stream is closed before we get a response, we will get a
                 # RuntimeError: RuntimeError: Event loop is closed
                 raise RiverException(
@@ -195,6 +194,10 @@ class ClientSession(Session):
                         )
                     continue
                 yield response_deserializer(item["payload"])
+        except (RuntimeError, ChannelClosed):
+            raise RiverException(
+                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+            )
         except Exception as e:
             # Log the error and yield an appropriate error response
             logging.exception(f"Error during subscription communication : {item}")
@@ -278,6 +281,10 @@ class ClientSession(Session):
                         )
                     continue
                 yield response_deserializer(item["payload"])
+        except (RuntimeError, ChannelClosed):
+            raise RiverException(
+                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+            )
         except Exception as e:
             # Log the error and yield an appropriate error response
             logging.exception("Error during stream communication")

@@ -39,8 +39,8 @@ class ServerTransport(Transport):
     ) -> Session:
         session_to_close: Optional[Session] = None
         async with self._session_lock:
-            if transport_id not in self._sessions:
-                self._sessions[transport_id] = Session(
+            if to_id not in self._sessions:
+                self._sessions[to_id] = Session(
                     transport_id,
                     to_id,
                     instance_id,
@@ -51,10 +51,10 @@ class ServerTransport(Transport):
                     self._handlers,
                 )
             else:
-                old_session = self._sessions[transport_id]
+                old_session = self._sessions[to_id]
                 if old_session._instance_id != instance_id:
                     session_to_close = old_session
-                    self._sessions[transport_id] = Session(
+                    self._sessions[to_id] = Session(
                         transport_id,
                         to_id,
                         instance_id,
@@ -74,7 +74,7 @@ class ServerTransport(Transport):
         if session_to_close:
             logging.info("Closing stale websocket")
             await session_to_close.close()
-        session = self._sessions[transport_id]
+        session = self._sessions[to_id]
         return session
 
     async def establish_session(
@@ -92,9 +92,9 @@ class ServerTransport(Transport):
             except InvalidTransportMessageException:
                 error_msg = "Got invalid transport message, closing connection"
                 raise InvalidTransportMessageException(error_msg)
-            logging.debug("handshake request received: %r", handshake_request)
+            logging.debug("handshake success on server: %r", handshake_request)
             transport_id = msg.from_
-            to_id = msg.from_
+            to_id = msg.to
             instance_id = handshake_request.instanceId
             try:
                 session = await self.get_or_create_session(

@@ -2,9 +2,9 @@ import logging
 
 from pydantic import ValidationError
 from websockets import (
-    ConnectionClosedError,
     WebSocketCommonProtocol,
 )
+from websockets.exceptions import ConnectionClosed
 
 from replit_river.client_session import ClientSession
 from replit_river.error_schema import (
@@ -27,7 +27,7 @@ from replit_river.seq_manager import (
     InvalidTransportMessageException,
 )
 from replit_river.session import Session
-from replit_river.transport import Transport
+from replit_river.transport import PROTOCOL_VERSION, Transport
 
 
 class ClientTransport(Transport):
@@ -40,26 +40,29 @@ class ClientTransport(Transport):
     ) -> None:
         handshake_request = ControlMessageHandshakeRequest(
             type="HANDSHAKE_REQ",
-            protocolVersion="v1",
+            protocolVersion=PROTOCOL_VERSION,
             instanceId=instance_id,
         )
         stream_id = self.generate_nanoid()
-        await send_transport_message(
-            TransportMessage(
-                from_=transport_id,
-                to=to_id,
-                serviceName=None,
-                procedureName=None,
-                streamId=stream_id,
-                controlFlags=0,
-                id=self.generate_nanoid(),
-                seq=0,
-                ack=0,
-                payload=handshake_request.model_dump(),
-            ),
-            ws=websocket,
-            prefix_bytes=self._transport_options.get_prefix_bytes(),
-        )
+        try:
+            await send_transport_message(
+                TransportMessage(
+                    from_=transport_id,
+                    to=to_id,
+                    serviceName=None,
+                    procedureName=None,
+                    streamId=stream_id,
+                    controlFlags=0,
+                    id=self.generate_nanoid(),
+                    seq=0,
+                    ack=0,
+                    payload=handshake_request.model_dump(),
+                ),
+                ws=websocket,
+                prefix_bytes=self._transport_options.get_prefix_bytes(),
+            )
+        except ConnectionClosed as e:
+            logging.error(f"connection closed error during handshake : {e}")
 
     async def close_session_callback(self, session: Session) -> None:
         pass
@@ -86,7 +89,7 @@ class ClientTransport(Transport):
         while True:
             try:
                 data = await websocket.recv()
-            except ConnectionClosedError as e:
+            except ConnectionClosed as e:
                 # TODO: handle this here
                 pass
             try:
@@ -104,6 +107,7 @@ class ClientTransport(Transport):
             handshake_response = ControlMessageHandshakeResponse(
                 **first_message.payload
             )
+            logging.debug(f"river client get handshake response : {handshake_response}")
         except ValidationError as e:
             raise RiverException(
                 ERROR_HANDSHAKE, f"Failed to parse handshake response : {e}"

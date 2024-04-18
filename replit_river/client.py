@@ -23,6 +23,7 @@ from .rpc import (
 class Client:
     def __init__(
         self,
+        # websocket constructor to reconnect
         websockets: WebSocketClientProtocol,
         client_id: str,
         server_id: str,
@@ -41,6 +42,11 @@ class Client:
         self._client_session: Optional[ClientSession] = None
         self._task_manager = BackgroundTaskManager()
         asyncio.create_task(self._task_manager.create_task(self._create_session()))
+
+    async def close(self) -> None:
+        if self._client_session is not None:
+            await self._task_manager.cancel_all_tasks()
+            await self._client_session.close()
 
     async def _create_session(self) -> None:
         try:

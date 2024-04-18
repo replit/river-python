@@ -26,6 +26,11 @@ class Transport:
         self._handlers = handlers
         self._session_lock = asyncio.Lock()
 
+    async def close_all_sessions(self) -> None:
+        sessions = self._sessions.values()
+        for session in sessions:
+            await session.close()
+
     async def _delete_session(self, session: Session) -> None:
         async with self._session_lock:
             if session._transport_id in self._sessions:

@@ -1,12 +1,11 @@
-import asyncio
 import logging
-from typing import Dict, Mapping, Tuple
+from typing import Mapping, Tuple
 
 from websockets.exceptions import ConnectionClosedError
 from websockets.server import WebSocketServerProtocol
 
 from replit_river.server_transport import ServerTransport
-from replit_river.transport import Transport, TransportOptions
+from replit_river.transport import TransportOptions
 
 from .rpc import (
     GenericRpcHandler,
@@ -15,7 +14,6 @@ from .rpc import (
 
 class Server(object):
     def __init__(self, server_id: str, transport_options: TransportOptions) -> None:
-        self._handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]] = {}
         self._server_id = server_id or "SERVER"
         self._transport_options = transport_options
         self._transport = ServerTransport(
@@ -24,11 +22,14 @@ class Server(object):
             is_server=True,
         )
 
+    async def close(self) -> None:
+        await self._transport.close_all_sessions()
+
     def add_rpc_handlers(
         self,
         rpc_handlers: Mapping[Tuple[str, str], Tuple[str, GenericRpcHandler]],
     ) -> None:
-        self._handlers.update(rpc_handlers)
+        self._transport._handlers.update(rpc_handlers)
 
     async def serve(self, websocket: WebSocketServerProtocol) -> None:
         logging.debug("River server started establishing session")
@@ -40,7 +41,7 @@ class Server(object):
             return
         logging.debug("River server session established, start serving messages")
         try:
-            await session.start_serve_messages()
+            await session._serve()
         except ConnectionClosedError as e:
             logging.debug(f"ConnectionClosedError while serving {e}")
         except Exception as e:

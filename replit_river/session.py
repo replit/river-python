@@ -60,8 +60,8 @@ class Session(object):
         self._lock = asyncio.Lock()
         self.heartbeat_misses = 0
         # should disconnect after this time
-        self._should_disconnect_time: Optional[float] = None
-        # asyncio.create_task(self._task_manager.create_task(self._heartbeat(self._ws)))
+        self._disconnect_after_this_time: Optional[float] = None
+        asyncio.create_task(self._task_manager.create_task(self._heartbeat(self._ws)))
 
     async def replace_with_new_websocket(
         self, websocket: websockets.WebSocketCommonProtocol
@@ -69,7 +69,7 @@ class Session(object):
         logging.info("replacing with new websocket")
         if self._ws:
             await self.close_stale_connection(self._ws)
-        self.cancel_grace()
+        self.cancel_disconnect_grace_period()
         await self._send_buffered_messages(websocket)
         self._ws = websocket
 
@@ -77,18 +77,20 @@ class Session(object):
         return asyncio.get_event_loop().time()
 
     async def begin_grace(self) -> None:
+        if self._disconnect_after_this_time:
+            return
         logging.debug(
             f"websocket closed from {self._transport_id} to {self._to_id}, "
             "begin grace period"
         )
         grace_period_ms = self._transport_options.session_disconnect_grace_ms
-        self._should_disconnect_time = (
+        self._disconnect_after_this_time = (
             await self._get_current_time() + grace_period_ms / 1000
         )
 
-    def cancel_grace(self) -> None:
+    def cancel_disconnect_grace_period(self) -> None:
         self.heartbeat_misses = 0
-        self._should_disconnect_time = None
+        self._disconnect_after_this_time = None
         logging.info(f"Grace period cancelled for session to {self._transport_id}")
 
     async def _heartbeat(
@@ -99,16 +101,15 @@ class Session(object):
         while True:
             await asyncio.sleep(self._transport_options.heartbeat_ms / 1000)
             current_time = await self._get_current_time()
-            if (
-                self._should_disconnect_time
-                and current_time > self._should_disconnect_time
-            ):
-                logging.info(
-                    "Grace period ended for :"
-                    f" {self._transport_id}, closing websocket"
-                )
-                await self.close()
-                return
+            if self._disconnect_after_this_time:
+                if current_time > self._disconnect_after_this_time:
+                    logging.info(
+                        "Grace period ended for :"
+                        f" {self._transport_id}, closing websocket"
+                    )
+                    await self.close()
+                    return
+                continue
             if self.heartbeat_misses >= self._transport_options.heartbeats_until_dead:
                 logging.info("Heartbeat timed out for :" f" {self._transport_id}")
                 await self.close_stale_connection(websocket)
@@ -169,8 +170,8 @@ class Session(object):
             ack=await self._seq_manager.get_ack(),
             controlFlags=control_flags,
             payload=payload,
-            service_name=service_name,
-            procedure_name=procedure_name,
+            serviceName=service_name,
+            procedureName=procedure_name,
         )
         self._buffer.put_nowait(msg)
         try:
@@ -204,7 +205,8 @@ class Session(object):
             f"river session from {self._transport_id} to {self._to_id} "
             "closing stale connection"
         )
-        await websocket.close()
+        if websocket:
+            await websocket.close()
 
     async def _handle_msg_server(
         self,
@@ -296,8 +298,7 @@ class Session(object):
             except InvalidTransportMessageException:
                 return
             if msg.controlFlags & ACK_BIT != 0:
-                self.heartbeat_misses = 0
-                self.cancel_grace()
+                self.cancel_disconnect_grace_period()
                 continue
 
             stream = self._streams.get(msg.streamId, None)
