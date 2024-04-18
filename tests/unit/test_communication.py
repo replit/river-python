@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import AsyncGenerator
 
 import pytest
@@ -15,6 +16,7 @@ from replit_river.rpc import (
     upload_method_handler,
 )
 from replit_river.server import Server
+from replit_river.transport_options import TransportOptions
 
 
 # Helper functions for testing
@@ -67,8 +69,13 @@ async def stream_handler(
 
 
 @pytest.fixture
-def server() -> Server:
-    server = Server(server_id="test_server")
+def transport_options() -> TransportOptions:
+    return TransportOptions()
+
+
+@pytest.fixture
+def server(transport_options: TransportOptions) -> Server:
+    server = Server(server_id="test_server", transport_options=transport_options)
     server.add_rpc_handlers(
         {
             ("test_service", "rpc_method"): (
@@ -101,14 +108,24 @@ def server() -> Server:
 
 
 @pytest.fixture
-async def client(server: Server) -> AsyncGenerator[Client, None]:
-    async with serve(server.serve, "localhost", 8765):
-        async with websockets.connect("ws://localhost:8765") as websocket:
-            client = Client(websocket, use_prefix_bytes=False)
-            try:
-                yield client
-            finally:
-                await websocket.close()
+async def client(
+    server: Server, transport_options: TransportOptions
+) -> AsyncGenerator[Client, None]:
+    try:
+        async with serve(server.serve, "localhost", 8765):
+            async with websockets.connect("ws://localhost:8765") as websocket:
+                client = Client(
+                    websocket,
+                    client_id="test_client",
+                    server_id="test_server",
+                    transport_options=transport_options,
+                )
+                try:
+                    yield client
+                finally:
+                    await client.close()
+    finally:
+        await server.close()
 
 
 @pytest.mark.asyncio
@@ -146,7 +163,7 @@ async def test_upload_method(client: Client) -> None:
 
 @pytest.mark.asyncio
 async def test_subscription_method(client: Client) -> None:
-    async for response in client.send_subscription(
+    async for response in await client.send_subscription(
         "test_service",
         "subscription_method",
         "Bob",
@@ -165,7 +182,7 @@ async def test_stream_method(client: Client) -> None:
         yield "Stream 3"
 
     responses = []
-    async for response in client.send_stream(
+    async for response in await client.send_stream(
         "test_service",
         "stream_method",
         "Initial Stream Data",
@@ -207,7 +224,7 @@ async def test_multiplexing(client: Client) -> None:
             deserialize_error,
         )
     )
-    stream_task = client.send_stream(
+    stream_task = await client.send_stream(
         "test_service",
         "stream_method",
         "Initial Stream Data",
@@ -235,42 +252,48 @@ async def test_multiplexing(client: Client) -> None:
 
 
 @pytest.mark.asyncio
-async def test_close_old_websocket_rpc(server: Server) -> None:
-    async with serve(server.serve, "localhost", 8765):
-        async with serve(server.serve, "localhost", 8766):
-            async with websockets.connect("ws://localhost:8765") as websocket1:
-                async with websockets.connect("ws://localhost:8766") as websocket2:
-                    websockets_list = [websocket1, websocket2]
-                    clients: list[Client] = []
-                    num_clients = 2
+async def test_close_old_websocket_rpc(
+    server: Server, transport_options: TransportOptions
+) -> None:
+    try:
+        async with serve(server.serve, "localhost", 8765):
+            async with serve(server.serve, "localhost", 8766):
+                async with websockets.connect("ws://localhost:8765") as websocket1:
+                    async with websockets.connect("ws://localhost:8766") as websocket2:
+                        websockets_list = [websocket1, websocket2]
+                        clients: list[Client] = []
+                        num_clients = 2
 
-                    async def create_clients() -> None:
-                        for i in range(num_clients):
-                            client = Client(
-                                websockets_list[i],
-                                use_prefix_bytes=False,
-                                client_id=f"client-{i}",
+                        async def create_clients() -> None:
+                            for i in range(num_clients):
+                                client = Client(
+                                    websockets_list[i],
+                                    client_id=f"client-{i}",
+                                    server_id="test_server",
+                                    transport_options=transport_options,
+                                )
+                                clients.append(client)
+
+                        await create_clients()
+                        with pytest.raises(RiverException):
+                            await clients[0].send_rpc(
+                                "test_service",
+                                "rpc_method",
+                                clients[0]._client_id,
+                                serialize_request,
+                                deserialize_response,
+                                deserialize_error,
                             )
-                            clients.append(client)
-                            # We set it to be the same instance for testing
-                            client._from = "test_user"
-
-                    await create_clients()
-                    with pytest.raises(RiverException):
-                        await clients[0].send_rpc(
+                        response = await clients[1].send_rpc(
                             "test_service",
                             "rpc_method",
-                            clients[0]._client_id,
+                            clients[1]._client_id,
                             serialize_request,
                             deserialize_response,
                             deserialize_error,
                         )
-                    response = await clients[1].send_rpc(
-                        "test_service",
-                        "rpc_method",
-                        clients[1]._client_id,
-                        serialize_request,
-                        deserialize_response,
-                        deserialize_error,
-                    )
-                    assert response == f"Hello, client-{1}!"
+                        assert response == f"Hello, client-{1}!"
+    finally:
+        await server.close()
+        for client in clients:
+            await client.close()
