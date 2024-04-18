@@ -9,6 +9,7 @@ from websockets import WebSocketCommonProtocol
 from websockets.exceptions import ConnectionClosedError
 from websockets.server import WebSocketServerProtocol
 
+from replit_river.message_buffer import MessageBuffer
 from replit_river.messages import (
     FailedSendingMessageException,
     parse_transport_msg,
@@ -28,6 +29,11 @@ from .rpc import (
     STREAM_OPEN_BIT,
     GenericRpcHandler,
     TransportMessage,
+)
+
+SEND_TRANSPORT_MESSAGE_EXCEPTIONS = (
+    websockets.exceptions.ConnectionClosed,
+    FailedSendingMessageException,
 )
 
 
@@ -56,8 +62,7 @@ class Session(object):
         self._transport_options = transport_options
         self._seq_manager = SeqManager()
         self._task_manager = BackgroundTaskManager()
-        self._buffer: asyncio.Queue[TransportMessage] = asyncio.Queue(1000)
-        self._lock = asyncio.Lock()
+        self._buffer = MessageBuffer()
         self.heartbeat_misses = 0
         # should disconnect after this time
         self._disconnect_after_this_time: Optional[float] = None
@@ -132,21 +137,13 @@ class Session(object):
     async def _send_buffered_messages(
         self, websocket: websockets.WebSocketCommonProtocol
     ) -> None:
-        while not self._buffer.empty():
-            msg = await self._buffer.get()
+        while not await self._buffer.empty():
+            msg = await self._buffer.peek()
+            if not msg:
+                continue
             try:
                 await send_transport_message(msg, websocket)
-            except (
-                websockets.exceptions.ConnectionClosed,
-                FailedSendingMessageException,
-            ) as e:
-                # Put the message back, they need to be resent
-                async with self._lock:
-                    msg_not_sent = [msg]
-                    while not self._buffer.empty():
-                        msg_not_sent.append(await self._buffer.get())
-                    for msg in msg_not_sent:
-                        self._buffer.put_nowait(msg)
+            except SEND_TRANSPORT_MESSAGE_EXCEPTIONS as e:
                 raise FailedSendingMessageException(
                     f"Failed to resend message during reconnecting : {e}"
                 )
@@ -173,7 +170,7 @@ class Session(object):
             serviceName=service_name,
             procedureName=procedure_name,
         )
-        self._buffer.put_nowait(msg)
+        await self._buffer.put(msg)
         try:
             await send_transport_message(
                 msg,
@@ -271,6 +268,9 @@ class Session(object):
             # close message is not sent to the stream
             await stream.put(msg.payload)
 
+    async def _update_buffer(self) -> None:
+        await self._buffer.remove_old_messages(self._seq_manager.receiver_ack)
+
     async def handle_messages_from_ws(
         self, websocket: WebSocketCommonProtocol, tg: Optional[asyncio.TaskGroup] = None
     ) -> None:
@@ -297,6 +297,8 @@ class Session(object):
                 continue
             except InvalidTransportMessageException:
                 return
+
+            await self._update_buffer()
             if msg.controlFlags & ACK_BIT != 0:
                 self.cancel_disconnect_grace_period()
                 continue

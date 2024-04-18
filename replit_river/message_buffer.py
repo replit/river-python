@@ -11,12 +11,12 @@ class MessageBuffer:
         self.buffer: list[TransportMessage] = []
         self._lock = asyncio.Lock()
 
-    async def is_empty(self) -> bool:
+    async def empty(self) -> bool:
         """Check if the buffer is empty"""
         async with self._lock:
             return len(self.buffer) == 0
 
-    async def add(self, message: TransportMessage) -> None:
+    async def put(self, message: TransportMessage) -> None:
         """Add a message to the buffer"""
         async with self._lock:
             if len(self.buffer) >= self.max_size:
