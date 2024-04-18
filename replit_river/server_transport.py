@@ -17,6 +17,7 @@ from replit_river.messages import (
 )
 from replit_river.rpc import (
     ControlMessageHandshakeRequest,
+    ControlMessageHandshakeResponse,
     HandShakeStatus,
     TransportMessage,
 )
@@ -45,7 +46,7 @@ class ServerTransport(Transport):
                     instance_id,
                     websocket,
                     self._transport_options,
-                    self._close_session,
+                    self._delete_session,
                     self._is_server,
                     self._handlers,
                 )
@@ -59,7 +60,7 @@ class ServerTransport(Transport):
                         instance_id,
                         websocket,
                         self._transport_options,
-                        self._close_session,
+                        self._delete_session,
                         self._is_server,
                         self._handlers,
                     )
@@ -71,20 +72,18 @@ class ServerTransport(Transport):
                     except FailedSendingMessageException as e:
                         raise e
         if session_to_close:
+            logging.info("Closing stale websocket")
             await session_to_close.close()
         session = self._sessions[transport_id]
-        websocket.close_connection_task = asyncio.create_task(
-            self.on_disconnect(session)
-        )
         return session
 
-    async def establish_client_transport(
+    async def establish_session(
         self,
         websocket: WebSocketServerProtocol,
     ) -> Session:
         async for message in websocket:
             try:
-                msg = parse_transport_msg(message)
+                msg = parse_transport_msg(message, self._transport_options)
                 handshake_request = await self._build_handshake_from_request(
                     msg, websocket
                 )
@@ -93,6 +92,7 @@ class ServerTransport(Transport):
             except InvalidTransportMessageException:
                 error_msg = "Got invalid transport message, closing connection"
                 raise InvalidTransportMessageException(error_msg)
+            logging.debug("handshake request received: %r", handshake_request)
             transport_id = msg.from_
             to_id = msg.from_
             instance_id = handshake_request.instanceId
@@ -105,7 +105,6 @@ class ServerTransport(Transport):
                     "Error building sessions from handshake request : "
                     f"client_id: {transport_id}, instance_id: {instance_id}, error: {e}"
                 )
-                logging.error(error_msg)
                 raise InvalidTransportMessageException(error_msg)
             return session
         raise InvalidTransportMessageException("No handshake message received")
@@ -116,6 +115,9 @@ class ServerTransport(Transport):
         handshake_status: HandShakeStatus,
         websocket: WebSocketCommonProtocol,
     ) -> TransportMessage:
+        response = ControlMessageHandshakeResponse(
+            status=handshake_status,
+        )
         response_message = TransportMessage(
             streamId=request_message.streamId,
             id=nanoid.generate(),
@@ -124,7 +126,7 @@ class ServerTransport(Transport):
             seq=0,
             ack=0,
             controlFlags=0,
-            payload=handshake_status.model_dump(by_alias=True, exclude_none=True),
+            payload=response.model_dump(by_alias=True, exclude_none=True),
             serviceName=request_message.serviceName,
             procedureName=request_message.procedureName,
         )

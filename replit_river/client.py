@@ -10,7 +10,7 @@ from replit_river.client_session import ClientSession
 from replit_river.client_transport import ClientTransport
 from replit_river.error_schema import RiverException
 from replit_river.task_manager import BackgroundTaskManager
-from replit_river.transport import TransportOptions
+from replit_river.transport_options import TransportOptions
 
 from .rpc import (
     ErrorType,
@@ -18,10 +18,6 @@ from .rpc import (
     RequestType,
     ResponseType,
 )
-
-CROSIS_PREFIX_BYTES = b"\x00\x00"
-PID2_PREFIX_BYTES = b"\xff\xff"
-HEART_BEAT_INTERVAL_SECS = 2
 
 
 class Client:
@@ -48,6 +44,7 @@ class Client:
 
     async def _create_session(self) -> None:
         try:
+            logging.debug("Client start creating session")
             client_session = await self._transport.create_client_session(
                 self._client_id, self._server_id, self._instance_id, self._ws
             )
@@ -56,6 +53,7 @@ class Client:
             logging.error(f"Error creating session: {e}")
             return
         self._client_session = client_session
+        logging.debug("client start serving messages")
         await self._client_session.start_serve_messages()
 
     async def _wait_for_handshake(self) -> ClientSession:

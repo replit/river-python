@@ -1,9 +1,11 @@
+import asyncio
 import logging
 from typing import Dict, Mapping, Tuple
 
 from websockets.exceptions import ConnectionClosedError
 from websockets.server import WebSocketServerProtocol
 
+from replit_river.server_transport import ServerTransport
 from replit_river.transport import Transport, TransportOptions
 
 from .rpc import (
@@ -16,7 +18,7 @@ class Server(object):
         self._handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]] = {}
         self._server_id = server_id or "SERVER"
         self._transport_options = transport_options
-        self._transport = Transport(
+        self._transport = ServerTransport(
             transport_id=self._server_id,
             transport_options=transport_options,
             is_server=True,
@@ -29,15 +31,16 @@ class Server(object):
         self._handlers.update(rpc_handlers)
 
     async def serve(self, websocket: WebSocketServerProtocol) -> None:
-        logging.debug("got a client")
+        logging.debug("River server started establishing session")
         try:
-            session = await self._transport.establish_client_transport(websocket)
+            session = await self._transport.establish_session(websocket)
         except Exception as e:
             logging.error(f"Error establishing handshake, closing websocket: {e}")
             await websocket.close()
             return
+        logging.debug("River server session established, start serving messages")
         try:
-            await session.serve()
+            await session.start_serve_messages()
         except ConnectionClosedError as e:
             logging.debug(f"ConnectionClosedError while serving {e}")
         except Exception as e:

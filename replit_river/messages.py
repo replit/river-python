@@ -15,7 +15,7 @@ from replit_river.seq_manager import (
     IgnoreTransportMessageException,
     InvalidTransportMessageException,
 )
-from replit_river.transport import TransportOptions
+from replit_river.transport_options import TransportOptions
 
 
 class FailedSendingMessageException(Exception):
@@ -39,11 +39,10 @@ async def send_transport_message(
                 msg.model_dump(by_alias=True, exclude_none=True), datetime=True
             )
         )
-    except websockets.exceptions.ConnectionClosedOK:
-        raise FailedSendingMessageException(
-            "Trying to send message while connection closed "
-            f"from : {msg.from_} to {msg.to}"
-        )
+    except websockets.exceptions.ConnectionClosed as e:
+        raise e
+    except Exception as e:
+        raise FailedSendingMessageException(f"Exception during send message : {e}")
 
 
 def formatted_bytes(message: bytes) -> str:

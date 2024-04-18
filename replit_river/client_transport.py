@@ -2,6 +2,7 @@ import logging
 
 from pydantic import ValidationError
 from websockets import (
+    ConnectionClosedError,
     WebSocketCommonProtocol,
 )
 
@@ -51,7 +52,7 @@ class ClientTransport(Transport):
                 procedureName=None,
                 streamId=stream_id,
                 controlFlags=0,
-                id=0,
+                id=self.generate_nanoid(),
                 seq=0,
                 ack=0,
                 payload=handshake_request.model_dump(),
@@ -81,8 +82,13 @@ class ClientTransport(Transport):
             raise RiverException(
                 ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
             )
+        logging.debug("river client waiting for handshake response")
         while True:
-            data = await websocket.recv()
+            try:
+                data = await websocket.recv()
+            except ConnectionClosedError as e:
+                # TODO: handle this here
+                pass
             try:
                 first_message = parse_transport_msg(data, self._transport_options)
             except IgnoreTransportMessageException as e:
@@ -98,8 +104,10 @@ class ClientTransport(Transport):
             handshake_response = ControlMessageHandshakeResponse(
                 **first_message.payload
             )
-        except ValidationError:
-            raise RiverException(ERROR_HANDSHAKE, "Failed to parse handshake response")
+        except ValidationError as e:
+            raise RiverException(
+                ERROR_HANDSHAKE, f"Failed to parse handshake response : {e}"
+            )
         if not handshake_response.status.ok:
             raise RiverException(
                 ERROR_HANDSHAKE, f"Handshake failed: {handshake_response.status.reason}"

@@ -20,7 +20,7 @@ from replit_river.seq_manager import (
     SeqManager,
 )
 from replit_river.task_manager import BackgroundTaskManager
-from replit_river.transport import TransportOptions
+from replit_river.transport_options import TransportOptions
 
 from .rpc import (
     ACK_BIT,
@@ -49,7 +49,7 @@ class Session(object):
         self._to_id = to_id
         self._instance_id = instance_id
         self._handlers = handlers
-        self._websocket = websocket
+        self._ws = websocket
         self._close_session_callback = close_session_callback
         self._is_server = is_server
         self._streams: Dict[str, Channel[Any]] = {}
@@ -61,20 +61,26 @@ class Session(object):
         self.heartbeat_misses = 0
         # should disconnect after this time
         self._should_disconnect_time: Optional[float] = None
+        # asyncio.create_task(self._task_manager.create_task(self._heartbeat(self._ws)))
 
     async def replace_with_new_websocket(
         self, websocket: websockets.WebSocketCommonProtocol
     ) -> None:
-        if not self._websocket.closed:
-            await self.close_stale_connection(self._websocket)
+        logging.info("replacing with new websocket")
+        if self._ws:
+            await self.close_stale_connection(self._ws)
         self.cancel_grace()
         await self._send_buffered_messages(websocket)
-        self._websocket = websocket
+        self._ws = websocket
 
     async def _get_current_time(self) -> float:
         return asyncio.get_event_loop().time()
 
     async def begin_grace(self) -> None:
+        logging.debug(
+            f"websocket closed from {self._transport_id} to {self._to_id}, "
+            "begin grace period"
+        )
         grace_period_ms = self._transport_options.session_disconnect_grace_ms
         self._should_disconnect_time = (
             await self._get_current_time() + grace_period_ms / 1000
@@ -87,8 +93,7 @@ class Session(object):
 
     async def _heartbeat(
         self,
-        msg: TransportMessage,
-        websocket: WebSocketServerProtocol,
+        websocket: WebSocketCommonProtocol,
     ) -> None:
         logging.debug("Start heartbeat")
         while True:
@@ -111,10 +116,10 @@ class Session(object):
                 return
             try:
                 await self.send_message(
-                    msg.streamId,
+                    str(nanoid.generate()),
                     websocket,
                     {
-                        "ack": msg.id,
+                        "ack": 0,
                     },
                     ACK_BIT,
                 )
@@ -130,7 +135,10 @@ class Session(object):
             msg = await self._buffer.get()
             try:
                 await send_transport_message(msg, websocket)
-            except FailedSendingMessageException as e:
+            except (
+                websockets.exceptions.ConnectionClosed,
+                FailedSendingMessageException,
+            ) as e:
                 # Put the message back, they need to be resent
                 async with self._lock:
                     msg_not_sent = [msg]
@@ -165,11 +173,14 @@ class Session(object):
             procedure_name=procedure_name,
         )
         self._buffer.put_nowait(msg)
-        await send_transport_message(
-            msg,
-            ws,
-            prefix_bytes=self._transport_options.get_prefix_bytes(),
-        )
+        try:
+            await send_transport_message(
+                msg,
+                ws,
+                prefix_bytes=self._transport_options.get_prefix_bytes(),
+            )
+        except websockets.ConnectionClosed:
+            await self.begin_grace()
 
     async def send_responses(
         self,
@@ -189,6 +200,10 @@ class Session(object):
         await self.send_message(stream_id, ws, {"type": "CLOSE"}, STREAM_CLOSED_BIT)
 
     async def close_stale_connection(self, websocket: WebSocketCommonProtocol) -> None:
+        logging.info(
+            f"river session from {self._transport_id} to {self._to_id} "
+            "closing stale connection"
+        )
         await websocket.close()
 
     async def _handle_msg_server(
@@ -231,7 +246,7 @@ class Session(object):
             )
             await self._task_manager.create_task(
                 self.send_responses(
-                    msg.streamId, self._websocket, output_stream, is_streaming_output
+                    msg.streamId, self._ws, output_stream, is_streaming_output
                 ),
                 tg,
             )
@@ -257,6 +272,10 @@ class Session(object):
     async def handle_messages_from_ws(
         self, websocket: WebSocketCommonProtocol, tg: Optional[asyncio.TaskGroup] = None
     ) -> None:
+        logging.debug(
+            f'{"server" if self._is_server else "client"} start handling messages from'
+            " ws"
+        )
         async for message in websocket:
             try:
                 msg = parse_transport_msg(message, self._transport_options)
@@ -298,19 +317,15 @@ class Session(object):
         try:
             async with asyncio.TaskGroup() as tg:
                 try:
-                    await self.handle_messages_from_ws(self._websocket, tg)
+                    await self.handle_messages_from_ws(self._ws, tg)
                 except ConnectionClosedError as e:
-                    # This is fine.
+                    await self.begin_grace()
                     logging.debug(f"ConnectionClosedError while serving: {e}")
-                    pass
                 except FailedSendingMessageException as e:
                     # Expected error if the connection is closed.
                     logging.debug(f"FailedSendingMessageException while serving: {e}")
-                    pass
                 except Exception:
                     logging.exception("caught exception at message iterator")
-                finally:
-                    await self.close()
         except ExceptionGroup as eg:
             _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosedError))
             if unhandled:
@@ -320,14 +335,19 @@ class Session(object):
 
     async def close_websocket(self) -> None:
         """Close the websocket connection."""
-        await self._websocket.close()
+        logging.info(
+            f"Closing websocket connection from {self._transport_id} to {self._to_id}"
+        )
+        if self._ws:
+            await self._ws.close()
 
     async def close(self) -> None:
         """Close the session and all associated streams."""
+        logging.info(f"Closing session from {self._transport_id} to {self._to_id}")
         for previous_input in self._streams.values():
             previous_input.close()
         self._streams.clear()
         await self._task_manager.cancel_all_tasks()
-        if self._websocket:
-            await self._websocket.close()
+        if self._ws:
+            await self._ws.close()
         await self._close_session_callback(self)
