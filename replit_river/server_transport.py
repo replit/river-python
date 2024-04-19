@@ -93,8 +93,8 @@ class ServerTransport(Transport):
                 error_msg = "Got invalid transport message, closing connection"
                 raise InvalidTransportMessageException(error_msg)
             logging.debug("handshake success on server: %r", handshake_request)
-            transport_id = msg.from_
-            to_id = msg.to
+            transport_id = msg.to
+            to_id = msg.from_
             instance_id = handshake_request.instanceId
             try:
                 session = await self.get_or_create_session(
