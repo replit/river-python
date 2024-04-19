@@ -77,16 +77,14 @@ class ServerTransport(Transport):
         session = self._sessions[to_id]
         return session
 
-    async def establish_session(
+    async def handshake_to_get_session(
         self,
         websocket: WebSocketServerProtocol,
     ) -> Session:
         async for message in websocket:
             try:
                 msg = parse_transport_msg(message, self._transport_options)
-                handshake_request = await self._build_handshake_from_request(
-                    msg, websocket
-                )
+                handshake_request = await self._establish_handshake(msg, websocket)
             except IgnoreTransportMessageException:
                 continue
             except InvalidTransportMessageException:
@@ -133,7 +131,7 @@ class ServerTransport(Transport):
         await send_transport_message(response_message, websocket)
         return response_message
 
-    async def _build_handshake_from_request(
+    async def _establish_handshake(
         self, request_message: TransportMessage, websocket: WebSocketCommonProtocol
     ) -> ControlMessageHandshakeRequest:
         try:
@@ -159,6 +157,13 @@ class ServerTransport(Transport):
                 + f"{handshake_request.protocolVersion} != {PROTOCOL_VERSION}"
             )
             raise InvalidTransportMessageException(error_str)
+        if request_message.to != self._transport_id:
+            await self._send_handshake_response(
+                request_message,
+                HandShakeStatus(ok=False, reason="handshake request to wrong server"),
+                websocket,
+            )
+            raise InvalidTransportMessageException("handshake request to wrong server")
         await self._send_handshake_response(
             request_message,
             HandShakeStatus(ok=True, instanceId=self._transport_id),

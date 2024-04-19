@@ -1,4 +1,5 @@
 import logging
+from typing import Any, Callable, Coroutine, Optional
 
 import msgpack  # type: ignore
 import websockets
@@ -29,7 +30,10 @@ PID2_PREFIX_BYTES = b"\xff\xff"
 
 
 async def send_transport_message(
-    msg: TransportMessage, ws: WebSocketCommonProtocol, prefix_bytes: bytes = b""
+    msg: TransportMessage,
+    ws: WebSocketCommonProtocol,
+    websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
+    prefix_bytes: bytes = b"",
 ) -> None:
     logging.debug("sent a message %r", msg)
     try:
@@ -40,6 +44,7 @@ async def send_transport_message(
             )
         )
     except websockets.exceptions.ConnectionClosed as e:
+        await websocket_closed_callback()
         raise e
     except Exception as e:
         raise FailedSendingMessageException(f"Exception during send message : {e}")

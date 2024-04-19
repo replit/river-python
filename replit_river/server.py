@@ -34,16 +34,24 @@ class Server(object):
     async def serve(self, websocket: WebSocketServerProtocol) -> None:
         logging.debug("River server started establishing session")
         try:
-            session = await self._transport.establish_session(websocket)
+            session = await self._transport.handshake_to_get_session(websocket)
         except Exception as e:
             logging.error(f"Error establishing handshake, closing websocket: {e}")
+            # TODO: should i close the ws if handshake failed?
             await websocket.close()
             return
         logging.debug("River server session established, start serving messages")
+
         try:
-            await session._serve()
+            # Session serve will be closed in two cases
+            #   1. websocket is closed
+            #   2. exception thrown
+            # session should be kept in order to be reused by the reconnect within the
+            # grace period.
+            await session.serve()
         except ConnectionClosedError as e:
             logging.debug(f"ConnectionClosedError while serving {e}")
+            # We don't have to close the websocket here, it is already closed.
         except Exception as e:
             logging.error(f"River transport error in server {self._server_id}: {e}")
             await websocket.close()

@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Optional
 from replit_river.rpc import TransportMessage
 
@@ -20,7 +21,8 @@ class MessageBuffer:
         """Add a message to the buffer"""
         async with self._lock:
             if len(self.buffer) >= self.max_size:
-                self.buffer.pop(0)
+                logging.error("Buffer is full, dropping message")
+                raise ValueError("Buffer is full")
             self.buffer.append(message)
 
     async def peek(self) -> Optional[TransportMessage]:

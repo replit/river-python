@@ -196,7 +196,7 @@ def rpc_method_handler(
                 }
             )
         except Exception as e:
-            logging.exception("Uncaught exception")
+            logging.exception("Uncaught exception during river rpc")
             await output.put(
                 {
                     "ok": False,
@@ -243,7 +243,7 @@ def subscription_method_handler(
                 }
             )
         except Exception as e:
-            logging.exception("Uncaught exception in subscription")
+            logging.exception("Uncaught exception in river server subscription")
             await output.put(
                 {
                     "ok": False,
@@ -290,7 +290,7 @@ def upload_method_handler(
                         get_response_or_error_payload(response, response_serializer)
                     )
                 except Exception as e:
-                    print("upload caught exception", e)
+                    logging.exception("Uncaught exception in river server upload")
                     await output.put(
                         {
                             "ok": False,
@@ -362,7 +362,7 @@ def stream_method_handler(
             convert_outputs_task = asyncio.create_task(_convert_outputs())
             await asyncio.wait((convert_inputs_task, convert_outputs_task))
         except grpc.RpcError:
-            logging.exception("Uncaught exception in stream")
+            logging.exception("RPC exception in stream")
             await output.put(
                 {
                     "ok": False,

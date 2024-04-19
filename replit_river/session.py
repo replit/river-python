@@ -4,7 +4,7 @@ from typing import Any, Callable, Coroutine, Dict, Optional, Tuple
 
 import nanoid  # type: ignore
 import websockets
-from aiochannel import Channel
+from aiochannel import Channel, ChannelClosed
 from websockets import WebSocketCommonProtocol
 from websockets.exceptions import ConnectionClosedError
 from websockets.server import WebSocketServerProtocol
@@ -31,11 +31,6 @@ from .rpc import (
     TransportMessage,
 )
 
-SEND_TRANSPORT_MESSAGE_EXCEPTIONS = (
-    websockets.exceptions.ConnectionClosed,
-    FailedSendingMessageException,
-)
-
 
 class Session(object):
     """A transport object that handles the websocket connection with a client."""
@@ -55,47 +50,123 @@ class Session(object):
         self._to_id = to_id
         self._instance_id = instance_id
         self._handlers = handlers
+        # ws should only be set while session creation, and replacing
+        self._ws_lock = asyncio.Lock()
         self._ws = websocket
+
         self._close_session_callback = close_session_callback
         self._is_server = is_server
         self._streams: Dict[str, Channel[Any]] = {}
         self._transport_options = transport_options
         self._seq_manager = SeqManager()
+        self._stream_lock = asyncio.Lock()
         self._task_manager = BackgroundTaskManager()
         self._buffer = MessageBuffer()
         self.heartbeat_misses = 0
         # should disconnect after this time
-        self._disconnect_after_this_time: Optional[float] = None
+        self._close_session_after_time_secs: Optional[float] = None
         asyncio.create_task(self._task_manager.create_task(self._heartbeat(self._ws)))
+
+    async def serve(self) -> None:
+        """Serve messages from the websocket."""
+        try:
+            async with asyncio.TaskGroup() as tg:
+                try:
+                    await self._handle_messages_from_ws(self._ws, tg)
+                except ConnectionClosedError as e:
+                    await self.begin_close_session_countdown()
+                    logging.debug(f"ConnectionClosedError while serving: {e}")
+                except FailedSendingMessageException as e:
+                    # Expected error if the connection is closed.
+                    logging.debug(f"FailedSendingMessageException while serving: {e}")
+                except Exception:
+                    logging.exception("caught exception at message iterator")
+        except ExceptionGroup as eg:
+            _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosedError))
+            if unhandled:
+                raise ExceptionGroup(
+                    "Unhandled exceptions on River server", unhandled.exceptions
+                )
+
+    async def _handle_messages_from_ws(
+        self, websocket: WebSocketCommonProtocol, tg: Optional[asyncio.TaskGroup] = None
+    ) -> None:
+        logging.debug(
+            f'{"server" if self._is_server else "client"} start handling messages from'
+            " ws"
+        )
+        try:
+            async for message in websocket:
+                try:
+                    msg = parse_transport_msg(message, self._transport_options)
+
+                    logging.debug("got a message %r", msg)
+
+                    await self._seq_manager.check_seq_and_update(msg)
+                    await self._update_msg_buffer()
+                    # We get valid message, we should cancel the session close countdown
+                    self.reset_session_close_countdown()
+                    if msg.controlFlags & ACK_BIT != 0:
+                        continue
+                    async with self._stream_lock:
+                        stream = self._streams.get(msg.streamId, None)
+                    if msg.controlFlags & STREAM_OPEN_BIT == 0:
+                        if not stream:
+                            logging.warning("no stream for %s", msg.streamId)
+                            raise IgnoreTransportMessageException(
+                                "no stream for message, ignoring"
+                            )
+                        await self._add_msg_to_stream(msg, stream)
+                    else:
+                        stream = await self._open_stream_and_call_handler(
+                            msg, stream, tg
+                        )
+
+                    if msg.controlFlags & STREAM_CLOSED_BIT != 0:
+                        if stream:
+                            stream.close()
+                        async with self._stream_lock:
+                            del self._streams[msg.streamId]
+                except IgnoreTransportMessageException as e:
+                    logging.debug(f"Ignoring transport message : {e}")
+                    continue
+                except InvalidTransportMessageException as e:
+                    logging.error(
+                        f"Got invalid transport message, closing session : {e}"
+                    )
+                    await self.close()
+                    return
+        except ConnectionClosedError as e:
+            raise e
 
     async def replace_with_new_websocket(
         self, websocket: websockets.WebSocketCommonProtocol
     ) -> None:
         logging.info("replacing with new websocket")
-        if self._ws:
-            await self.close_stale_connection(self._ws)
-        self.cancel_disconnect_grace_period()
+        await self.close_websocket(self._ws)
+        self.reset_session_close_countdown()
         await self._send_buffered_messages(websocket)
-        self._ws = websocket
+        async with self._ws_lock:
+            self._ws = websocket
 
     async def _get_current_time(self) -> float:
         return asyncio.get_event_loop().time()
 
-    async def begin_grace(self) -> None:
-        if self._disconnect_after_this_time:
+    async def begin_close_session_countdown(self) -> None:
+        if self._close_session_after_time_secs:
             return
         logging.debug(
             f"websocket closed from {self._transport_id} to {self._to_id}, "
             "begin grace period"
         )
         grace_period_ms = self._transport_options.session_disconnect_grace_ms
-        self._disconnect_after_this_time = (
+        self._close_session_after_time_secs = (
             await self._get_current_time() + grace_period_ms / 1000
         )
 
-    def cancel_disconnect_grace_period(self) -> None:
+    def reset_session_close_countdown(self) -> None:
         self.heartbeat_misses = 0
-        self._disconnect_after_this_time = None
+        self._close_session_after_time_secs = None
         logging.info(f"Grace period cancelled for session to {self._transport_id}")
 
     async def _heartbeat(
@@ -106,19 +177,19 @@ class Session(object):
         while True:
             await asyncio.sleep(self._transport_options.heartbeat_ms / 1000)
             current_time = await self._get_current_time()
-            if self._disconnect_after_this_time:
-                if current_time > self._disconnect_after_this_time:
+            if self._close_session_after_time_secs:
+                if current_time > self._close_session_after_time_secs:
                     logging.info(
                         "Grace period ended for :"
-                        f" {self._transport_id}, closing websocket"
+                        f" {self._transport_id}, closing session"
                     )
                     await self.close()
                     return
                 continue
             if self.heartbeat_misses >= self._transport_options.heartbeats_until_dead:
                 logging.info("Heartbeat timed out for :" f" {self._transport_id}")
-                await self.close_stale_connection(websocket)
-                await self.begin_grace()
+                await self.close_websocket(websocket)
+                await self.begin_close_session_countdown()
                 return
             try:
                 await self.send_message(
@@ -130,8 +201,8 @@ class Session(object):
                     ACK_BIT,
                 )
                 self.heartbeat_misses += 1
-            except ConnectionClosedError:
-                logging.debug("heartbeat failed")
+            except FailedSendingMessageException:
+                logging.error("heartbeat failed")
                 return
 
     async def _send_buffered_messages(
@@ -142,11 +213,26 @@ class Session(object):
             if not msg:
                 continue
             try:
-                await send_transport_message(msg, websocket)
-            except SEND_TRANSPORT_MESSAGE_EXCEPTIONS as e:
-                raise FailedSendingMessageException(
-                    f"Failed to resend message during reconnecting : {e}"
+                await self._send_transport_message(
+                    msg,
+                    websocket,
                 )
+            except FailedSendingMessageException as e:
+                logging.error(f"Error while sending buffered messages : {e}")
+                break
+
+    async def _send_transport_message(
+        self,
+        msg: TransportMessage,
+        ws: WebSocketCommonProtocol,
+        prefix_bytes: bytes = b"",
+    ) -> None:
+        try:
+            await send_transport_message(
+                msg, ws, self.begin_close_session_countdown, prefix_bytes
+            )
+        except FailedSendingMessageException as e:
+            raise e
 
     async def send_message(
         self,
@@ -170,187 +256,135 @@ class Session(object):
             serviceName=service_name,
             procedureName=procedure_name,
         )
-        await self._buffer.put(msg)
         try:
-            await send_transport_message(
+            await self._buffer.put(msg)
+        except Exception:
+            # We should close the session when there are too many messages in buffer
+            await self.close()
+            return
+        try:
+            await self._send_transport_message(
                 msg,
                 ws,
                 prefix_bytes=self._transport_options.get_prefix_bytes(),
             )
-        except websockets.ConnectionClosed:
-            await self.begin_grace()
+        except FailedSendingMessageException as e:
+            raise e
 
     async def send_responses(
         self,
         stream_id: str,
         ws: WebSocketCommonProtocol,
         output: Channel[Any],
-        is_stream: bool,
+        is_streaming_output: bool,
     ) -> None:
         """Send serialized messages to the websockets."""
         logging.debug("sent response of stream %r", stream_id)
-        async for payload in output:
-            if not is_stream:
-                await self.send_message(stream_id, ws, payload, STREAM_CLOSED_BIT)
-                return
-            await self.send_message(stream_id, ws, payload)
-        logging.debug("sent an end of stream %r", stream_id)
-        await self.send_message(stream_id, ws, {"type": "CLOSE"}, STREAM_CLOSED_BIT)
+        try:
+            async for payload in output:
+                if not is_streaming_output:
+                    await self.send_message(stream_id, ws, payload, STREAM_CLOSED_BIT)
+                    return
+                await self.send_message(stream_id, ws, payload)
+            logging.debug("sent an end of stream %r", stream_id)
+            await self.send_message(stream_id, ws, {"type": "CLOSE"}, STREAM_CLOSED_BIT)
+        except FailedSendingMessageException as e:
+            logging.error(f"Error while sending responses back : {e}")
+        except (RuntimeError, ChannelClosed) as e:
+            logging.error(f"Error while sending responses back : {e}")
+        except Exception as e:
+            logging.error(f"Unknown error while river sending responses back : {e}")
 
-    async def close_stale_connection(self, websocket: WebSocketCommonProtocol) -> None:
+    async def close_websocket(self, websocket: WebSocketCommonProtocol) -> None:
         logging.info(
-            f"river session from {self._transport_id} to {self._to_id} "
-            "closing stale connection"
+            f"River session from {self._transport_id} to {self._to_id} "
+            "closing websocket"
         )
-        if websocket:
-            await websocket.close()
+        async with self._ws_lock:
+            if websocket:
+                await websocket.close()
 
-    async def _handle_msg_server(
+    async def _open_stream_and_call_handler(
         self,
         msg: TransportMessage,
         stream: Optional[Channel],
         tg: Optional[asyncio.TaskGroup],
-    ) -> None:
-        if msg.controlFlags & STREAM_OPEN_BIT != 0:
-            if not msg.serviceName or not msg.procedureName:
-                logging.warning("no service or procedure name in %r", msg)
-                return
-            key = (msg.serviceName, msg.procedureName)
-            handler = self._handlers.get(key, None)
-            if not handler:
-                logging.exception(
-                    "No handler for %s handlers : " f"{self._handlers.keys()}",
-                    key,
-                )
-                return
-            method_type, handler_func = handler
-            is_streaming_output = method_type in (
-                "subscription-stream",  # subscription
-                "stream",
+    ) -> Channel:
+        if not self._is_server:
+            raise InvalidTransportMessageException(
+                "Client should not receive stream open bit"
             )
-            is_streaming_input = method_type in (
-                "upload-stream",  # subscription
-                "stream",
+        if not msg.serviceName or not msg.procedureName:
+            raise IgnoreTransportMessageException(
+                f"Service name or procedure name is missing in the message {msg}"
             )
-            # New channel pair.
-            input_stream: Channel[Any] = Channel(1024 if is_streaming_input else 1)
-            output_stream: Channel[Any] = Channel(1024 if is_streaming_output else 1)
+        key = (msg.serviceName, msg.procedureName)
+        handler = self._handlers.get(key, None)
+        if not handler:
+            raise IgnoreTransportMessageException(
+                f"No handler for {key} handlers : " f"{self._handlers.keys()}"
+            )
+        method_type, handler_func = handler
+        is_streaming_output = method_type in (
+            "subscription-stream",  # subscription
+            "stream",
+        )
+        is_streaming_input = method_type in (
+            "upload-stream",  # subscription
+            "stream",
+        )
+        # New channel pair.
+        input_stream: Channel[Any] = Channel(1024 if is_streaming_input else 1)
+        output_stream: Channel[Any] = Channel(1024 if is_streaming_output else 1)
+        try:
             await input_stream.put(msg.payload)
-            if not stream:
-                # We'll need to save it for later.
+        except (RuntimeError, ChannelClosed) as e:
+            raise InvalidTransportMessageException(e)
+        if not stream:
+            async with self._stream_lock:
                 self._streams[msg.streamId] = input_stream
-            # Start the handler.
-            await self._task_manager.create_task(
-                handler_func(msg.from_, input_stream, output_stream), tg
-            )
-            await self._task_manager.create_task(
-                self.send_responses(
-                    msg.streamId, self._ws, output_stream, is_streaming_output
-                ),
-                tg,
-            )
-
-        else:
-            await self._add_msg_to_stream(msg, stream)
+        # Start the handler.
+        await self._task_manager.create_task(
+            handler_func(msg.from_, input_stream, output_stream), tg
+        )
+        await self._task_manager.create_task(
+            self.send_responses(
+                msg.streamId, self._ws, output_stream, is_streaming_output
+            ),
+            tg,
+        )
+        return input_stream
 
     async def _add_msg_to_stream(
         self,
         msg: TransportMessage,
-        stream: Optional[Channel],
+        stream: Channel,
     ) -> None:
-        if not stream:
-            logging.warning("no stream for %s", msg.streamId)
-            raise IgnoreTransportMessageException("no stream for message, ignoring")
-        if not (
+        if (
             msg.controlFlags & STREAM_CLOSED_BIT != 0
             and msg.payload.get("type", None) == "CLOSE"
         ):
             # close message is not sent to the stream
+            return
+        try:
             await stream.put(msg.payload)
+        except (RuntimeError, ChannelClosed) as e:
+            raise InvalidTransportMessageException(e)
 
-    async def _update_buffer(self) -> None:
+    async def _update_msg_buffer(self) -> None:
         await self._buffer.remove_old_messages(self._seq_manager.receiver_ack)
 
-    async def handle_messages_from_ws(
-        self, websocket: WebSocketCommonProtocol, tg: Optional[asyncio.TaskGroup] = None
-    ) -> None:
-        logging.debug(
-            f'{"server" if self._is_server else "client"} start handling messages from'
-            " ws"
-        )
-        async for message in websocket:
-            try:
-                msg = parse_transport_msg(message, self._transport_options)
-            except IgnoreTransportMessageException as e:
-                logging.debug(f"Ignoring transport message : {e}")
-                continue
-            except InvalidTransportMessageException:
-                logging.error("Got invalid transport message, closing connection")
-                await self.close()
-                return
-
-            logging.debug("got a message %r", msg)
-
-            try:
-                await self._seq_manager.check_seq_and_update(msg)
-            except IgnoreTransportMessageException:
-                continue
-            except InvalidTransportMessageException:
-                return
-
-            await self._update_buffer()
-            if msg.controlFlags & ACK_BIT != 0:
-                self.cancel_disconnect_grace_period()
-                continue
-
-            stream = self._streams.get(msg.streamId, None)
-            if self._is_server:
-                await self._handle_msg_server(msg, stream, tg)
-            else:
-                await self._add_msg_to_stream(msg, stream)
-            if msg.controlFlags & STREAM_CLOSED_BIT != 0:
-                if stream:
-                    stream.close()
-                del self._streams[msg.streamId]
-
     async def start_serve_messages(self) -> None:
-        await self._task_manager.create_task(self._serve())
-
-    async def _serve(self) -> None:
-        try:
-            async with asyncio.TaskGroup() as tg:
-                try:
-                    await self.handle_messages_from_ws(self._ws, tg)
-                except ConnectionClosedError as e:
-                    await self.begin_grace()
-                    logging.debug(f"ConnectionClosedError while serving: {e}")
-                except FailedSendingMessageException as e:
-                    # Expected error if the connection is closed.
-                    logging.debug(f"FailedSendingMessageException while serving: {e}")
-                except Exception:
-                    logging.exception("caught exception at message iterator")
-        except ExceptionGroup as eg:
-            _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosedError))
-            if unhandled:
-                raise ExceptionGroup(
-                    "Unhandled exceptions on River server", unhandled.exceptions
-                )
-
-    async def close_websocket(self) -> None:
-        """Close the websocket connection."""
-        logging.info(
-            f"Closing websocket connection from {self._transport_id} to {self._to_id}"
-        )
-        if self._ws:
-            await self._ws.close()
+        await self._task_manager.create_task(self.serve())
 
     async def close(self) -> None:
         """Close the session and all associated streams."""
         logging.info(f"Closing session from {self._transport_id} to {self._to_id}")
         for previous_input in self._streams.values():
             previous_input.close()
-        self._streams.clear()
+        async with self._stream_lock:
+            self._streams.clear()
         await self._task_manager.cancel_all_tasks()
-        if self._ws:
-            await self._ws.close()
+        await self.close_websocket(self._ws)
+        # Clear the session in transports
         await self._close_session_callback(self)
