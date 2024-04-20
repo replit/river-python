@@ -26,6 +26,7 @@ class SeqManager:
         self._ack_lock = asyncio.Lock()
         self.ack = 0
         self.receiver_ack = 0
+        self.next_send_seq = 0
 
     async def get_seq_and_increment(self) -> int:
         """Get the current sequence number and increment it.

@@ -29,6 +29,9 @@ from .rpc import (
     GenericRpcHandler,
     TransportMessage,
 )
+from replit_river.rpc import (
+    ControlMessageHandshakeRequest,
+)
 
 
 class SessionState(enum.Enum):
@@ -53,6 +56,7 @@ class Session(object):
         close_websocket_callback: Optional[
             Callable[["Session"], Coroutine[Any, Any, None]]
         ] = None,
+        ack_id: str = "0",
     ) -> None:
         self._transport_id = transport_id
         self._to_id = to_id
@@ -77,6 +81,7 @@ class Session(object):
         # should disconnect after this time
         self._close_session_after_time_secs: Optional[float] = None
         asyncio.create_task(self._task_manager.create_task(self._heartbeat(self._ws)))
+        self.ack_id = ack_id
 
     def is_session_open(self) -> bool:
         return self._state == SessionState.ACTIVE
@@ -212,11 +217,16 @@ class Session(object):
                 # session is closing, no need to send heartbeat
                 continue
             try:
+                logging.error(
+                    f'sending heartbeat to "%s", current_time : {current_time}, self._transport_options.heartbeat_ms: {self._transport_options.heartbeat_ms}',
+                    self._to_id,
+                )
                 await self.send_message(
                     str(nanoid.generate()),
                     websocket,
                     {
-                        "ack": 0,
+                        # TODO: remove this
+                        "ack": self.ack_id,
                     },
                     ACK_BIT,
                 )
@@ -228,14 +238,14 @@ class Session(object):
     async def _send_buffered_messages(
         self, websocket: websockets.WebSocketCommonProtocol
     ) -> None:
-        while not await self._buffer.empty():
-            msg = await self._buffer.peek()
-            if not msg:
-                continue
+        logging.debug(f"Sending buffered messages to {self._to_id}")
+        buffered_messages = list(self._buffer.buffer)
+        for msg in buffered_messages:
             try:
                 await self._send_transport_message(
                     msg,
                     websocket,
+                    prefix_bytes=self._transport_options.get_prefix_bytes(),
                 )
             except ConnectionClosed as e:
                 logging.info(f"Connection closed while sending buffered messages : {e}")
@@ -282,12 +292,6 @@ class Session(object):
             procedureName=procedure_name,
         )
         try:
-            await self._buffer.put(msg)
-        except Exception:
-            # We should close the session when there are too many messages in buffer
-            await self.close()
-            return
-        try:
             await self._send_transport_message(
                 msg,
                 ws,
@@ -297,6 +301,13 @@ class Session(object):
             raise FailedSendingMessageException(e)
         except FailedSendingMessageException as e:
             raise e
+        finally:
+            try:
+                await self._buffer.put(msg)
+            except Exception:
+                # We should close the session when there are too many messages in buffer
+                await self.close()
+                return
 
     async def send_responses(
         self,
