@@ -128,7 +128,13 @@ class ServerTransport(Transport):
             serviceName=request_message.serviceName,
             procedureName=request_message.procedureName,
         )
-        await send_transport_message(response_message, websocket)
+
+        async def websocket_closed_callback() -> None:
+            logging.error("websocket closed before handshake response")
+
+        await send_transport_message(
+            response_message, websocket, websocket_closed_callback
+        )
         return response_message
 
     async def _establish_handshake(

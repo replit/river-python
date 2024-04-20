@@ -1,4 +1,5 @@
 import asyncio
+import enum
 import logging
 from typing import Any, Callable, Coroutine, Dict, Optional, Tuple
 
@@ -7,7 +8,6 @@ import websockets
 from aiochannel import Channel, ChannelClosed
 from websockets import WebSocketCommonProtocol
 from websockets.exceptions import ConnectionClosedError
-from websockets.server import WebSocketServerProtocol
 
 from replit_river.message_buffer import MessageBuffer
 from replit_river.messages import (
@@ -32,6 +32,12 @@ from .rpc import (
 )
 
 
+class SessionState(enum.Enum):
+    ACTIVE = 0
+    CLOSING = 1
+    CLOSED = 2
+
+
 class Session(object):
     """A transport object that handles the websocket connection with a client."""
 
@@ -45,14 +51,20 @@ class Session(object):
         close_session_callback: Callable[["Session"], Coroutine[Any, Any, None]],
         is_server: bool,
         handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]],
+        close_websocket_callback: Optional[
+            Callable[["Session"], Coroutine[Any, Any, None]]
+        ] = None,
     ) -> None:
         self._transport_id = transport_id
         self._to_id = to_id
         self._instance_id = instance_id
         self._handlers = handlers
-        # ws should only be set while session creation, and replacing
+
+        self._state = SessionState.ACTIVE
+
         self._ws_lock = asyncio.Lock()
         self._ws = websocket
+        self._close_websocket_callback = close_websocket_callback
 
         self._close_session_callback = close_session_callback
         self._is_server = is_server
@@ -66,6 +78,13 @@ class Session(object):
         # should disconnect after this time
         self._close_session_after_time_secs: Optional[float] = None
         asyncio.create_task(self._task_manager.create_task(self._heartbeat(self._ws)))
+
+    async def is_session_open(self) -> bool:
+        return self._state == SessionState.ACTIVE
+
+    async def is_websocket_open(self) -> bool:
+        async with self._ws_lock:
+            return self._ws.open
 
     async def serve(self) -> None:
         """Serve messages from the websocket."""
@@ -301,6 +320,8 @@ class Session(object):
             "closing websocket"
         )
         async with self._ws_lock:
+            if self._close_websocket_callback:
+                await self._close_websocket_callback(self)
             if websocket:
                 await websocket.close()
 
@@ -380,6 +401,9 @@ class Session(object):
     async def close(self) -> None:
         """Close the session and all associated streams."""
         logging.info(f"Closing session from {self._transport_id} to {self._to_id}")
+        if self._state == SessionState.CLOSING or self._state == SessionState.CLOSED:
+            return
+        self._state = SessionState.CLOSING
         for previous_input in self._streams.values():
             previous_input.close()
         async with self._stream_lock:
@@ -388,3 +412,4 @@ class Session(object):
         await self.close_websocket(self._ws)
         # Clear the session in transports
         await self._close_session_callback(self)
+        self._state = SessionState.CLOSED

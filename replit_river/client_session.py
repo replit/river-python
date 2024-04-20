@@ -19,6 +19,7 @@ from .rpc import (
 
 
 class ClientSession(Session):
+
     async def send_rpc(
         self,
         service_name: str,
