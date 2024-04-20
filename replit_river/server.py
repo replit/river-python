@@ -1,7 +1,7 @@
 import logging
 from typing import Mapping, Tuple
 
-from websockets.exceptions import ConnectionClosedError
+from websockets.exceptions import ConnectionClosed
 from websockets.server import WebSocketServerProtocol
 
 from replit_river.server_transport import ServerTransport
@@ -23,7 +23,9 @@ class Server(object):
         )
 
     async def close(self) -> None:
+        logging.info(f"river server {self._server_id} start closing")
         await self._transport.close_all_sessions()
+        logging.info(f"river server {self._server_id} closed")
 
     def add_rpc_handlers(
         self,
@@ -37,7 +39,6 @@ class Server(object):
             session = await self._transport.handshake_to_get_session(websocket)
         except Exception as e:
             logging.error(f"Error establishing handshake, closing websocket: {e}")
-            # TODO: should i close the ws if handshake failed?
             await websocket.close()
             return
         logging.debug("River server session established, start serving messages")
@@ -49,8 +50,8 @@ class Server(object):
             # session should be kept in order to be reused by the reconnect within the
             # grace period.
             await session.serve()
-        except ConnectionClosedError as e:
-            logging.debug(f"ConnectionClosedError while serving {e}")
+        except ConnectionClosed as e:
+            logging.debug(f"ConnectionClosed while serving {e}")
             # We don't have to close the websocket here, it is already closed.
         except Exception as e:
             logging.error(f"River transport error in server {self._server_id}: {e}")

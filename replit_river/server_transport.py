@@ -27,6 +27,7 @@ from replit_river.seq_manager import (
 )
 from replit_river.session import Session
 from replit_river.transport import PROTOCOL_VERSION, Transport
+from websockets.exceptions import ConnectionClosed
 
 
 class ServerTransport(Transport):
@@ -90,6 +91,8 @@ class ServerTransport(Transport):
             except InvalidTransportMessageException:
                 error_msg = "Got invalid transport message, closing connection"
                 raise InvalidTransportMessageException(error_msg)
+            except FailedSendingMessageException as e:
+                raise e
             logging.debug("handshake success on server: %r", handshake_request)
             transport_id = msg.to
             to_id = msg.from_
@@ -132,9 +135,14 @@ class ServerTransport(Transport):
         async def websocket_closed_callback() -> None:
             logging.error("websocket closed before handshake response")
 
-        await send_transport_message(
-            response_message, websocket, websocket_closed_callback
-        )
+        try:
+            await send_transport_message(
+                response_message, websocket, websocket_closed_callback
+            )
+        except (FailedSendingMessageException, ConnectionClosed) as e:
+            raise FailedSendingMessageException(
+                f"Failed sending handshake response: {e}"
+            )
         return response_message
 
     async def _establish_handshake(

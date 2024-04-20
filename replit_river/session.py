@@ -2,12 +2,11 @@ import asyncio
 import enum
 import logging
 from typing import Any, Callable, Coroutine, Dict, Optional, Tuple
-
 import nanoid  # type: ignore
 import websockets
 from aiochannel import Channel, ChannelClosed
 from websockets import WebSocketCommonProtocol
-from websockets.exceptions import ConnectionClosedError
+from websockets.exceptions import ConnectionClosed
 
 from replit_river.message_buffer import MessageBuffer
 from replit_river.messages import (
@@ -79,7 +78,7 @@ class Session(object):
         self._close_session_after_time_secs: Optional[float] = None
         asyncio.create_task(self._task_manager.create_task(self._heartbeat(self._ws)))
 
-    async def is_session_open(self) -> bool:
+    def is_session_open(self) -> bool:
         return self._state == SessionState.ACTIVE
 
     async def is_websocket_open(self) -> bool:
@@ -92,16 +91,16 @@ class Session(object):
             async with asyncio.TaskGroup() as tg:
                 try:
                     await self._handle_messages_from_ws(self._ws, tg)
-                except ConnectionClosedError as e:
+                except ConnectionClosed as e:
                     await self.begin_close_session_countdown()
-                    logging.debug(f"ConnectionClosedError while serving: {e}")
+                    logging.debug(f"ConnectionClosed while serving: {e}")
                 except FailedSendingMessageException as e:
                     # Expected error if the connection is closed.
                     logging.debug(f"FailedSendingMessageException while serving: {e}")
                 except Exception:
                     logging.exception("caught exception at message iterator")
         except ExceptionGroup as eg:
-            _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosedError))
+            _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))
             if unhandled:
                 raise ExceptionGroup(
                     "Unhandled exceptions on River server", unhandled.exceptions
@@ -119,7 +118,7 @@ class Session(object):
                 try:
                     msg = parse_transport_msg(message, self._transport_options)
 
-                    logging.debug("got a message %r", msg)
+                    logging.debug(f"{self._transport_id} got a message %r", msg)
 
                     await self._seq_manager.check_seq_and_update(msg)
                     await self._update_msg_buffer()
@@ -155,7 +154,7 @@ class Session(object):
                     )
                     await self.close()
                     return
-        except ConnectionClosedError as e:
+        except ConnectionClosed as e:
             raise e
 
     async def replace_with_new_websocket(
@@ -206,10 +205,12 @@ class Session(object):
                     return
                 continue
             if self.heartbeat_misses >= self._transport_options.heartbeats_until_dead:
-                logging.info("Heartbeat timed out for :" f" {self._transport_id}")
                 await self.close_websocket(websocket)
                 await self.begin_close_session_countdown()
                 return
+            if self._state != SessionState.ACTIVE:
+                # session is closing, no need to send heartbeat
+                continue
             try:
                 await self.send_message(
                     str(nanoid.generate()),
@@ -221,8 +222,8 @@ class Session(object):
                 )
                 self.heartbeat_misses += 1
             except FailedSendingMessageException:
-                logging.error("heartbeat failed")
-                return
+                # this is expected during websocket closed period
+                continue
 
     async def _send_buffered_messages(
         self, websocket: websockets.WebSocketCommonProtocol
@@ -236,6 +237,9 @@ class Session(object):
                     msg,
                     websocket,
                 )
+            except ConnectionClosed as e:
+                logging.info(f"Connection closed while sending buffered messages : {e}")
+                break
             except FailedSendingMessageException as e:
                 logging.error(f"Error while sending buffered messages : {e}")
                 break
@@ -250,6 +254,8 @@ class Session(object):
             await send_transport_message(
                 msg, ws, self.begin_close_session_countdown, prefix_bytes
             )
+        except ConnectionClosed as e:
+            raise e
         except FailedSendingMessageException as e:
             raise e
 
@@ -287,6 +293,8 @@ class Session(object):
                 ws,
                 prefix_bytes=self._transport_options.get_prefix_bytes(),
             )
+        except ConnectionClosed as e:
+            raise FailedSendingMessageException(e)
         except FailedSendingMessageException as e:
             raise e
 
@@ -400,7 +408,10 @@ class Session(object):
 
     async def close(self) -> None:
         """Close the session and all associated streams."""
-        logging.info(f"Closing session from {self._transport_id} to {self._to_id}")
+        logging.info(
+            f"{self._transport_id} closing session "
+            f"to {self._to_id} current_state : {self._state}"
+        )
         if self._state == SessionState.CLOSING or self._state == SessionState.CLOSED:
             return
         self._state = SessionState.CLOSING
@@ -413,3 +424,4 @@ class Session(object):
         # Clear the session in transports
         await self._close_session_callback(self)
         self._state = SessionState.CLOSED
+        logging.info(f"{self._transport_id} closed session " f"to {self._to_id}")

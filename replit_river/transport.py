@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Dict, Tuple
 
 import nanoid  # type: ignore
@@ -28,8 +29,13 @@ class Transport:
 
     async def close_all_sessions(self) -> None:
         sessions = self._sessions.values()
+        logging.info(
+            f"start closing transport {self._transport_id}, number sessions : "
+            f"{len(sessions)}"
+        )
         for session in sessions:
             await session.close()
+        logging.info(f"Transport closed {self._transport_id}")
 
     async def _delete_session(self, session: Session) -> None:
         async with self._session_lock:

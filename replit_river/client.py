@@ -1,4 +1,5 @@
 from collections.abc import AsyncIterable, AsyncIterator
+import logging
 from typing import Any, Callable, Optional, Union
 
 
@@ -22,6 +23,8 @@ class Client:
         server_id: str,
         transport_options: TransportOptions,
     ) -> None:
+        self._client_id = client_id
+        self._server_id = server_id
         self._transport = ClientTransport(
             websocket_uri=websocket_uri,
             client_id=client_id,
@@ -30,7 +33,9 @@ class Client:
         )
 
     async def close(self) -> None:
+        logging.info(f"river client {self._client_id} start closing")
         await self._transport.close_all_sessions()
+        logging.info(f"river client {self._client_id} closed")
 
     async def _get_or_create_session(self) -> ClientSession:
         return await self._transport._get_or_create_session()

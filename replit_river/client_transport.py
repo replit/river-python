@@ -46,7 +46,7 @@ class ClientTransport(Transport):
         transport_options: TransportOptions,
     ):
         super().__init__(
-            transport_id=server_id,
+            transport_id=client_id,
             transport_options=transport_options,
             is_server=False,
         )
@@ -78,6 +78,7 @@ class ClientTransport(Transport):
             client_session = await self.create_client_session(
                 self._client_id, self._server_id, self._instance_id, self._ws
             )
+            self._sessions[self._server_id] = client_session
         except RiverException as e:
             logging.error(f"Error creating session: {e}")
             raise RiverException(ERROR_SESSION, "Error creating session")
@@ -96,8 +97,7 @@ class ClientTransport(Transport):
             await existing_session.replace_with_new_websocket(self._ws)
         return existing_session
 
-    async def _on_websocket_closed(self) -> None:
-        session = await self._get_existing_session()
+    async def _on_websocket_closed(self, session: Optional[Session]) -> None:
         if session and session.is_session_open():
             # TODO: do the retry correctly here
             logging.error("Client session websocket closed, retrying")
@@ -133,10 +133,10 @@ class ClientTransport(Transport):
                 ),
                 ws=websocket,
                 prefix_bytes=self._transport_options.get_prefix_bytes(),
-                websocket_closed_callback=self._on_websocket_closed,
+                websocket_closed_callback=lambda: self._on_websocket_closed(None),
             )
-        except ConnectionClosed as e:
-            logging.error(f"connection closed error during handshake : {e}")
+        except ConnectionClosed:
+            raise RiverException(ERROR_HANDSHAKE, "Hand shake failed")
 
     async def close_session_callback(self, session: Session) -> None:
         logging.info(f"Client session {session._instance_id} closed")
@@ -167,7 +167,8 @@ class ClientTransport(Transport):
                 logging.error(
                     "Connection closed during waiting for handshake " f"response : {e}"
                 )
-                await self._on_websocket_closed()
+                await self._on_websocket_closed(None)
+                raise RiverException(ERROR_HANDSHAKE, "Hand shake failed")
             try:
                 first_message = parse_transport_msg(data, self._transport_options)
             except IgnoreTransportMessageException as e:
@@ -201,4 +202,5 @@ class ClientTransport(Transport):
             is_server=False,
             handlers={},
             close_session_callback=self.close_session_callback,
+            close_websocket_callback=self._on_websocket_closed,
         )

@@ -1,7 +1,7 @@
+import logging
 from typing import AsyncGenerator
 
 import pytest
-import websockets
 from websockets.server import serve
 
 from replit_river.client import Client
@@ -110,16 +110,18 @@ async def client(
 ) -> AsyncGenerator[Client, None]:
     try:
         async with serve(server.serve, "localhost", 8765):
-            async with websockets.connect("ws://localhost:8765") as websocket:
-                client = Client(
-                    websocket,
-                    client_id="test_client",
-                    server_id="test_server",
-                    transport_options=transport_options,
-                )
-                try:
-                    yield client
-                finally:
-                    await client.close()
+            client = Client(
+                "ws://localhost:8765",
+                client_id="test_client",
+                server_id="test_server",
+                transport_options=transport_options,
+            )
+            try:
+                yield client
+            finally:
+                logging.debug(f"Start closing test client : {'test_client'}")
+                await client.close()
+                # await server.close()
     finally:
+        logging.debug("Start closing test server")
         await server.close()
