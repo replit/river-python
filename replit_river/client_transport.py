@@ -203,5 +203,4 @@ class ClientTransport(Transport):
             handlers={},
             close_session_callback=self.close_session_callback,
             close_websocket_callback=self._on_websocket_closed,
-            ack_id=first_message.id,
         )

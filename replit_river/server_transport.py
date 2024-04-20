@@ -37,7 +37,6 @@ class ServerTransport(Transport):
         to_id: str,
         instance_id: str,
         websocket: WebSocketCommonProtocol,
-        ack_id: str = "",
     ) -> Session:
         session_to_close: Optional[Session] = None
         async with self._session_lock:
@@ -51,7 +50,6 @@ class ServerTransport(Transport):
                     self._delete_session,
                     self._is_server,
                     self._handlers,
-                    ack_id=ack_id,
                 )
             else:
                 old_session = self._sessions[to_id]
@@ -66,7 +64,6 @@ class ServerTransport(Transport):
                         self._delete_session,
                         self._is_server,
                         self._handlers,
-                        ack_id=ack_id,
                     )
                 else:
                     # If the instance id is the same, we reuse the session and assign
@@ -102,7 +99,10 @@ class ServerTransport(Transport):
             instance_id = handshake_request.instanceId
             try:
                 session = await self.get_or_create_session(
-                    transport_id, to_id, instance_id, websocket, ack_id=msg.id
+                    transport_id,
+                    to_id,
+                    instance_id,
+                    websocket,
                 )
             except Exception as e:
                 error_msg = (

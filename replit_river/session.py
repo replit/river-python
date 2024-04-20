@@ -56,7 +56,6 @@ class Session(object):
         close_websocket_callback: Optional[
             Callable[["Session"], Coroutine[Any, Any, None]]
         ] = None,
-        ack_id: str = "0",
     ) -> None:
         self._transport_id = transport_id
         self._to_id = to_id
@@ -80,8 +79,7 @@ class Session(object):
         self.heartbeat_misses = 0
         # should disconnect after this time
         self._close_session_after_time_secs: Optional[float] = None
-        asyncio.create_task(self._task_manager.create_task(self._heartbeat(self._ws)))
-        self.ack_id = ack_id
+        asyncio.create_task(self._task_manager.create_task(self._heartbeat()))
 
     def is_session_open(self) -> bool:
         return self._state == SessionState.ACTIVE
@@ -194,7 +192,6 @@ class Session(object):
 
     async def _heartbeat(
         self,
-        websocket: WebSocketCommonProtocol,
     ) -> None:
         logging.debug("Start heartbeat")
         while True:
@@ -210,23 +207,18 @@ class Session(object):
                     return
                 continue
             if self.heartbeat_misses >= self._transport_options.heartbeats_until_dead:
-                await self.close_websocket(websocket)
+                await self.close_websocket(self._ws)
                 await self.begin_close_session_countdown()
                 return
             if self._state != SessionState.ACTIVE:
                 # session is closing, no need to send heartbeat
                 continue
             try:
-                logging.error(
-                    f'sending heartbeat to "%s", current_time : {current_time}, self._transport_options.heartbeat_ms: {self._transport_options.heartbeat_ms}',
-                    self._to_id,
-                )
                 await self.send_message(
                     str(nanoid.generate()),
-                    websocket,
+                    self._ws,
                     {
-                        # TODO: remove this
-                        "ack": self.ack_id,
+                        "ack": 0,
                     },
                     ACK_BIT,
                 )
