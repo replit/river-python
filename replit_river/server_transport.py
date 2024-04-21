@@ -41,6 +41,9 @@ class ServerTransport(Transport):
         session_to_close: Optional[Session] = None
         async with self._session_lock:
             if to_id not in self._sessions:
+                logging.debug(
+                    f'Creating new session with "{to_id}" using ws: {websocket.id}'
+                )
                 self._sessions[to_id] = Session(
                     transport_id,
                     to_id,
@@ -68,13 +71,16 @@ class ServerTransport(Transport):
                 else:
                     # If the instance id is the same, we reuse the session and assign
                     # a new websocket to it.
+                    logging.debug(
+                        f'Reuse old session with "{to_id}" using new ws: {websocket.id}'
+                    )
                     try:
                         await old_session.replace_with_new_websocket(websocket)
                     except FailedSendingMessageException as e:
                         raise e
         if session_to_close:
             logging.info("Closing stale websocket")
-            await session_to_close.close()
+            await session_to_close.close(False)
         session = self._sessions[to_id]
         return session
 
@@ -155,6 +161,7 @@ class ServerTransport(Transport):
             handshake_request = ControlMessageHandshakeRequest(
                 **request_message.payload
             )
+            logging.debug('Got handshake request "%r"', handshake_request)
         except (ValidationError, ValueError):
             await self._send_handshake_response(
                 request_message,

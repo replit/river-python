@@ -18,7 +18,9 @@ class TransportOptions(BaseModel):
     heartbeat_ms: float = 2000
     heartbeats_until_dead: int = 2
     use_prefix_bytes: bool = False
+    close_session_check_interval_ms: float = 100
     connection_retry_options: ConnectionRetryOptions = ConnectionRetryOptions()
+    buffer_size: int = 1000
 
     def get_prefix_bytes(self) -> bytes:
         return PID2_PREFIX_BYTES if self.use_prefix_bytes else b""

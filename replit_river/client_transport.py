@@ -91,7 +91,7 @@ class ClientTransport(Transport):
             existing_session = await self._get_existing_session()
             if not existing_session:
                 return await self._create_session()
-        if not await existing_session.is_websocket_open():
+        if not existing_session.is_websocket_open():
             logging.debug("Client session exists but websocket closed, reconnect one")
             self._ws = await websockets.connect(self._websocket_uri)
             await existing_session.replace_with_new_websocket(self._ws)

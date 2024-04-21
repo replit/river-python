@@ -34,7 +34,10 @@ class Server(object):
         self._transport._handlers.update(rpc_handlers)
 
     async def serve(self, websocket: WebSocketServerProtocol) -> None:
-        logging.debug("River server started establishing session")
+        logging.debug(
+            f"River server started establishing session with ws: {websocket.id}"
+            f" {websocket.state}"
+        )
         try:
             session = await self._transport.handshake_to_get_session(websocket)
         except Exception as e:

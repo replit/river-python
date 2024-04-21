@@ -121,7 +121,6 @@ async def client(
             finally:
                 logging.debug(f"Start closing test client : {'test_client'}")
                 await client.close()
-                # await server.close()
     finally:
         logging.debug("Start closing test server")
         await server.close()

@@ -34,13 +34,13 @@ class Transport:
             f"{len(sessions)}"
         )
         for session in sessions:
-            await session.close()
+            await session.close(False)
         logging.info(f"Transport closed {self._transport_id}")
 
     async def _delete_session(self, session: Session) -> None:
         async with self._session_lock:
-            if session._transport_id in self._sessions:
-                del self._sessions[session._transport_id]
+            if session._to_id in self._sessions:
+                del self._sessions[session._to_id]
 
     def generate_nanoid(self) -> str:
         return str(nanoid.generate())
