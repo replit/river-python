@@ -19,7 +19,6 @@ from .rpc import (
 
 
 class ClientSession(Session):
-
     async def send_rpc(
         self,
         service_name: str,
@@ -36,20 +35,14 @@ class ClientSession(Session):
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(1)
         self._streams[stream_id] = output
-        try:
-            await self.send_message(
-                ws=self._ws,
-                stream_id=stream_id,
-                control_flags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
-                payload=request_serializer(request),
-                service_name=service_name,
-                procedure_name=procedure_name,
-            )
-        except FailedSendingMessageException:
-            raise RiverException(
-                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
-            )
-
+        await self.send_message(
+            ws=self._ws,
+            stream_id=stream_id,
+            control_flags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
+            payload=request_serializer(request),
+            service_name=service_name,
+            procedure_name=procedure_name,
+        )
         # Handle potential errors during communication
         try:
             try:
@@ -58,7 +51,7 @@ class ClientSession(Session):
                 # if the stream is closed before we get a response, we will get a
                 # RuntimeError: RuntimeError: Event loop is closed
                 raise RiverException(
-                    ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+                    ERROR_CODE_STREAM_CLOSED, f"Stream closed before response {e}"
                 )
             if not response.get("ok", False):
                 try:
@@ -119,10 +112,8 @@ class ClientSession(Session):
                     control_flags=control_flags,
                     payload=request_serializer(item),
                 )
-        except FailedSendingMessageException:
-            raise RiverException(
-                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
-            )
+        except Exception as e:
+            raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e))
         await self.send_close_stream(service_name, procedure_name, stream_id)
 
         # Handle potential errors during communication
@@ -167,19 +158,14 @@ class ClientSession(Session):
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(1024)
         self._streams[stream_id] = output
-        try:
-            await self.send_message(
-                ws=self._ws,
-                service_name=service_name,
-                procedure_name=procedure_name,
-                stream_id=stream_id,
-                control_flags=STREAM_OPEN_BIT,
-                payload=request_serializer(request),
-            )
-        except FailedSendingMessageException:
-            raise RiverException(
-                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
-            )
+        await self.send_message(
+            ws=self._ws,
+            service_name=service_name,
+            procedure_name=procedure_name,
+            stream_id=stream_id,
+            control_flags=STREAM_OPEN_BIT,
+            payload=request_serializer(request),
+        )
 
         # Handle potential errors during communication
         try:
@@ -246,10 +232,8 @@ class ClientSession(Session):
                     payload=request_serializer(first),
                 )
 
-        except FailedSendingMessageException:
-            raise RiverException(
-                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
-            )
+        except Exception as e:
+            raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e))
 
         # Create the encoder task
         async def _encode_stream() -> None:

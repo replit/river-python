@@ -19,10 +19,14 @@ from typing import (
 )
 
 import grpc
-from aiochannel import Channel
+from aiochannel import Channel, ChannelClosed
 from pydantic import BaseModel, ConfigDict, Field
 
-from replit_river.error_schema import RiverError
+from replit_river.error_schema import (
+    ERROR_CODE_STREAM_CLOSED,
+    RiverError,
+    RiverException,
+)
 
 InitType = TypeVar("InitType")
 RequestType = TypeVar("RequestType")
@@ -289,8 +293,10 @@ def upload_method_handler(
                     await output.put(
                         get_response_or_error_payload(response, response_serializer)
                     )
+                except ChannelClosed:
+                    raise RiverException(ERROR_CODE_STREAM_CLOSED, "Channel closed")
                 except Exception as e:
-                    logging.exception("Uncaught exception in river server upload")
+                    logging.error("Uncaught exception in river server upload")
                     await output.put(
                         {
                             "ok": False,

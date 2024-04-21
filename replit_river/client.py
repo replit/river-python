@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncIterable, AsyncIterator
 import logging
 from typing import Any, Callable, Optional, Union
@@ -38,7 +39,8 @@ class Client:
         logging.info(f"river client {self._client_id} closed")
 
     async def _get_or_create_session(self) -> ClientSession:
-        return await self._transport._get_or_create_session_with_retry()
+        ret = await self._transport._get_or_create_session_with_retry()
+        return ret
 
     async def send_rpc(
         self,
@@ -50,9 +52,6 @@ class Client:
         error_deserializer: Callable[[Any], ErrorType],
     ) -> ResponseType:
         session = await self._get_or_create_session()
-        logging.debug(
-            f"## send_rpc : {session._state}, {session._ws_state}, {session._ws.id}"
-        )
         return await session.send_rpc(
             service_name,
             procedure_name,
