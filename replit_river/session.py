@@ -175,6 +175,7 @@ class Session(object):
     ) -> None:
         logging.info("replacing with new websocket")
         if websocket.id != self._ws.id:
+            self.reset_session_close_countdown()
             await self.close_websocket(self._ws)
             logging.debug("Old websocket closed")
         await self._send_buffered_messages(websocket)
@@ -212,6 +213,9 @@ class Session(object):
             if not self._close_session_after_time_secs:
                 continue
             current_time = await self._get_current_time()
+            logging.error(
+                f":### checking to close session {current_time - self._close_session_after_time_secs:.2f}"
+            )
             if current_time > self._close_session_after_time_secs:
                 logging.info(
                     "Grace period ended for :" f" {self._transport_id}, closing session"
@@ -229,6 +233,9 @@ class Session(object):
                 self._state != SessionState.ACTIVE
                 or self._close_session_after_time_secs
             ):
+                logging.debug(
+                    f"Session is closed, no need to send heartbeat, state : {self._state} close_session_after_this: {self._close_session_after_time_secs}"
+                )
                 # session is closing, no need to send heartbeat
                 continue
             try:
@@ -362,7 +369,6 @@ class Session(object):
     async def close_websocket(self, websocket: WebSocketCommonProtocol) -> None:
         async with self._ws_lock:
             self._ws_state = WsState.CLOSING
-            self.reset_session_close_countdown()
             if self._close_websocket_callback:
                 await self._close_websocket_callback(self)
             logging.error(f"closing websocket {websocket.id} state: {websocket.state}")
@@ -460,9 +466,11 @@ class Session(object):
             return
         self._state = SessionState.CLOSING
         if is_unexpected_close:
+            logging.error("#sending fucker message")
             await self.send_message(
                 str(nanoid.generate()), "UNEXPECTED_DISCONNECT", self._ws
             )
+        self.reset_session_close_countdown()
         await self.close_websocket(self._ws)
         # Clear the session in transports
         await self._close_session_callback(self)
