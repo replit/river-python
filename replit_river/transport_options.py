@@ -11,6 +11,7 @@ class ConnectionRetryOptions(BaseModel):
     max_backoff_ms: float = 32000
     attempt_budget_capacity: float = 5
     budget_restore_interval_ms: float = 200
+    max_retry: int = 1000
 
 
 class TransportOptions(BaseModel):

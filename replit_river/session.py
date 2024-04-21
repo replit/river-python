@@ -96,7 +96,7 @@ class Session(object):
         return self._state == SessionState.ACTIVE
 
     def is_websocket_open(self) -> bool:
-        return self._ws_state == WsState.OPEN
+        return self._ws_state == WsState.OPEN and self._ws.open
 
     async def serve(self) -> None:
         """Serve messages from the websocket."""
@@ -171,18 +171,21 @@ class Session(object):
             raise e
 
     async def replace_with_new_websocket(
-        self, websocket: websockets.WebSocketCommonProtocol
+        self, new_ws: websockets.WebSocketCommonProtocol
     ) -> None:
-        logging.info("replacing with new websocket")
-        if websocket.id != self._ws.id:
-            self.reset_session_close_countdown()
-            await self.close_websocket(self._ws)
-            logging.debug("Old websocket closed")
-        await self._send_buffered_messages(websocket)
         async with self._ws_lock:
-            self._ws = websocket
+            old_ws = self._ws
+            self._ws_state = WsState.CLOSING
+            logging.info("replacing with new websocket")
+            if new_ws.id != old_ws.id:
+                self.reset_session_close_countdown()
+                await self.close_websocket(old_ws)
+                logging.debug("Old websocket closed")
+            self._ws = new_ws
             self._ws_state = WsState.OPEN
-        logging.debug("Websocket replace success")
+            await self.start_serve_messages()
+            await self._send_buffered_messages(new_ws)
+            logging.debug("Websocket replace success")
 
     async def _get_current_time(self) -> float:
         return asyncio.get_event_loop().time()
@@ -213,9 +216,9 @@ class Session(object):
             if not self._close_session_after_time_secs:
                 continue
             current_time = await self._get_current_time()
-            logging.error(
-                f":### checking to close session {current_time - self._close_session_after_time_secs:.2f}"
-            )
+            # logging.error(
+            #     f":### checking to close session {current_time - self._close_session_after_time_secs:.2f}"
+            # )
             if current_time > self._close_session_after_time_secs:
                 logging.info(
                     "Grace period ended for :" f" {self._transport_id}, closing session"
@@ -255,7 +258,7 @@ class Session(object):
                     logging.debug("closing websocket because of heartbeat misses")
                     await self.begin_close_session_countdown()
                     await self.close_websocket(self._ws)
-                    return
+                    continue
             except FailedSendingMessageException:
                 # this is expected during websocket closed period
                 continue
@@ -366,22 +369,25 @@ class Session(object):
         except Exception as e:
             logging.error(f"Unknown error while river sending responses back : {e}")
 
-    async def close_websocket(self, websocket: WebSocketCommonProtocol) -> None:
+    async def close_websocket(self, ws: WebSocketCommonProtocol) -> None:
+        logging.debug(f"{self._transport_id} is closing websocket {ws.id} {ws.state}")
         async with self._ws_lock:
+            if self._ws_state != WsState.OPEN:
+                return
             self._ws_state = WsState.CLOSING
             if self._close_websocket_callback:
                 await self._close_websocket_callback(self)
-            logging.error(f"closing websocket {websocket.id} state: {websocket.state}")
-            if websocket:
+            logging.error(f"closing websocket {ws.id} state: {ws.state}")
+            if ws:
                 logging.info(
                     f"River session from {self._transport_id} to {self._to_id} "
                     "closing websocket"
                 )
                 # TODO: if we wait this to be closed this takes too long
                 # this could hang?
-                task = asyncio.create_task(websocket.close())
+                task = asyncio.create_task(ws.close())
                 task.add_done_callback(
-                    lambda _: logging.debug(f"old websocket closed, {websocket.id}")
+                    lambda _: logging.debug(f"old websocket closed, {ws.id}")
                 )
             self._ws_state = WsState.CLOSED
 
@@ -465,11 +471,6 @@ class Session(object):
         if not self.is_session_open():
             return
         self._state = SessionState.CLOSING
-        if is_unexpected_close:
-            logging.error("#sending fucker message")
-            await self.send_message(
-                str(nanoid.generate()), "UNEXPECTED_DISCONNECT", self._ws
-            )
         self.reset_session_close_countdown()
         await self.close_websocket(self._ws)
         # Clear the session in transports

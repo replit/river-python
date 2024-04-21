@@ -38,7 +38,7 @@ class Client:
         logging.info(f"river client {self._client_id} closed")
 
     async def _get_or_create_session(self) -> ClientSession:
-        return await self._transport._get_or_create_session()
+        return await self._transport._get_or_create_session_with_retry()
 
     async def send_rpc(
         self,
@@ -50,6 +50,9 @@ class Client:
         error_deserializer: Callable[[Any], ErrorType],
     ) -> ResponseType:
         session = await self._get_or_create_session()
+        logging.debug(
+            f"## send_rpc : {session._state}, {session._ws_state}, {session._ws.id}"
+        )
         return await session.send_rpc(
             service_name,
             procedure_name,
