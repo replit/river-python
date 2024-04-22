@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 import nanoid
 from pydantic import ValidationError
@@ -34,7 +34,6 @@ from replit_river.seq_manager import (
     InvalidMessageException,
 )
 from replit_river.session import Session
-from replit_river.task_manager import BackgroundTaskManager
 from replit_river.transport import PROTOCOL_VERSION, Transport
 from replit_river.transport_options import TransportOptions
 
@@ -59,98 +58,109 @@ class ClientTransport(Transport):
         self._rate_limiter = LeakyBucketRateLimit(
             transport_options.connection_retry_options
         )
-        self._ws: Optional[WebSocketCommonProtocol] = None
+        # We want to make sure there's only one session creation at a time
+        self._create_session_lock = asyncio.Lock()
+        # Only one retry should happen at a time
+        self._retry_ws_lock = asyncio.Lock()
+
+    async def _on_session_closed(self, session: Session) -> None:
+        logging.info(f"Client session {session._instance_id} closed")
+        await self._delete_session(session)
+
+    async def _retry_session_connection(self, session_to_replace_ws: Session) -> None:
+        async with self._retry_ws_lock:
+            if await session_to_replace_ws.is_websocket_open():
+                # other retry successfully replaced the websocket,
+                return
+            if await session_to_replace_ws.is_session_open():
+                new_ws, hs_request, hs_response = await self._establish_new_connection()
+                await session_to_replace_ws.replace_with_new_websocket(new_ws)
 
     async def _get_existing_session(self) -> Optional[ClientSession]:
-        if not self._sessions:
-            return None
-        if len(self._sessions) > 1:
-            raise RiverException(
-                "session_error",
-                "More than one session found in client, " + "should only be one",
-            )
-        session = list(self._sessions.values())[0]
-        if isinstance(session, ClientSession):
-            return session
-        else:
-            raise RiverException(
-                "session_error", f"Client session type wrong, got {type(session)}"
-            )
+        async with self._session_lock:
+            if not self._sessions:
+                return None
+            if len(self._sessions) > 1:
+                raise RiverException(
+                    "session_error",
+                    "More than one session found in client, " + "should only be one",
+                )
+            session = list(self._sessions.values())[0]
+            if isinstance(session, ClientSession):
+                return session
+            else:
+                raise RiverException(
+                    "session_error", f"Client session type wrong, got {type(session)}"
+                )
 
-    async def _create_session(self) -> ClientSession:
-        try:
-            logging.debug("Client start creating session")
-            ws = await websockets.connect(self._websocket_uri)
-            logging.debug(f"new ws : {ws.id} {ws.state}")
-            self._ws = ws
-            client_session = await self.create_client_session(
-                self._client_id, self._server_id, self._instance_id, ws
-            )
-            self._sessions[self._server_id] = client_session
-        except RiverException as e:
-            logging.error(f"Error creating session: {e}")
-            raise RiverException(ERROR_SESSION, "Error creating session")
-        logging.debug(
-            f"client start serving messages with websocket : {ws.id} {ws.state}"
+    async def _establish_new_connection(
+        self,
+    ) -> Tuple[
+        WebSocketCommonProtocol,
+        ControlMessageHandshakeRequest,
+        ControlMessageHandshakeResponse,
+    ]:
+        """Build a new websocket connection with retry logic."""
+        rate_limit = self._rate_limiter
+        max_retry = self._transport_options.connection_retry_options.max_retry
+        user_id = self._client_id
+        for i in range(max_retry):
+            if i > 0:
+                logging.info(f"Retrying build handshake {i} times")
+            if not rate_limit.has_budget(user_id):
+                logging.debug(
+                    f"No retry budget for {user_id}, waiting for budget restoration."
+                )
+                rate_limit.start_restoring_budget(user_id)
+                await asyncio.sleep(
+                    rate_limit.options.budget_restore_interval_ms / 1000.0
+                )
+                continue
+            try:
+                ws = await websockets.connect(self._websocket_uri)
+                handshake_request, handshake_response = await self._establish_handshake(
+                    self._transport_id, self._server_id, self._instance_id, ws
+                )
+                return ws, handshake_request, handshake_response
+            except Exception as e:
+                backoff_time = rate_limit.get_backoff_ms(user_id)
+                logging.error(
+                    f"Error creating session: {e}, start backoff {backoff_time} ms"
+                )
+                await asyncio.sleep(backoff_time / 1000)
+        raise RiverException(
+            ERROR_HANDSHAKE,
+            "Failed to create session after retrying max number of times",
         )
-        await client_session.start_serve_messages()
-        return client_session
 
     async def _get_or_create_session(self) -> ClientSession:
-        existing_session = await self._get_existing_session()
-        if not existing_session:
-            logging.debug("Client no existing session, creating new one")
-            self._rate_limiter.consume_budget(self._client_id)
-            return await self._create_session()
-        if not existing_session.is_websocket_open():
-            logging.debug("Client session exists but websocket closed, reconnect one")
-            self._rate_limiter.consume_budget(self._client_id)
-            ws = await websockets.connect(self._websocket_uri)
-            logging.debug(f"new ws : {ws.id} {ws.state}")
-            self._ws = ws
-            await self._send_handshake(
-                self._transport_id, self._server_id, self._instance_id, ws
-            )
-            await existing_session.replace_with_new_websocket(ws)
-        return existing_session
-
-    async def _get_or_create_session_with_retry(self) -> ClientSession:
-        async with self._session_lock:
-            rate_limit = self._rate_limiter
-            user_id = self._client_id
-            for i in range(self._transport_options.connection_retry_options.max_retry):
-                if i > 0:
-                    logging.info(f"Client retry build sessions {i} times")
-                if rate_limit.has_budget(user_id):
-                    backoff_time = rate_limit.get_backoff_ms(user_id)
-                    try:
-                        return await self._get_or_create_session()
-                    except Exception as e:
-                        logging.error(
-                            f"Error creating session: {e}, start backoff {backoff_time} ms"
-                        )
-                        await asyncio.sleep(backoff_time / 1000)
+        async with self._create_session_lock:
+            existing_session = await self._get_existing_session()
+            if existing_session:
+                if await existing_session.is_websocket_open():
+                    return existing_session
                 else:
-                    logging.debug(
-                        f"No budget left for {user_id}, waiting for budget restoration."
-                    )
-                    rate_limit.start_restoring_budget(user_id)
-                    await asyncio.sleep(
-                        rate_limit.options.budget_restore_interval_ms / 1000.0
-                    )
-            raise RiverException(
-                ERROR_HANDSHAKE,
-                "Failed to create session after retrying max number of times",
-            )
-
-    async def _on_websocket_closed(
-        self, session: Optional[Session], should_retry: bool
-    ) -> None:
-        if not should_retry:
-            logging.error("Client websocket closed, not retrying")
-            return
-        if session and session.is_session_open():
-            await self._get_or_create_session_with_retry()
+                    await self._retry_session_connection(existing_session)
+                    return existing_session
+            else:
+                new_ws, hs_request, hs_response = await self._establish_new_connection()
+                new_session = ClientSession(
+                    transport_id=self._transport_id,
+                    to_id=self._server_id,
+                    instance_id=self._instance_id,
+                    websocket=new_ws,
+                    transport_options=self._transport_options,
+                    is_server=False,
+                    handlers={},
+                    close_session_callback=self._on_session_closed,
+                    retry_connection_callback=lambda x: self._retry_session_connection(
+                        x
+                    ),
+                )
+                async with self._session_lock:
+                    self._sessions[self._server_id] = new_session
+                await new_session.start_serve_responses()
+                return new_session
 
     async def _send_handshake_request(
         self,
@@ -158,20 +168,22 @@ class ClientTransport(Transport):
         to_id: str,
         instance_id: str,
         websocket: WebSocketCommonProtocol,
-    ) -> None:
+    ) -> ControlMessageHandshakeRequest:
         handshake_request = ControlMessageHandshakeRequest(
             type="HANDSHAKE_REQ",
             protocolVersion=PROTOCOL_VERSION,
             instanceId=instance_id,
         )
         stream_id = self.generate_nanoid()
+
+        def websocket_closed_callback():
+            raise RiverException(ERROR_SESSION, "Session closed while sending")
+
         try:
             await send_transport_message(
                 TransportMessage(
                     from_=transport_id,
                     to=to_id,
-                    serviceName=None,
-                    procedureName=None,
                     streamId=stream_id,
                     controlFlags=0,
                     id=self.generate_nanoid(),
@@ -181,26 +193,21 @@ class ClientTransport(Transport):
                 ),
                 ws=websocket,
                 prefix_bytes=self._transport_options.get_prefix_bytes(),
-                websocket_closed_callback=lambda: self._on_websocket_closed(
-                    None, False
-                ),
+                websocket_closed_callback=websocket_closed_callback,
             )
+            return handshake_request
         except ConnectionClosed:
             raise RiverException(ERROR_HANDSHAKE, "Hand shake failed")
 
-    async def close_session_callback(self, session: Session) -> None:
-        logging.info(f"Client session {session._instance_id} closed")
-        await self._delete_session(session)
-
-    async def _send_handshake(
+    async def _establish_handshake(
         self,
         transport_id: str,
         to_id: str,
         instance_id: str,
         websocket: WebSocketCommonProtocol,
-    ) -> None:
+    ) -> Tuple[ControlMessageHandshakeRequest, ControlMessageHandshakeResponse]:
         try:
-            await self._send_handshake_request(
+            handshake_request = await self._send_handshake_request(
                 transport_id=transport_id,
                 to_id=to_id,
                 instance_id=instance_id,
@@ -221,7 +228,6 @@ class ClientTransport(Transport):
                 logging.debug(
                     "Connection closed during waiting for handshake response : {e}"
                 )
-                await self._on_websocket_closed(None, False)
                 raise RiverException(ERROR_HANDSHAKE, "Hand shake failed")
             try:
                 first_message = parse_transport_msg(data, self._transport_options)
@@ -247,29 +253,4 @@ class ClientTransport(Transport):
             raise RiverException(
                 ERROR_HANDSHAKE, f"Handshake failed: {handshake_response.status.reason}"
             )
-
-    async def create_client_session(
-        self,
-        transport_id: str,
-        to_id: str,
-        instance_id: str,
-        websocket: WebSocketCommonProtocol,
-    ) -> ClientSession:
-        await self._send_handshake(
-            transport_id=transport_id,
-            to_id=to_id,
-            instance_id=instance_id,
-            websocket=websocket,
-        )
-        logging.error("##### handshake success")
-        return ClientSession(
-            transport_id=transport_id,
-            to_id=to_id,
-            instance_id=instance_id,
-            websocket=websocket,
-            transport_options=self._transport_options,
-            is_server=False,
-            handlers={},
-            close_session_callback=self.close_session_callback,
-            close_websocket_callback=self._on_websocket_closed,
-        )
+        return handshake_request, handshake_response

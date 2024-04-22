@@ -38,10 +38,6 @@ class Client:
         await self._transport.close_all_sessions()
         logging.info(f"river client {self._client_id} closed")
 
-    async def _get_or_create_session(self) -> ClientSession:
-        ret = await self._transport._get_or_create_session_with_retry()
-        return ret
-
     async def send_rpc(
         self,
         service_name: str,
@@ -51,7 +47,7 @@ class Client:
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> ResponseType:
-        session = await self._get_or_create_session()
+        session = await self._transport._get_or_create_session()
         return await session.send_rpc(
             service_name,
             procedure_name,
@@ -72,7 +68,7 @@ class Client:
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> ResponseType:
-        session = await self._get_or_create_session()
+        session = await self._transport._get_or_create_session()
         return await session.send_upload(
             service_name,
             procedure_name,
@@ -93,7 +89,7 @@ class Client:
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> AsyncIterator[Union[ResponseType, ErrorType]]:
-        session = await self._get_or_create_session()
+        session = await self._transport._get_or_create_session()
         return session.send_subscription(
             service_name,
             procedure_name,
@@ -114,7 +110,7 @@ class Client:
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> AsyncIterator[Union[ResponseType, ErrorType]]:
-        session = await self._get_or_create_session()
+        session = await self._transport._get_or_create_session()
         return session.send_stream(
             service_name,
             procedure_name,
