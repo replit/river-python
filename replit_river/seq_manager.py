@@ -3,13 +3,13 @@ import asyncio
 from replit_river.rpc import TransportMessage
 
 
-class IgnoreTransportMessageException(Exception):
+class IgnoreMessageException(Exception):
     """Exception to ignore a transport message, but good to continue."""
 
     pass
 
 
-class InvalidTransportMessageException(Exception):
+class InvalidMessageException(Exception):
     """Error processing a transport message, should raise a exception."""
 
     pass
@@ -53,12 +53,12 @@ class SeqManager:
         async with self._ack_lock:
             if msg.seq != self.ack:
                 if msg.seq < self.ack:
-                    raise IgnoreTransportMessageException(
+                    raise IgnoreMessageException(
                         f"{msg.from_} received duplicate msg, got {msg.seq}"
                         f" expected {self.ack}"
                     )
                 else:
-                    raise InvalidTransportMessageException(
+                    raise InvalidMessageException(
                         f"{msg.from_} received out of order, got {msg.seq}"
                         f" expected {self.ack}"
                     )

@@ -30,8 +30,8 @@ from replit_river.rpc import (
     TransportMessage,
 )
 from replit_river.seq_manager import (
-    IgnoreTransportMessageException,
-    InvalidTransportMessageException,
+    IgnoreMessageException,
+    InvalidMessageException,
 )
 from replit_river.session import Session
 from replit_river.task_manager import BackgroundTaskManager
@@ -225,10 +225,10 @@ class ClientTransport(Transport):
                 raise RiverException(ERROR_HANDSHAKE, "Hand shake failed")
             try:
                 first_message = parse_transport_msg(data, self._transport_options)
-            except IgnoreTransportMessageException as e:
+            except IgnoreMessageException as e:
                 logging.debug(f"Ignoring transport message : {e}")
                 continue
-            except InvalidTransportMessageException as e:
+            except InvalidMessageException as e:
                 raise RiverException(
                     ERROR_HANDSHAKE,
                     f"Got invalid transport message, closing connection : {e}",

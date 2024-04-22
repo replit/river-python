@@ -15,8 +15,8 @@ from replit_river.messages import (
     send_transport_message,
 )
 from replit_river.seq_manager import (
-    IgnoreTransportMessageException,
-    InvalidTransportMessageException,
+    IgnoreMessageException,
+    InvalidMessageException,
     SeqManager,
 )
 from replit_river.task_manager import BackgroundTaskManager
@@ -56,9 +56,9 @@ class Session(object):
         instance_id: str,
         websocket: websockets.WebSocketCommonProtocol,
         transport_options: TransportOptions,
-        close_session_callback: Callable[["Session"], Coroutine[Any, Any, None]],
         is_server: bool,
         handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]],
+        close_session_callback: Callable[["Session"], Coroutine[Any, Any, None]],
         close_websocket_callback: Optional[
             Callable[["Session", bool], Coroutine[Any, Any, None]]
         ] = None,
@@ -144,7 +144,7 @@ class Session(object):
                     if msg.controlFlags & STREAM_OPEN_BIT == 0:
                         if not stream:
                             logging.warning("no stream for %s", msg.streamId)
-                            raise IgnoreTransportMessageException(
+                            raise IgnoreMessageException(
                                 "no stream for message, ignoring"
                             )
                         await self._add_msg_to_stream(msg, stream)
@@ -158,10 +158,10 @@ class Session(object):
                             stream.close()
                         async with self._stream_lock:
                             del self._streams[msg.streamId]
-                except IgnoreTransportMessageException as e:
+                except IgnoreMessageException as e:
                     logging.debug(f"Ignoring transport message : {e}")
                     continue
-                except InvalidTransportMessageException as e:
+                except InvalidMessageException as e:
                     logging.error(
                         f"Got invalid transport message, closing session : {e}"
                     )
@@ -400,17 +400,15 @@ class Session(object):
         tg: Optional[asyncio.TaskGroup],
     ) -> Channel:
         if not self._is_server:
-            raise InvalidTransportMessageException(
-                "Client should not receive stream open bit"
-            )
+            raise InvalidMessageException("Client should not receive stream open bit")
         if not msg.serviceName or not msg.procedureName:
-            raise IgnoreTransportMessageException(
+            raise IgnoreMessageException(
                 f"Service name or procedure name is missing in the message {msg}"
             )
         key = (msg.serviceName, msg.procedureName)
         handler = self._handlers.get(key, None)
         if not handler:
-            raise IgnoreTransportMessageException(
+            raise IgnoreMessageException(
                 f"No handler for {key} handlers : " f"{self._handlers.keys()}"
             )
         method_type, handler_func = handler
@@ -428,7 +426,7 @@ class Session(object):
         try:
             await input_stream.put(msg.payload)
         except (RuntimeError, ChannelClosed) as e:
-            raise InvalidTransportMessageException(e)
+            raise InvalidMessageException(e)
         if not stream:
             async with self._stream_lock:
                 self._streams[msg.streamId] = input_stream
@@ -456,7 +454,7 @@ class Session(object):
         try:
             await stream.put(msg.payload)
         except (RuntimeError, ChannelClosed) as e:
-            raise InvalidTransportMessageException(e)
+            raise InvalidMessageException(e)
 
     async def _update_msg_buffer(self) -> None:
         await self._buffer.remove_old_messages(self._seq_manager.receiver_ack)

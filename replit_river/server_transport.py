@@ -22,8 +22,8 @@ from replit_river.rpc import (
     TransportMessage,
 )
 from replit_river.seq_manager import (
-    IgnoreTransportMessageException,
-    InvalidTransportMessageException,
+    IgnoreMessageException,
+    InvalidMessageException,
 )
 from replit_river.session import Session
 from replit_river.transport import PROTOCOL_VERSION, Transport
@@ -50,9 +50,9 @@ class ServerTransport(Transport):
                     instance_id,
                     websocket,
                     self._transport_options,
-                    self._delete_session,
                     self._is_server,
                     self._handlers,
+                    close_session_callback=self._delete_session,
                 )
             else:
                 old_session = self._sessions[to_id]
@@ -64,9 +64,9 @@ class ServerTransport(Transport):
                         instance_id,
                         websocket,
                         self._transport_options,
-                        self._delete_session,
                         self._is_server,
                         self._handlers,
+                        close_session_callback=self._delete_session,
                     )
                 else:
                     # If the instance id is the same, we reuse the session and assign
@@ -92,11 +92,11 @@ class ServerTransport(Transport):
             try:
                 msg = parse_transport_msg(message, self._transport_options)
                 handshake_request = await self._establish_handshake(msg, websocket)
-            except IgnoreTransportMessageException:
+            except IgnoreMessageException:
                 continue
-            except InvalidTransportMessageException:
+            except InvalidMessageException:
                 error_msg = "Got invalid transport message, closing connection"
-                raise InvalidTransportMessageException(error_msg)
+                raise InvalidMessageException(error_msg)
             except FailedSendingMessageException as e:
                 raise e
             logging.debug("handshake success on server: %r", handshake_request)
@@ -115,9 +115,9 @@ class ServerTransport(Transport):
                     "Error building sessions from handshake request : "
                     f"client_id: {transport_id}, instance_id: {instance_id}, error: {e}"
                 )
-                raise InvalidTransportMessageException(error_msg)
+                raise InvalidMessageException(error_msg)
             return session
-        raise InvalidTransportMessageException("No handshake message received")
+        raise InvalidMessageException("No handshake message received")
 
     async def _send_handshake_response(
         self,
@@ -168,7 +168,7 @@ class ServerTransport(Transport):
                 HandShakeStatus(ok=False, reason="failed validate handshake request"),
                 websocket,
             )
-            raise InvalidTransportMessageException("failed validate handshake request")
+            raise InvalidMessageException("failed validate handshake request")
 
         if handshake_request.protocolVersion != PROTOCOL_VERSION:
             await self._send_handshake_response(
@@ -180,14 +180,14 @@ class ServerTransport(Transport):
                 "protocol version mismatch: "
                 + f"{handshake_request.protocolVersion} != {PROTOCOL_VERSION}"
             )
-            raise InvalidTransportMessageException(error_str)
+            raise InvalidMessageException(error_str)
         if request_message.to != self._transport_id:
             await self._send_handshake_response(
                 request_message,
                 HandShakeStatus(ok=False, reason="handshake request to wrong server"),
                 websocket,
             )
-            raise InvalidTransportMessageException("handshake request to wrong server")
+            raise InvalidMessageException("handshake request to wrong server")
         await self._send_handshake_response(
             request_message,
             HandShakeStatus(ok=True, instanceId=self._transport_id),

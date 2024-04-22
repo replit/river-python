@@ -1,6 +1,7 @@
 import logging
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
+import nanoid
 import pytest
 from websockets.server import serve
 
@@ -8,6 +9,7 @@ from replit_river.client import Client
 from replit_river.error_schema import RiverError
 from replit_river.rpc import (
     GrpcContext,
+    TransportMessage,
     rpc_method_handler,
     stream_method_handler,
     subscription_method_handler,
@@ -15,6 +17,27 @@ from replit_river.rpc import (
 )
 from replit_river.server import Server
 from replit_river.transport_options import TransportOptions
+
+
+def transport_message(
+    seq: int = 0,
+    ack: int = 0,
+    streamId: str = "test_stream",
+    from_: str = "client",
+    to: str = "server",
+    control_flag: int = 0,
+    payload: Any = {},
+) -> TransportMessage:
+    return TransportMessage(
+        id=str(nanoid.generate()),
+        from_=from_,
+        to=to,
+        streamId=streamId,
+        seq=seq,
+        ack=ack,
+        payload=payload,
+        controlFlags=control_flag,
+    )
 
 
 def serialize_request(request: str) -> dict:

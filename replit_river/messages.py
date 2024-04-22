@@ -13,8 +13,8 @@ from replit_river.rpc import (
     TransportMessage,
 )
 from replit_river.seq_manager import (
-    IgnoreTransportMessageException,
-    InvalidTransportMessageException,
+    IgnoreMessageException,
+    InvalidMessageException,
 )
 from replit_river.transport_options import TransportOptions
 
@@ -58,22 +58,22 @@ def parse_transport_msg(
     message: str | bytes, transport_options: TransportOptions
 ) -> TransportMessage:
     if isinstance(message, str):
-        raise IgnoreTransportMessageException(
+        raise IgnoreMessageException(
             "ignored a message beacuse it was a text frame: %r", message
         )
     if transport_options.use_prefix_bytes:
         if message.startswith(CROSIS_PREFIX_BYTES):
-            raise IgnoreTransportMessageException("Skip crosis message")
+            raise IgnoreMessageException("Skip crosis message")
         elif message.startswith(PID2_PREFIX_BYTES):
             message = message[len(PID2_PREFIX_BYTES) :]
         else:
-            raise InvalidTransportMessageException(
+            raise InvalidMessageException(
                 "Got message without prefix bytes: " f"{formatted_bytes(message)}"
             )
     try:
         unpacked_message = msgpack.unpackb(message, timestamp=3)
     except (msgpack.UnpackException, msgpack.exceptions.ExtraData):
-        raise InvalidTransportMessageException("received non-msgpack message")
+        raise InvalidMessageException("received non-msgpack message")
     try:
         msg = TransportMessage(**unpacked_message)
     except (
@@ -82,7 +82,5 @@ def parse_transport_msg(
         msgpack.UnpackException,
         PydanticCoreValidationError,
     ):
-        raise InvalidTransportMessageException(
-            f"failed to parse message:{message.decode()}"
-        )
+        raise InvalidMessageException(f"failed to parse message:{message.decode()}")
     return msg
