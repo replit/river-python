@@ -219,8 +219,10 @@ class Session(object):
         async with self._ws_lock:
             self._ws = new_ws
             self._ws_state = WsState.OPEN
-        await self.start_serve_responses()
         await self._send_buffered_messages(new_ws)
+        # Server will call serve itself.
+        if not self._is_server:
+            await self.start_serve_responses()
 
     async def _get_current_time(self) -> float:
         return asyncio.get_event_loop().time()
@@ -372,15 +374,13 @@ class Session(object):
     ) -> None:
         """Send serialized messages to the websockets."""
         try:
-            ws = self._ws
             async for payload in output:
                 # TODO: what if the websocket changed during this?
-                async with self._ws_lock:
-                    while self._ws_state != WsState.OPEN:
-                        await asyncio.sleep(
-                            self._transport_options.close_session_check_interval_ms
-                            / 1000
-                        )
+                ws = self._ws
+                while self._ws_state != WsState.OPEN:
+                    await asyncio.sleep(
+                        self._transport_options.close_session_check_interval_ms / 1000
+                    )
                     ws = self._ws
                 if not is_streaming_output:
                     await self.send_message(stream_id, payload, ws, STREAM_CLOSED_BIT)
@@ -404,6 +404,9 @@ class Session(object):
     ) -> None:
         """Mark the websocket as closed, close the websocket, and retry if needed."""
         async with self._ws_lock:
+            if self._ws.id != ws.id:
+                # already replaced with new ws
+                return
             if self._ws_state != WsState.OPEN:
                 # Already closed
                 return
