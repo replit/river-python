@@ -5,8 +5,9 @@ from typing import Any, Callable, Optional, Union
 import nanoid  # type: ignore
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
+
 from replit_river.error_schema import ERROR_CODE_STREAM_CLOSED, RiverException
-from replit_river.session import FailedSendingMessageException, Session
+from replit_river.session import Session
 
 from .rpc import (
     STREAM_CLOSED_BIT,

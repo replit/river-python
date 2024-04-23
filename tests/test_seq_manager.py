@@ -1,7 +1,7 @@
-import pytest
 import asyncio
 
-from replit_river.rpc import TransportMessage
+import pytest
+
 from replit_river.seq_manager import (
     IgnoreMessageException,
     InvalidMessageException,

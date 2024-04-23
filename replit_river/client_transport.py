@@ -3,12 +3,11 @@ import logging
 from typing import Optional, Tuple
 
 import nanoid
+import websockets
 from pydantic import ValidationError
-from replit_river.rate_limiter import LeakyBucketRateLimit
 from websockets import (
     WebSocketCommonProtocol,
 )
-import websockets
 from websockets.exceptions import ConnectionClosed
 
 from replit_river.client_session import ClientSession
@@ -23,8 +22,8 @@ from replit_river.messages import (
     parse_transport_msg,
     send_transport_message,
 )
+from replit_river.rate_limiter import LeakyBucketRateLimit
 from replit_river.rpc import (
-    ACK_BIT,
     ControlMessageHandshakeRequest,
     ControlMessageHandshakeResponse,
     TransportMessage,
@@ -224,7 +223,7 @@ class ClientTransport(Transport):
                     f"websocket while waiting for response : {websocket.id} {websocket.state}"
                 )
                 data = await websocket.recv()
-            except ConnectionClosed as e:
+            except ConnectionClosed:
                 logging.debug(
                     "Connection closed during waiting for handshake response : {e}"
                 )

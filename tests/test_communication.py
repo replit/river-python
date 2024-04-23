@@ -2,12 +2,9 @@ import asyncio
 from typing import AsyncGenerator
 
 import pytest
-from websockets.server import serve
 
 from replit_river.client import Client
-from replit_river.error_schema import RiverError, RiverException
-from replit_river.server import Server
-from replit_river.transport_options import TransportOptions
+from replit_river.error_schema import RiverError
 from tests.conftest import deserialize_error, deserialize_response, serialize_request
 
 

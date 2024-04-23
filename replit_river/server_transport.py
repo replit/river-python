@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import Optional
 
@@ -8,6 +7,7 @@ from websockets import (
     WebSocketCommonProtocol,
     WebSocketServerProtocol,
 )
+from websockets.exceptions import ConnectionClosed
 from websockets.server import WebSocketServerProtocol
 
 from replit_river.messages import (
@@ -27,7 +27,6 @@ from replit_river.seq_manager import (
 )
 from replit_river.session import Session
 from replit_river.transport import PROTOCOL_VERSION, Transport
-from websockets.exceptions import ConnectionClosed
 
 
 class ServerTransport(Transport):

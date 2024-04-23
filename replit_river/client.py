@@ -1,10 +1,7 @@
-import asyncio
-from collections.abc import AsyncIterable, AsyncIterator
 import logging
+from collections.abc import AsyncIterable, AsyncIterator
 from typing import Any, Callable, Optional, Union
 
-
-from replit_river.client_session import ClientSession
 from replit_river.client_transport import ClientTransport
 from replit_river.transport_options import TransportOptions
 

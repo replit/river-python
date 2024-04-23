@@ -2,6 +2,7 @@ import asyncio
 import enum
 import logging
 from typing import Any, Callable, Coroutine, Dict, Optional, Tuple
+
 import nanoid  # type: ignore
 import websockets
 from aiochannel import Channel, ChannelClosed
@@ -28,9 +29,6 @@ from .rpc import (
     STREAM_OPEN_BIT,
     GenericRpcHandler,
     TransportMessage,
-)
-from replit_river.rpc import (
-    ControlMessageHandshakeRequest,
 )
 
 

@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Callable, Coroutine, Optional
+from typing import Any, Callable, Coroutine
 
 import msgpack  # type: ignore
 import websockets

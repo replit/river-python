@@ -1,4 +1,5 @@
 import os
+
 from pydantic import BaseModel
 
 CROSIS_PREFIX_BYTES = b"\x00\x00"

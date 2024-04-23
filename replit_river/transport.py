@@ -3,6 +3,7 @@ import logging
 from typing import Dict, Tuple
 
 import nanoid  # type: ignore
+
 from replit_river.rpc import (
     GenericRpcHandler,
 )
