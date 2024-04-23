@@ -90,6 +90,7 @@ class Session(object):
 
         # book keeping
         self._seq_manager = SeqManager()
+        self._msg_lock = asyncio.Lock()
         self._buffer = MessageBuffer(self._transport_options.buffer_size)
         self._task_manager = BackgroundTaskManager()
 
@@ -338,11 +339,20 @@ class Session(object):
             procedureName=procedure_name,
         )
         try:
-            await self._send_transport_message(
-                msg,
-                ws,
-                prefix_bytes=self._transport_options.get_prefix_bytes(),
-            )
+            # We need this lock to ensure the buffer order and message sending order
+            # are the same.
+            async with self._msg_lock:
+                try:
+                    await self._buffer.put(msg)
+                except Exception:
+                    # We should close the session when there are too many messages in buffer
+                    await self.close(True)
+                    return
+                await self._send_transport_message(
+                    msg,
+                    ws,
+                    prefix_bytes=self._transport_options.get_prefix_bytes(),
+                )
         except ConnectionClosed as e:
             logging.error(
                 f"Connection closed while sending message : {e}, waiting for "
@@ -352,14 +362,6 @@ class Session(object):
             logging.error(
                 f"Failed sending message : {e}, waiting for retry from buffer"
             )
-        finally:
-            # We need to put this later to guarantee the ordering of message sent
-            try:
-                await self._buffer.put(msg)
-            except Exception:
-                # We should close the session when there are too many messages in buffer
-                await self.close(True)
-                return
 
     async def _send_responses_from_output_stream(
         self,
