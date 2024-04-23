@@ -1,4 +1,5 @@
 import asyncio
+import logging
 
 from replit_river.rpc import TransportMessage
 
@@ -58,12 +59,16 @@ class SeqManager:
                         f" expected {self.ack}"
                     )
                 else:
-                    raise InvalidMessageException(
-                        f"{msg.from_} received out of order, got {msg.seq}"
-                        f" expected {self.ack}"
+                    logging.error(
+                        f"Out of order message received got {msg.seq} expected {self.ack}"
                     )
+                    # raise InvalidMessageException(
+                    #     f"{msg.from_} received out of order, got {msg.seq}"
+                    #     f" expected {self.ack}"
+                    # )
             self.receiver_ack = msg.ack
         await self._set_ack(msg.seq + 1)
+        # await self._set_ack(max(msg.seq + 1, self.ack))
 
     async def _set_ack(self, new_ack: int) -> int:
         async with self._ack_lock:
