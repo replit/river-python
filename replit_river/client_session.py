@@ -84,7 +84,7 @@ class ClientSession(Session):
         """
 
         stream_id = nanoid.generate()
-        output: Channel[Any] = Channel(1024)
+        output: Channel[Any] = Channel(1)
         self._streams[stream_id] = output
         first_message = True
         try:
@@ -98,7 +98,8 @@ class ClientSession(Session):
                     payload=init_serializer(init),
                 )
                 first_message = False
-
+            # If this request is not closed and the session is killed, we should
+            # throws exception here
             async for item in request:
                 control_flags = 0
                 if first_message:
