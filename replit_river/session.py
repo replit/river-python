@@ -285,7 +285,6 @@ class Session(object):
     async def _send_buffered_messages(
         self, websocket: websockets.WebSocketCommonProtocol
     ) -> None:
-        logging.debug(f"Sending buffered messages to {self._to_id}")
         buffered_messages = list(self._buffer.buffer)
         for msg in buffered_messages:
             try:
@@ -339,6 +338,12 @@ class Session(object):
             procedureName=procedure_name,
         )
         try:
+            await self._buffer.put(msg)
+        except Exception:
+            # We should close the session when there are too many messages in buffer
+            await self.close(True)
+            return
+        try:
             await self._send_transport_message(
                 msg,
                 ws,
@@ -353,13 +358,6 @@ class Session(object):
             logging.error(
                 f"Failed sending message : {e}, waiting for retry from buffer"
             )
-        finally:
-            try:
-                await self._buffer.put(msg)
-            except Exception:
-                # We should close the session when there are too many messages in buffer
-                await self.close(True)
-                return
 
     async def _send_responses_from_output_stream(
         self,
