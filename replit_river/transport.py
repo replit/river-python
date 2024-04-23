@@ -34,7 +34,8 @@ class Transport:
             f"start closing transport {self._transport_id}, number sessions : "
             f"{len(sessions)}"
         )
-        for session in sessions:
+        sessions_to_close = list(sessions)
+        for session in sessions_to_close:
             await session.close(False)
         logging.info(f"Transport closed {self._transport_id}")
 

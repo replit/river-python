@@ -509,7 +509,6 @@ class Session(object):
             await self._task_manager.cancel_all_tasks()
             # TODO: unexpected_close should close stream differently here to
             # throw exception correctly.
-            logging.error(f"##### closing all streams here : {self._streams.values()}")
             for stream in self._streams.values():
                 stream.close()
             async with self._stream_lock:
