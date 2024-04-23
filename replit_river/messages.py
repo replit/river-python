@@ -35,7 +35,7 @@ async def send_transport_message(
     websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
     prefix_bytes: bytes = b"",
 ) -> None:
-    logging.debug(f"sending a message {msg} to ws {ws.id} with state {ws.state}")
+    logging.debug(f"sending a message {msg} to ws {ws.id}")
     try:
         await ws.send(
             prefix_bytes
