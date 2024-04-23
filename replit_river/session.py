@@ -382,13 +382,9 @@ class Session(object):
             logging.debug("sent an end of stream %r", stream_id)
             await self.send_message(stream_id, {"type": "CLOSE"}, ws, STREAM_CLOSED_BIT)
         except FailedSendingMessageException as e:
-            logging.error(
-                f"Error while sending responses, ws_state: {ws.state}, {type(e)} : {e}"
-            )
+            logging.error(f"Error while sending responses, {type(e)} : {e}")
         except (RuntimeError, ChannelClosed) as e:
-            logging.error(
-                f"Error while sending responses, ws_state: {ws.state} {type(e)} : {e}"
-            )
+            logging.error(f"Error while sending responses, {type(e)} : {e}")
         except Exception as e:
             logging.error(f"Unknown error while river sending responses back : {e}")
 
@@ -405,7 +401,7 @@ class Session(object):
                 return
             logging.info(
                 f"River session from {self._transport_id} to {self._to_id} "
-                f"closing websocket {ws.id} state: {ws.state}"
+                f"closing websocket {ws.id}"
             )
             self._ws_state = WsState.CLOSING
             if ws:
