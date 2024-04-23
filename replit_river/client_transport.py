@@ -219,9 +219,7 @@ class ClientTransport(Transport):
         logging.debug("river client waiting for handshake response")
         while True:
             try:
-                logging.debug(
-                    f"websocket while waiting for response : {websocket.id} {websocket.state}"
-                )
+                logging.debug(f"websocket while waiting for response : {websocket.id}")
                 data = await websocket.recv()
             except ConnectionClosed:
                 logging.debug(

@@ -162,7 +162,7 @@ class Session(object):
     ) -> None:
         logging.debug(
             f'{"server" if self._is_server else "client"} start handling messages from'
-            f" ws {websocket.id}, state {websocket.state}"
+            f" ws {websocket.id}"
         )
         try:
             async for message in websocket:
