@@ -250,10 +250,7 @@ class Session(object):
         logging.debug("Start heartbeat")
         while True:
             await asyncio.sleep(self._transport_options.heartbeat_ms / 1000)
-            if (
-                self._state != SessionState.ACTIVE
-                or self._close_session_after_time_secs
-            ):
+            if self._state != SessionState.ACTIVE:
                 logging.debug(
                     f"Session is closed, no need to send heartbeat, state : "
                     f"{self._state} close_session_after_this: "
