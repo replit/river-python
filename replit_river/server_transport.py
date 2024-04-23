@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Tuple
 
 import nanoid  # type: ignore  # type: ignore
 from pydantic import ValidationError
@@ -30,58 +30,6 @@ from replit_river.transport import PROTOCOL_VERSION, Transport
 
 
 class ServerTransport(Transport):
-    async def get_or_create_session(
-        self,
-        transport_id: str,
-        to_id: str,
-        instance_id: str,
-        websocket: WebSocketCommonProtocol,
-    ) -> Session:
-        session_to_close: Optional[Session] = None
-        async with self._session_lock:
-            if to_id not in self._sessions:
-                logging.debug(
-                    f'Creating new session with "{to_id}" using ws: {websocket.id}'
-                )
-                self._sessions[to_id] = Session(
-                    transport_id,
-                    to_id,
-                    instance_id,
-                    websocket,
-                    self._transport_options,
-                    self._is_server,
-                    self._handlers,
-                    close_session_callback=self._delete_session,
-                )
-            else:
-                old_session = self._sessions[to_id]
-                if old_session._instance_id != instance_id:
-                    session_to_close = old_session
-                    self._sessions[to_id] = Session(
-                        transport_id,
-                        to_id,
-                        instance_id,
-                        websocket,
-                        self._transport_options,
-                        self._is_server,
-                        self._handlers,
-                        close_session_callback=self._delete_session,
-                    )
-                else:
-                    # If the instance id is the same, we reuse the session and assign
-                    # a new websocket to it.
-                    logging.debug(
-                        f'Reuse old session with "{to_id}" using new ws: {websocket.id}'
-                    )
-                    try:
-                        await old_session.replace_with_new_websocket(websocket)
-                    except FailedSendingMessageException as e:
-                        raise e
-        if session_to_close:
-            logging.info("Closing stale websocket")
-            await session_to_close.close(False)
-        session = self._sessions[to_id]
-        return session
 
     async def handshake_to_get_session(
         self,
@@ -90,7 +38,9 @@ class ServerTransport(Transport):
         async for message in websocket:
             try:
                 msg = parse_transport_msg(message, self._transport_options)
-                handshake_request = await self._establish_handshake(msg, websocket)
+                ws, handshake_request, handshake_response = (
+                    await self._establish_handshake(msg, websocket)
+                )
             except IgnoreMessageException:
                 continue
             except InvalidMessageException:
@@ -101,18 +51,22 @@ class ServerTransport(Transport):
             logging.debug("handshake success on server: %r", handshake_request)
             transport_id = msg.to
             to_id = msg.from_
-            instance_id = handshake_request.instanceId
+            session_id = handshake_response.status.sessionId
+            if not session_id:
+                raise InvalidMessageException("No session id in handshake response")
+            advertised_session_id = handshake_request.sessionId
             try:
                 session = await self.get_or_create_session(
                     transport_id,
                     to_id,
-                    instance_id,
+                    session_id,
+                    advertised_session_id,
                     websocket,
                 )
             except Exception as e:
                 error_msg = (
                     "Error building sessions from handshake request : "
-                    f"client_id: {transport_id}, instance_id: {instance_id}, error: {e}"
+                    f"client_id: {transport_id}, session_id: {advertised_session_id}, error: {e}"
                 )
                 raise InvalidMessageException(error_msg)
             return session
@@ -123,7 +77,7 @@ class ServerTransport(Transport):
         request_message: TransportMessage,
         handshake_status: HandShakeStatus,
         websocket: WebSocketCommonProtocol,
-    ) -> TransportMessage:
+    ) -> ControlMessageHandshakeResponse:
         response = ControlMessageHandshakeResponse(
             status=handshake_status,
         )
@@ -151,11 +105,15 @@ class ServerTransport(Transport):
             raise FailedSendingMessageException(
                 f"Failed sending handshake response: {e}"
             )
-        return response_message
+        return response
 
     async def _establish_handshake(
         self, request_message: TransportMessage, websocket: WebSocketCommonProtocol
-    ) -> ControlMessageHandshakeRequest:
+    ) -> Tuple[
+        WebSocketCommonProtocol,
+        ControlMessageHandshakeRequest,
+        ControlMessageHandshakeResponse,
+    ]:
         try:
             handshake_request = ControlMessageHandshakeRequest(
                 **request_message.payload
@@ -187,9 +145,12 @@ class ServerTransport(Transport):
                 websocket,
             )
             raise InvalidMessageException("handshake request to wrong server")
-        await self._send_handshake_response(
+        my_session_id = await self._get_or_create_session_id(
+            request_message.to, handshake_request.sessionId
+        )
+        handshake_response = await self._send_handshake_response(
             request_message,
-            HandShakeStatus(ok=True, instanceId=self._transport_id),
+            HandShakeStatus(ok=True, sessionId=my_session_id),
             websocket,
         )
-        return handshake_request
+        return websocket, handshake_request, handshake_response

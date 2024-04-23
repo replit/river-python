@@ -49,13 +49,12 @@ STREAM_CLOSED_BIT = 0x0004
 class ControlMessageHandshakeRequest(BaseModel):
     type: Literal["HANDSHAKE_REQ"] = "HANDSHAKE_REQ"
     protocolVersion: str
-    instanceId: str
+    sessionId: str
 
 
 class HandShakeStatus(BaseModel):
     ok: bool
-    # Instance id should be server level id, each server have one
-    instanceId: Optional[str] = None
+    sessionId: Optional[str] = None
     # Reason for failure
     reason: Optional[str] = None
 

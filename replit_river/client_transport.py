@@ -53,7 +53,6 @@ class ClientTransport(Transport):
         self._websocket_uri = websocket_uri
         self._client_id = client_id
         self._server_id = server_id
-        self._instance_id = str(nanoid.generate())
         self._rate_limiter = LeakyBucketRateLimit(
             transport_options.connection_retry_options
         )
@@ -63,17 +62,8 @@ class ClientTransport(Transport):
         self._retry_ws_lock = asyncio.Lock()
 
     async def _on_session_closed(self, session: Session) -> None:
-        logging.info(f"Client session {session._instance_id} closed")
+        logging.info(f"Client session {session._advertised_session_id} closed")
         await self._delete_session(session)
-
-    async def _retry_session_connection(self, session_to_replace_ws: Session) -> None:
-        async with self._retry_ws_lock:
-            if await session_to_replace_ws.is_websocket_open():
-                # other retry successfully replaced the websocket,
-                return
-            if await session_to_replace_ws.is_session_open():
-                new_ws, hs_request, hs_response = await self._establish_new_connection()
-                await session_to_replace_ws.replace_with_new_websocket(new_ws)
 
     async def _get_existing_session(self) -> Optional[ClientSession]:
         async with self._session_lock:
@@ -117,8 +107,14 @@ class ClientTransport(Transport):
                 continue
             try:
                 ws = await websockets.connect(self._websocket_uri)
+                existing_session = await self._get_existing_session()
+                session_id = (
+                    self.generate_session_id()
+                    if not existing_session
+                    else existing_session.session_id
+                )
                 handshake_request, handshake_response = await self._establish_handshake(
-                    self._transport_id, self._server_id, self._instance_id, ws
+                    self._transport_id, self._server_id, session_id, ws
                 )
                 return ws, handshake_request, handshake_response
             except Exception as e:
@@ -132,6 +128,44 @@ class ClientTransport(Transport):
             "Failed to create session after retrying max number of times",
         )
 
+    async def _retry_session_connection(
+        self, session_to_replace_ws: Session
+    ) -> Session:
+        async with self._retry_ws_lock:
+            if await session_to_replace_ws.is_websocket_open():
+                # other retry successfully replaced the websocket,
+                return session_to_replace_ws
+            if await session_to_replace_ws.is_session_open():
+                new_ws, hs_request, hs_response = await self._establish_new_connection()
+                if (
+                    hs_response.status.sessionId
+                    != session_to_replace_ws._advertised_session_id
+                ):
+                    server_session_id = hs_response.status.sessionId
+                    if not server_session_id:
+                        raise RiverException(
+                            ERROR_SESSION,
+                            "Server did not return a sessionId in successful handshake",
+                        )
+                    new_session = ClientSession(
+                        transport_id=self._transport_id,
+                        to_id=self._server_id,
+                        session_id=hs_request.sessionId,
+                        advertised_session_id=server_session_id,
+                        websocket=new_ws,
+                        transport_options=self._transport_options,
+                        is_server=False,
+                        handlers={},
+                        close_session_callback=self._on_session_closed,
+                        retry_connection_callback=lambda x: self._retry_session_connection(
+                            x
+                        ),
+                    )
+                    return new_session
+                else:
+                    await session_to_replace_ws.replace_with_new_websocket(new_ws)
+            return session_to_replace_ws
+
     async def _get_or_create_session(self) -> ClientSession:
         async with self._create_session_lock:
             existing_session = await self._get_existing_session()
@@ -139,14 +173,27 @@ class ClientTransport(Transport):
                 if await existing_session.is_websocket_open():
                     return existing_session
                 else:
-                    await self._retry_session_connection(existing_session)
-                    return existing_session
+                    session = await self._retry_session_connection(existing_session)
+                    # This should never happen, adding here to make mypy happy
+                    if not isinstance(session, ClientSession):
+                        raise RiverException(
+                            ERROR_SESSION,
+                            f"Session type is not ClientSession, got {type(session)}",
+                        )
+                    return session
             else:
                 new_ws, hs_request, hs_response = await self._establish_new_connection()
+                advertised_session_id = hs_response.status.sessionId
+                if not advertised_session_id:
+                    raise RiverException(
+                        ERROR_SESSION,
+                        "Server did not return a sessionId in successful handshake",
+                    )
                 new_session = ClientSession(
                     transport_id=self._transport_id,
                     to_id=self._server_id,
-                    instance_id=self._instance_id,
+                    session_id=hs_request.sessionId,
+                    advertised_session_id=advertised_session_id,
                     websocket=new_ws,
                     transport_options=self._transport_options,
                     is_server=False,
@@ -165,13 +212,13 @@ class ClientTransport(Transport):
         self,
         transport_id: str,
         to_id: str,
-        instance_id: str,
+        session_id: str,
         websocket: WebSocketCommonProtocol,
     ) -> ControlMessageHandshakeRequest:
         handshake_request = ControlMessageHandshakeRequest(
             type="HANDSHAKE_REQ",
             protocolVersion=PROTOCOL_VERSION,
-            instanceId=instance_id,
+            sessionId=session_id,
         )
         stream_id = self.generate_nanoid()
 
@@ -202,14 +249,14 @@ class ClientTransport(Transport):
         self,
         transport_id: str,
         to_id: str,
-        instance_id: str,
+        session_id: str,
         websocket: WebSocketCommonProtocol,
     ) -> Tuple[ControlMessageHandshakeRequest, ControlMessageHandshakeResponse]:
         try:
             handshake_request = await self._send_handshake_request(
                 transport_id=transport_id,
                 to_id=to_id,
-                instance_id=instance_id,
+                session_id=session_id,
                 websocket=websocket,
             )
         except FailedSendingMessageException:

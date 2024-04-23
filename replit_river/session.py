@@ -51,7 +51,8 @@ class Session(object):
         self,
         transport_id: str,
         to_id: str,
-        instance_id: str,
+        session_id: str,
+        advertised_session_id: str,
         websocket: websockets.WebSocketCommonProtocol,
         transport_options: TransportOptions,
         is_server: bool,
@@ -60,13 +61,14 @@ class Session(object):
         retry_connection_callback: Optional[
             Callable[
                 ["Session"],
-                Coroutine[Any, Any, None],
+                Coroutine[Any, Any, Any],
             ]
         ] = None,
     ) -> None:
         self._transport_id = transport_id
         self._to_id = to_id
-        self._instance_id = instance_id
+        self.session_id = session_id
+        self._advertised_session_id = advertised_session_id
         self._handlers = handlers
         self._is_server = is_server
         self._transport_options = transport_options
