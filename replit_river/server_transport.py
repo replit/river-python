@@ -8,7 +8,6 @@ from websockets import (
     WebSocketServerProtocol,
 )
 from websockets.exceptions import ConnectionClosed
-from websockets.server import WebSocketServerProtocol
 
 from replit_river.messages import (
     PROTOCOL_VERSION,

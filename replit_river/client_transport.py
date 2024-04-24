@@ -66,6 +66,10 @@ class ClientTransport(Transport):
         logging.info(f"Client session {session.advertised_session_id} closed")
         await self._delete_session(session)
 
+    async def close(self) -> None:
+        self._rate_limiter.close()
+        await self._close_all_sessions()
+
     async def _get_existing_session(self) -> Optional[ClientSession]:
         async with self._session_lock:
             if not self._sessions:
@@ -93,17 +97,12 @@ class ClientTransport(Transport):
         """Build a new websocket connection with retry logic."""
         rate_limit = self._rate_limiter
         max_retry = self._transport_options.connection_retry_options.max_retry
-        user_id = self._client_id
+        client_id = self._client_id
         for i in range(max_retry):
             if i > 0:
                 logging.info(f"Retrying build handshake number {i} times")
-            if not rate_limit.has_budget(user_id):
-                logging.debug(
-                    "No retry budget for %s, waiting for budget restoration.", user_id
-                )
-                await asyncio.sleep(
-                    rate_limit.options.budget_restore_interval_ms / 1000.0
-                )
+            if not rate_limit.has_budget(client_id):
+                logging.debug("No retry budget for %s.", client_id)
                 break
             try:
                 ws = await websockets.connect(self._websocket_uri)
@@ -113,13 +112,14 @@ class ClientTransport(Transport):
                     if not existing_session
                     else existing_session.session_id
                 )
+                rate_limit.consume_budget(client_id)
                 handshake_request, handshake_response = await self._establish_handshake(
                     self._transport_id, self._server_id, session_id, ws
                 )
-                rate_limit.start_restoring_budget(user_id)
+                rate_limit.start_restoring_budget(client_id)
                 return ws, handshake_request, handshake_response
             except Exception as e:
-                backoff_time = rate_limit.get_backoff_ms(user_id)
+                backoff_time = rate_limit.get_backoff_ms(client_id)
                 logging.error(
                     f"Error creating session: {e}, start backoff {backoff_time} ms"
                 )

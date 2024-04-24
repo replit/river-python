@@ -30,7 +30,10 @@ class Transport:
     def generate_session_id(self) -> str:
         return self.generate_nanoid()
 
-    async def close_all_sessions(self) -> None:
+    async def close(self) -> None:
+        await self._close_all_sessions()
+
+    async def _close_all_sessions(self) -> None:
         sessions = self._sessions.values()
         logging.info(
             f"start closing transport {self._transport_id}, number sessions : "

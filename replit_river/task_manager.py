@@ -17,8 +17,8 @@ class BackgroundTaskManager:
         for task in list(self.background_tasks):
             await self.cancel_task(task, self.background_tasks)
 
+    @staticmethod
     async def cancel_task(
-        self,
         task_to_remove: asyncio.Task[Any],
         background_tasks: Set[asyncio.Task],
     ) -> None:

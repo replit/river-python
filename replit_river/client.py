@@ -32,7 +32,7 @@ class Client:
 
     async def close(self) -> None:
         logging.info(f"river client {self._client_id} start closing")
-        await self._transport.close_all_sessions()
+        await self._transport.close()
         logging.info(f"river client {self._client_id} closed")
 
     async def send_rpc(

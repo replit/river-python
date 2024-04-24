@@ -24,7 +24,7 @@ class Server(object):
 
     async def close(self) -> None:
         logging.info(f"river server {self._server_id} start closing")
-        await self._transport.close_all_sessions()
+        await self._transport.close()
         logging.info(f"river server {self._server_id} closed")
 
     def add_rpc_handlers(
