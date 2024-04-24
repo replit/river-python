@@ -3,7 +3,6 @@ import logging
 from typing import Dict, Optional, Tuple
 
 import nanoid  # type: ignore
-
 from replit_river.messages import FailedSendingMessageException
 from replit_river.rpc import (
     GenericRpcHandler,
@@ -11,8 +10,6 @@ from replit_river.rpc import (
 from replit_river.session import Session
 from replit_river.transport_options import TransportOptions
 from websockets import WebSocketCommonProtocol
-
-PROTOCOL_VERSION = "v1"
 
 
 class Transport:
@@ -57,15 +54,20 @@ class Transport:
         to_id: str,
         advertised_session_id: str,
     ):
-        async with self._session_lock:
-            if to_id not in self._sessions:
-                return self.generate_session_id()
-            else:
-                old_session = self._sessions[to_id]
-                if old_session._advertised_session_id != advertised_session_id:
+        try:
+            async with self._session_lock:
+                if to_id not in self._sessions:
                     return self.generate_session_id()
                 else:
-                    return old_session._advertised_session_id
+                    old_session = self._sessions[to_id]
+
+                    if old_session.advertised_session_id != advertised_session_id:
+                        return self.generate_session_id()
+                    else:
+                        return old_session.session_id
+        except Exception as e:
+            logging.error(f"Error getting or creating session id {e}")
+            raise e
 
     async def get_or_create_session(
         self,
@@ -75,13 +77,18 @@ class Transport:
         advertised_session_id: str,
         websocket: WebSocketCommonProtocol,
     ) -> Session:
+        logging.debug(
+            "!!" * 50
+            + f" get_or_create_session : {transport_id} {to_id} {session_id} {advertised_session_id}"
+        )
         session_to_close: Optional[Session] = None
+        new_session: Optional[Session] = None
         async with self._session_lock:
             if to_id not in self._sessions:
                 logging.debug(
                     f'Creating new session with "{to_id}" using ws: {websocket.id}'
                 )
-                self._sessions[to_id] = Session(
+                new_session = Session(
                     transport_id,
                     to_id,
                     session_id,
@@ -94,9 +101,14 @@ class Transport:
                 )
             else:
                 old_session = self._sessions[to_id]
-                if old_session._advertised_session_id != advertised_session_id:
+                if old_session.advertised_session_id != advertised_session_id:
+                    logging.debug(
+                        f'Create new session with "{to_id}" for session'
+                        f" id {advertised_session_id} and close old session "
+                        f" {old_session.advertised_session_id}"
+                    )
                     session_to_close = old_session
-                    self._sessions[to_id] = Session(
+                    new_session = Session(
                         transport_id,
                         to_id,
                         session_id,
@@ -115,10 +127,17 @@ class Transport:
                     )
                     try:
                         await old_session.replace_with_new_websocket(websocket)
+                        new_session = old_session
                     except FailedSendingMessageException as e:
                         raise e
         if session_to_close:
-            logging.info("Closing stale websocket")
+            logging.info(
+                f"Closing stale session {session_to_close.advertised_session_id}"
+            )
             await session_to_close.close(False)
-        session = self._sessions[to_id]
-        return session
+            logging.info(
+                f"Closed stale session {session_to_close.advertised_session_id}"
+            )
+        async with self._session_lock:
+            self._sessions[to_id] = new_session
+        return new_session

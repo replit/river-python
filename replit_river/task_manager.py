@@ -2,6 +2,9 @@ import asyncio
 import logging
 from typing import Any, Optional, Set
 
+from aiochannel import ChannelClosed
+from replit_river.error_schema import ERROR_CODE_STREAM_CLOSED, RiverException
+
 
 class BackgroundTaskManager:
     """Manages background tasks and logs exceptions."""
@@ -25,17 +28,24 @@ class BackgroundTaskManager:
             if task_to_remove in background_tasks:
                 background_tasks.remove(task_to_remove)
             exception = task_to_remove.exception()
-        except asyncio.CancelledError:
-            logging.debug("Task was cancelled", exc_info=False)
+        except (asyncio.CancelledError, ChannelClosed):
+            logging.debug(f"Task was cancelled {task_to_remove}", exc_info=False)
             return
         except Exception:
             logging.error("Error retrieving task exception", exc_info=True)
             return
         if exception:
-            logging.error(
-                "Task resulted in an exception",
-                exc_info=exception,
-            )
+            if (
+                isinstance(exception, RiverException)
+                and exception.code == ERROR_CODE_STREAM_CLOSED
+            ):
+                # Task is cancelled
+                pass
+            else:
+                logging.error(
+                    "Task resulted in an exception",
+                    exc_info=exception,
+                )
 
     def _task_done_callback(
         self,
@@ -47,20 +57,26 @@ class BackgroundTaskManager:
         try:
             exception = task_to_remove.exception()
         except asyncio.CancelledError:
-            logging.debug("Task was cancelled", exc_info=False)
             return
         except Exception:
             logging.error("Error retrieving task exception", exc_info=True)
             return
         if exception:
-            logging.error(
-                "Task resulted in an exception",
-                exc_info=exception,
-            )
+            if (
+                isinstance(exception, RiverException)
+                and exception.code == ERROR_CODE_STREAM_CLOSED
+            ):
+                # Task is cancelled
+                pass
+            else:
+                logging.error(
+                    "Task resulted in an exception",
+                    exc_info=exception,
+                )
 
     async def create_task(
         self, fn: Any, tg: Optional[asyncio.TaskGroup] = None
-    ) -> None:
+    ) -> asyncio.Task:
         if tg:
             task = tg.create_task(fn)
         else:
@@ -69,3 +85,4 @@ class BackgroundTaskManager:
         task.add_done_callback(
             lambda x: self._task_done_callback(x, self.background_tasks)
         )
+        return task

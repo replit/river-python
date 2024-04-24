@@ -40,7 +40,9 @@ class Server(object):
         try:
             session = await self._transport.handshake_to_get_session(websocket)
         except Exception as e:
-            logging.error(f"Error establishing handshake, closing websocket: {e}")
+            logging.error(
+                f"Error establishing handshake, closing websocket: {e}", exc_info=True
+            )
             await websocket.close()
             return
         logging.debug("River server session established, start serving messages")

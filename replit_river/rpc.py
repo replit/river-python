@@ -27,6 +27,7 @@ from replit_river.error_schema import (
     RiverError,
     RiverException,
 )
+from replit_river.task_manager import BackgroundTaskManager
 
 InitType = TypeVar("InitType")
 RequestType = TypeVar("RequestType")
@@ -275,6 +276,7 @@ def upload_method_handler(
         input: Channel[Any],
         output: Channel[Any],
     ) -> None:
+        task_manager = BackgroundTaskManager()
         try:
             context = GrpcContext(peer)
             request: Channel[RequestType] = Channel(1024)
@@ -308,9 +310,10 @@ def upload_method_handler(
                 finally:
                     output.close()
 
-            convert_inputs_task = asyncio.create_task(_convert_inputs())
-            convert_outputs_task = asyncio.create_task(_convert_outputs())
+            convert_inputs_task = await task_manager.create_task(_convert_inputs())
+            convert_outputs_task = await task_manager.create_task(_convert_outputs())
             await asyncio.wait((convert_inputs_task, convert_outputs_task))
+
         except Exception as e:
             logging.exception("Uncaught exception in upload")
             await output.put(
@@ -323,6 +326,7 @@ def upload_method_handler(
                 }
             )
         finally:
+            await task_manager.cancel_all_tasks()
             output.close()
 
     return wrapped
@@ -336,11 +340,13 @@ def stream_method_handler(
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
 ) -> GenericRpcHandler:
+
     async def wrapped(
         peer: str,
         input: Channel[Any],
         output: Channel[Any],
     ) -> None:
+        task_manager = BackgroundTaskManager()
         try:
             context = GrpcContext(peer)
             request: Channel[RequestType] = Channel(1024)
@@ -363,8 +369,8 @@ def stream_method_handler(
                 finally:
                     output.close()
 
-            convert_inputs_task = asyncio.create_task(_convert_inputs())
-            convert_outputs_task = asyncio.create_task(_convert_outputs())
+            convert_inputs_task = await task_manager.create_task(_convert_inputs())
+            convert_outputs_task = await task_manager.create_task(_convert_outputs())
             await asyncio.wait((convert_inputs_task, convert_outputs_task))
         except grpc.RpcError:
             logging.exception("RPC exception in stream")
@@ -390,6 +396,7 @@ def stream_method_handler(
                 }
             )
         finally:
+            await task_manager.cancel_all_tasks()
             output.close()
 
     return wrapped

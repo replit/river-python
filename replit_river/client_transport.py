@@ -18,6 +18,7 @@ from replit_river.error_schema import (
     RiverException,
 )
 from replit_river.messages import (
+    PROTOCOL_VERSION,
     FailedSendingMessageException,
     parse_transport_msg,
     send_transport_message,
@@ -33,7 +34,7 @@ from replit_river.seq_manager import (
     InvalidMessageException,
 )
 from replit_river.session import Session
-from replit_river.transport import PROTOCOL_VERSION, Transport
+from replit_river.transport import Transport
 from replit_river.transport_options import TransportOptions
 
 
@@ -62,7 +63,7 @@ class ClientTransport(Transport):
         self._retry_ws_lock = asyncio.Lock()
 
     async def _on_session_closed(self, session: Session) -> None:
-        logging.info(f"Client session {session._advertised_session_id} closed")
+        logging.info(f"Client session {session.advertised_session_id} closed")
         await self._delete_session(session)
 
     async def _get_existing_session(self) -> Optional[ClientSession]:
@@ -139,7 +140,7 @@ class ClientTransport(Transport):
                 new_ws, hs_request, hs_response = await self._establish_new_connection()
                 if (
                     hs_response.status.sessionId
-                    != session_to_replace_ws._advertised_session_id
+                    != session_to_replace_ws.advertised_session_id
                 ):
                     server_session_id = hs_response.status.sessionId
                     if not server_session_id:

@@ -11,6 +11,7 @@ from websockets.exceptions import ConnectionClosed
 from websockets.server import WebSocketServerProtocol
 
 from replit_river.messages import (
+    PROTOCOL_VERSION,
     FailedSendingMessageException,
     parse_transport_msg,
     send_transport_message,
@@ -26,7 +27,7 @@ from replit_river.seq_manager import (
     InvalidMessageException,
 )
 from replit_river.session import Session
-from replit_river.transport import PROTOCOL_VERSION, Transport
+from replit_river.transport import Transport
 
 
 class ServerTransport(Transport):
@@ -66,7 +67,8 @@ class ServerTransport(Transport):
             except Exception as e:
                 error_msg = (
                     "Error building sessions from handshake request : "
-                    f"client_id: {transport_id}, session_id: {advertised_session_id}, error: {e}"
+                    f"client_id: {transport_id}, session_id: {advertised_session_id},"
+                    f" error: {e}"
                 )
                 raise InvalidMessageException(error_msg)
             return session
@@ -146,7 +148,7 @@ class ServerTransport(Transport):
             )
             raise InvalidMessageException("handshake request to wrong server")
         my_session_id = await self._get_or_create_session_id(
-            request_message.to, handshake_request.sessionId
+            request_message.from_, handshake_request.sessionId
         )
         handshake_response = await self._send_handshake_response(
             request_message,

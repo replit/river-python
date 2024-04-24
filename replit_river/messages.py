@@ -23,7 +23,7 @@ class FailedSendingMessageException(Exception):
     pass
 
 
-PROTOCOL_VERSION = "v1"
+PROTOCOL_VERSION = "v1.1"
 
 CROSIS_PREFIX_BYTES = b"\x00\x00"
 PID2_PREFIX_BYTES = b"\xff\xff"

@@ -68,7 +68,7 @@ class Session(object):
         self._transport_id = transport_id
         self._to_id = to_id
         self.session_id = session_id
-        self._advertised_session_id = advertised_session_id
+        self.advertised_session_id = advertised_session_id
         self._handlers = handlers
         self._is_server = is_server
         self._transport_options = transport_options
@@ -275,7 +275,9 @@ class Session(object):
                     self._heartbeat_misses
                     >= self._transport_options.heartbeats_until_dead
                 ):
-                    logging.debug("closing websocket because of heartbeat misses")
+                    logging.debug(
+                        f"{self.session_id} closing websocket because of heartbeat misses"
+                    )
                     await self._on_websocket_unexpected_close()
                     await self.close_websocket(
                         self._ws, should_retry=not self._is_server
@@ -373,6 +375,7 @@ class Session(object):
     ) -> None:
         """Send serialized messages to the websockets."""
         try:
+            ws = None
             async for payload in output:
                 # TODO: what if the websocket changed during this?
                 ws = self._ws
@@ -385,8 +388,11 @@ class Session(object):
                     await self.send_message(stream_id, payload, ws, STREAM_CLOSED_BIT)
                     return
                 await self.send_message(stream_id, payload, ws)
-            logging.debug("sent an end of stream %r", stream_id)
-            await self.send_message(stream_id, {"type": "CLOSE"}, ws, STREAM_CLOSED_BIT)
+            if ws:
+                logging.debug("sent an end of stream %r", stream_id)
+                await self.send_message(
+                    stream_id, {"type": "CLOSE"}, ws, STREAM_CLOSED_BIT
+                )
         except FailedSendingMessageException as e:
             logging.error(f"Error while sending responses, {type(e)} : {e}")
         except (RuntimeError, ChannelClosed) as e:
@@ -495,7 +501,7 @@ class Session(object):
         """Close the session and all associated streams."""
         logging.info(
             f"{self._transport_id} closing session "
-            f"to {self._to_id} current_state : {self._ws_state}"
+            f"to {self._to_id}, ws: {self._ws.id}, current_state : {self._ws_state}"
         )
         async with self._state_lock:
             if self._state != SessionState.ACTIVE:
