@@ -15,6 +15,8 @@ class ConnectionRetryOptions(BaseModel):
     max_retry: int = 1000
 
 
+# setup in replit web can be found at
+# https://github.com/replit/repl-it-web/blob/main/pkg/pid2/src/entrypoints/protocol.ts#L13
 class TransportOptions(BaseModel):
     session_disconnect_grace_ms: float = 5_000
     heartbeat_ms: float = 500

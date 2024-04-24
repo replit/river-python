@@ -73,7 +73,7 @@ class ClientTransport(Transport):
             if len(self._sessions) > 1:
                 raise RiverException(
                     "session_error",
-                    "More than one session found in client, " + "should only be one",
+                    "More than one session found in client, should only be one",
                 )
             session = list(self._sessions.values())[0]
             if isinstance(session, ClientSession):
@@ -96,16 +96,15 @@ class ClientTransport(Transport):
         user_id = self._client_id
         for i in range(max_retry):
             if i > 0:
-                logging.info(f"Retrying build handshake {i} times")
+                logging.info(f"Retrying build handshake number {i} times")
             if not rate_limit.has_budget(user_id):
                 logging.debug(
                     f"No retry budget for {user_id}, waiting for budget restoration."
                 )
-                rate_limit.start_restoring_budget(user_id)
                 await asyncio.sleep(
                     rate_limit.options.budget_restore_interval_ms / 1000.0
                 )
-                continue
+                break
             try:
                 ws = await websockets.connect(self._websocket_uri)
                 existing_session = await self._get_existing_session()
@@ -117,6 +116,7 @@ class ClientTransport(Transport):
                 handshake_request, handshake_response = await self._establish_handshake(
                     self._transport_id, self._server_id, session_id, ws
                 )
+                rate_limit.start_restoring_budget(user_id)
                 return ws, handshake_request, handshake_response
             except Exception as e:
                 backoff_time = rate_limit.get_backoff_ms(user_id)
