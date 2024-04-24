@@ -34,14 +34,14 @@ from .rpc import (
 
 class SessionState(enum.Enum):
     ACTIVE = 0
-    CLOSING = 3
-    CLOSED = 4
+    CLOSING = 1
+    CLOSED = 2
 
 
 class WsState(enum.Enum):
     OPEN = 0
-    CLOSING = 2
-    CLOSED = 3
+    CLOSING = 1
+    CLOSED = 2
 
 
 class Session(object):

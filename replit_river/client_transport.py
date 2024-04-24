@@ -136,35 +136,40 @@ class ClientTransport(Transport):
             if await session_to_replace_ws.is_websocket_open():
                 # other retry successfully replaced the websocket,
                 return session_to_replace_ws
-            if await session_to_replace_ws.is_session_open():
-                new_ws, hs_request, hs_response = await self._establish_new_connection()
-                if (
-                    hs_response.status.sessionId
-                    != session_to_replace_ws.advertised_session_id
-                ):
-                    server_session_id = hs_response.status.sessionId
-                    if not server_session_id:
-                        raise RiverException(
-                            ERROR_SESSION,
-                            "Server did not return a sessionId in successful handshake",
-                        )
-                    new_session = ClientSession(
-                        transport_id=self._transport_id,
-                        to_id=self._server_id,
-                        session_id=hs_request.sessionId,
-                        advertised_session_id=server_session_id,
-                        websocket=new_ws,
-                        transport_options=self._transport_options,
-                        is_server=False,
-                        handlers={},
-                        close_session_callback=self._on_session_closed,
-                        retry_connection_callback=lambda x: self._retry_session_connection(
-                            x
-                        ),
+            if not await session_to_replace_ws.is_session_open():
+                # If the session is already closing we don't retry connection
+                return session_to_replace_ws
+            new_ws, hs_request, hs_response = await self._establish_new_connection()
+            # If the server session id different, we create a new session.
+            if (
+                hs_response.status.sessionId
+                != session_to_replace_ws.advertised_session_id
+            ):
+                server_session_id = hs_response.status.sessionId
+                if not server_session_id:
+                    raise RiverException(
+                        ERROR_SESSION,
+                        "Server did not return a sessionId in successful handshake",
                     )
-                    return new_session
-                else:
-                    await session_to_replace_ws.replace_with_new_websocket(new_ws)
+                new_session = ClientSession(
+                    transport_id=self._transport_id,
+                    to_id=self._server_id,
+                    session_id=hs_request.sessionId,
+                    advertised_session_id=server_session_id,
+                    websocket=new_ws,
+                    transport_options=self._transport_options,
+                    is_server=False,
+                    handlers={},
+                    close_session_callback=self._on_session_closed,
+                    retry_connection_callback=lambda x: self._retry_session_connection(
+                        x
+                    ),
+                )
+                return new_session
+            else:
+                # If the session is still active and aligns with the server session
+                # we replace the websocket in it.
+                await session_to_replace_ws.replace_with_new_websocket(new_ws)
             return session_to_replace_ws
 
     async def _get_or_create_session(self) -> ClientSession:

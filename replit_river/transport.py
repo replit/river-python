@@ -77,10 +77,6 @@ class Transport:
         advertised_session_id: str,
         websocket: WebSocketCommonProtocol,
     ) -> Session:
-        logging.debug(
-            "!!" * 50
-            + f" get_or_create_session : {transport_id} {to_id} {session_id} {advertised_session_id}"
-        )
         session_to_close: Optional[Session] = None
         new_session: Optional[Session] = None
         async with self._session_lock:
