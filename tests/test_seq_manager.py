@@ -11,14 +11,14 @@ from tests.conftest import transport_message
 
 
 @pytest.mark.asyncio
-async def test_initial_sequence_and_ack_numbers():
+async def test_initial_sequence_and_ack_numbers() -> None:
     manager = SeqManager()
     assert await manager.get_seq() == 0, "Initial sequence number should be 0"
     assert await manager.get_ack() == 0, "Initial acknowledgment number should be 0"
 
 
 @pytest.mark.asyncio
-async def test_sequence_number_increment():
+async def test_sequence_number_increment() -> None:
     manager = SeqManager()
     initial_seq = await manager.get_seq_and_increment()
     assert initial_seq == 0, "Sequence number should start at 0"
@@ -27,7 +27,7 @@ async def test_sequence_number_increment():
 
 
 @pytest.mark.asyncio
-async def test_message_reception():
+async def test_message_reception() -> None:
     manager = SeqManager()
     msg = transport_message(seq=0, ack=0, from_="client")
     await manager.check_seq_and_update(
@@ -46,7 +46,7 @@ async def test_message_reception():
 
 
 @pytest.mark.asyncio
-async def test_acknowledgment_setting():
+async def test_acknowledgment_setting() -> None:
     manager = SeqManager()
     msg = transport_message(seq=0, ack=0, from_="client")
     await manager.check_seq_and_update(msg)
@@ -54,7 +54,7 @@ async def test_acknowledgment_setting():
 
 
 @pytest.mark.asyncio
-async def test_concurrent_access_to_sequence():
+async def test_concurrent_access_to_sequence() -> None:
     manager = SeqManager()
     tasks = [manager.get_seq_and_increment() for _ in range(10)]
     results = await asyncio.gather(*tasks)

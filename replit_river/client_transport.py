@@ -226,7 +226,7 @@ class ClientTransport(Transport):
         )
         stream_id = self.generate_nanoid()
 
-        def websocket_closed_callback():
+        def websocket_closed_callback() -> None:
             raise RiverException(ERROR_SESSION, "Session closed while sending")
 
         try:

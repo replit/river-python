@@ -8,6 +8,7 @@ from aiochannel.errors import ChannelClosed
 
 from replit_river.error_schema import ERROR_CODE_STREAM_CLOSED, RiverException
 from replit_river.session import Session
+from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
 
 from .rpc import (
     STREAM_CLOSED_BIT,
@@ -48,12 +49,12 @@ class ClientSession(Session):
         try:
             try:
                 response = await output.get()
-            except (RuntimeError, ChannelClosed) as e:
-                # if the stream is closed before we get a response, we will get a
-                # RuntimeError: RuntimeError: Event loop is closed
+            except ChannelClosed as e:
                 raise RiverException(
                     ERROR_CODE_STREAM_CLOSED, f"Stream closed before response {e}"
                 )
+            except RuntimeError as e:
+                raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e))
             if not response.get("ok", False):
                 try:
                     error = error_deserializer(response["payload"])
@@ -64,8 +65,6 @@ class ClientSession(Session):
         except RiverException as e:
             raise e
         except Exception as e:
-            # Log the error and return an appropriate error response
-            logging.exception("Error during RPC communication")
             raise e
 
     async def send_upload(
@@ -100,7 +99,7 @@ class ClientSession(Session):
                 )
                 first_message = False
             # If this request is not closed and the session is killed, we should
-            # throws exception here
+            # throw exception here
             async for item in request:
                 control_flags = 0
                 if first_message:
@@ -123,12 +122,12 @@ class ClientSession(Session):
         try:
             try:
                 response = await output.get()
-            except (RuntimeError, ChannelClosed):
-                # if the stream is closed before we get a response, we will get a
-                # RuntimeError: RuntimeError: Event loop is closed
+            except ChannelClosed:
                 raise RiverException(
                     ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
                 )
+            except RuntimeError as e:
+                raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e))
             if not response.get("ok", False):
                 try:
                     error = error_deserializer(response["payload"])
@@ -140,8 +139,6 @@ class ClientSession(Session):
         except RiverException as e:
             raise e
         except Exception as e:
-            # Log the error and return an appropriate error response
-            logging.exception("Error during upload communication")
             raise e
 
     async def send_subscription(
@@ -158,7 +155,7 @@ class ClientSession(Session):
         Expects the input and output be messages that will be msgpacked.
         """
         stream_id = nanoid.generate()
-        output: Channel[Any] = Channel(1024)
+        output: Channel[Any] = Channel(MAX_MESSAGE_BUFFER_SIZE)
         self._streams[stream_id] = output
         await self.send_message(
             ws=self._ws,
@@ -188,8 +185,6 @@ class ClientSession(Session):
                 ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
             )
         except Exception as e:
-            # Log the error and yield an appropriate error response
-            logging.exception(f"Error during subscription communication : {item}")
             raise e
 
     async def send_stream(
@@ -209,7 +204,7 @@ class ClientSession(Session):
         """
 
         stream_id = nanoid.generate()
-        output: Channel[Any] = Channel(1024)
+        output: Channel[Any] = Channel(MAX_MESSAGE_BUFFER_SIZE)
         self._streams[stream_id] = output
         try:
             if init and init_serializer:
@@ -273,8 +268,6 @@ class ClientSession(Session):
                 ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
             )
         except Exception as e:
-            # Log the error and yield an appropriate error response
-            logging.exception("Error during stream communication")
             raise e
 
     async def send_close_stream(

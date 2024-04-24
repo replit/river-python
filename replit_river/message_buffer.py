@@ -3,12 +3,13 @@ import logging
 from typing import Optional
 
 from replit_river.rpc import TransportMessage
+from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
 
 
 class MessageBuffer:
     """A buffer to store messages and support current updates"""
 
-    def __init__(self, max_num_messages: int = 1000):
+    def __init__(self, max_num_messages: int = MAX_MESSAGE_BUFFER_SIZE):
         self.max_size = max_num_messages
         self.buffer: list[TransportMessage] = []
         self._lock = asyncio.Lock()

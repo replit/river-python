@@ -21,7 +21,7 @@ from replit_river.seq_manager import (
     SeqManager,
 )
 from replit_river.task_manager import BackgroundTaskManager
-from replit_river.transport_options import TransportOptions
+from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOptions
 
 from .rpc import (
     ACK_BIT,
@@ -267,6 +267,8 @@ class Session(object):
             try:
                 await self.send_message(
                     str(nanoid.generate()),
+                    # TODO: make this a message class
+                    # https://github.com/replit/river/blob/741b1ea6d7600937ad53564e9cf8cd27a92ec36a/transport/message.ts#L42
                     {
                         "ack": 0,
                     },
@@ -380,9 +382,10 @@ class Session(object):
     ) -> None:
         """Send serialized messages to the websockets."""
         try:
+            # TODO: This blocking is not ideal, we should close this task when websocket
+            # is closed, and start another one when websocket reconnects.
             ws = None
             async for payload in output:
-                # TODO: what if the websocket changed during this?
                 ws = self._ws
                 while self._ws_state != WsState.OPEN:
                     await asyncio.sleep(
@@ -459,8 +462,12 @@ class Session(object):
             "stream",
         )
         # New channel pair.
-        input_stream: Channel[Any] = Channel(1024 if is_streaming_input else 1)
-        output_stream: Channel[Any] = Channel(1024 if is_streaming_output else 1)
+        input_stream: Channel[Any] = Channel(
+            MAX_MESSAGE_BUFFER_SIZE if is_streaming_input else 1
+        )
+        output_stream: Channel[Any] = Channel(
+            MAX_MESSAGE_BUFFER_SIZE if is_streaming_output else 1
+        )
         try:
             await input_stream.put(msg.payload)
         except (RuntimeError, ChannelClosed) as e:

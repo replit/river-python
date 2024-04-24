@@ -41,8 +41,8 @@ class Transport:
             f"{len(sessions)}"
         )
         sessions_to_close = list(sessions)
-        for session in sessions_to_close:
-            await session.close(False)
+        tasks = [session.close(False) for session in sessions_to_close]
+        await asyncio.gather(*tasks)
         logging.info(f"Transport closed {self._transport_id}")
 
     async def _delete_session(self, session: Session) -> None:
@@ -61,7 +61,7 @@ class Transport:
         self,
         to_id: str,
         advertised_session_id: str,
-    ):
+    ) -> str:
         try:
             async with self._session_lock:
                 if to_id not in self._sessions:

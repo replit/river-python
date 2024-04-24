@@ -30,7 +30,6 @@ from replit_river.transport import Transport
 
 
 class ServerTransport(Transport):
-
     async def handshake_to_get_session(
         self,
         websocket: WebSocketServerProtocol,
@@ -38,9 +37,11 @@ class ServerTransport(Transport):
         async for message in websocket:
             try:
                 msg = parse_transport_msg(message, self._transport_options)
-                _, handshake_request, handshake_response = (
-                    await self._establish_handshake(msg, websocket)
-                )
+                (
+                    _,
+                    handshake_request,
+                    handshake_response,
+                ) = await self._establish_handshake(msg, websocket)
             except IgnoreMessageException:
                 continue
             except InvalidMessageException:

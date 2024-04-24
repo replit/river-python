@@ -28,6 +28,7 @@ from replit_river.error_schema import (
     RiverException,
 )
 from replit_river.task_manager import BackgroundTaskManager
+from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
 
 InitType = TypeVar("InitType")
 RequestType = TypeVar("RequestType")
@@ -280,7 +281,7 @@ def upload_method_handler(
         task_manager = BackgroundTaskManager()
         try:
             context = GrpcContext(peer)
-            request: Channel[RequestType] = Channel(1024)
+            request: Channel[RequestType] = Channel(MAX_MESSAGE_BUFFER_SIZE)
 
             async def _convert_inputs() -> None:
                 try:
@@ -341,7 +342,6 @@ def stream_method_handler(
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
 ) -> GenericRpcHandler:
-
     async def wrapped(
         peer: str,
         input: Channel[Any],
@@ -350,7 +350,7 @@ def stream_method_handler(
         task_manager = BackgroundTaskManager()
         try:
             context = GrpcContext(peer)
-            request: Channel[RequestType] = Channel(1024)
+            request: Channel[RequestType] = Channel(MAX_MESSAGE_BUFFER_SIZE)
 
             async def _convert_inputs() -> None:
                 try:

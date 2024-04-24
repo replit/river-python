@@ -4,6 +4,7 @@ from pydantic import BaseModel
 
 CROSIS_PREFIX_BYTES = b"\x00\x00"
 PID2_PREFIX_BYTES = b"\xff\xff"
+MAX_MESSAGE_BUFFER_SIZE = 1024
 
 
 class ConnectionRetryOptions(BaseModel):

@@ -25,7 +25,7 @@ class LeakyBucketRateLimit:
         self.budget_consumed: Dict[str, int] = {}
         self.tasks: Dict[str, asyncio.Task] = {}
 
-    def get_backoff_ms(self, user: str) -> int:
+    def get_backoff_ms(self, user: str) -> float:
         """Calculate the backoff time in milliseconds for a user.
 
         Args:

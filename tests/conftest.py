@@ -1,7 +1,7 @@
 import logging
 from typing import Any, AsyncGenerator
 
-import nanoid
+import nanoid  # type: ignore
 import pytest
 from websockets.server import serve
 
