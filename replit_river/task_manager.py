@@ -29,6 +29,7 @@ class BackgroundTaskManager:
                 background_tasks.remove(task_to_remove)
             exception = task_to_remove.exception()
         except (asyncio.CancelledError, ChannelClosed):
+            # This is expected when websocket is closed
             logging.debug("Task was cancelled %r", task_to_remove)
             return
         except Exception:
