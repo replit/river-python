@@ -68,10 +68,10 @@ def parse_transport_msg(
             message = message[len(PID2_PREFIX_BYTES) :]
         else:
             raise InvalidMessageException(
-                "Got message without prefix bytes: " f"{formatted_bytes(message)}"
+                f"Got message without prefix bytes: {formatted_bytes(message)[:5]}"
             )
     try:
-        unpacked_message = msgpack.unpackb(message, timestamp=3)
+        unpacked_message = msgpack.unpackb(message)
     except (msgpack.UnpackException, msgpack.exceptions.ExtraData):
         raise InvalidMessageException("received non-msgpack message")
     try:
@@ -82,5 +82,5 @@ def parse_transport_msg(
         msgpack.UnpackException,
         PydanticCoreValidationError,
     ):
-        raise InvalidMessageException(f"failed to parse message:{message.decode()}")
+        raise InvalidMessageException(f"failed to parse message: {unpacked_message}")
     return msg

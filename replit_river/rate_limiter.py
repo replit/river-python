@@ -5,6 +5,7 @@ from replit_river.transport_options import ConnectionRetryOptions
 
 
 class LeakyBucketRateLimit:
+    """Leaky bucket rate limiter for connection retries."""
 
     def __init__(self, options: ConnectionRetryOptions):
         self.options = options

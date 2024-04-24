@@ -9,10 +9,10 @@ PID2_PREFIX_BYTES = b"\xff\xff"
 class ConnectionRetryOptions(BaseModel):
     base_interval_ms: int = 250
     max_jitter_ms: int = 200
-    max_backoff_ms: float = 32000
+    max_backoff_ms: float = 32_000
     attempt_budget_capacity: float = 5
     budget_restore_interval_ms: float = 200
-    max_retry: int = 1000
+    max_retry: int = 1_000
 
 
 # setup in replit web can be found at
@@ -24,7 +24,7 @@ class TransportOptions(BaseModel):
     use_prefix_bytes: bool = False
     close_session_check_interval_ms: float = 100
     connection_retry_options: ConnectionRetryOptions = ConnectionRetryOptions()
-    buffer_size: int = 1000
+    buffer_size: int = 1_000
 
     def get_prefix_bytes(self) -> bytes:
         return PID2_PREFIX_BYTES if self.use_prefix_bytes else b""
@@ -32,6 +32,7 @@ class TransportOptions(BaseModel):
     def websocket_disconnect_grace_ms(self) -> float:
         return self.heartbeat_ms * self.heartbeats_until_dead
 
+    @classmethod
     def create_from_env(cls) -> "TransportOptions":
         session_disconnect_grace_ms = float(
             os.getenv("SESSION_DISCONNECT_GRACE_MS", 5_000)
