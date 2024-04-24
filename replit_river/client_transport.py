@@ -209,8 +209,7 @@ class ClientTransport(Transport):
                         x
                     ),
                 )
-                async with self._session_lock:
-                    self._sessions[self._server_id] = new_session
+                await self._set_session(new_session)
                 await new_session.start_serve_responses()
                 return new_session
 
@@ -251,6 +250,28 @@ class ClientTransport(Transport):
         except ConnectionClosed:
             raise RiverException(ERROR_HANDSHAKE, "Hand shake failed")
 
+    async def _get_handshake_response_msg(
+        self, websocket: WebSocketCommonProtocol
+    ) -> TransportMessage:
+        while True:
+            try:
+                data = await websocket.recv()
+            except ConnectionClosed as e:
+                logging.debug(
+                    f"Connection closed during waiting for handshake response : {e}"
+                )
+                raise RiverException(ERROR_HANDSHAKE, "Hand shake failed")
+            try:
+                return parse_transport_msg(data, self._transport_options)
+            except IgnoreMessageException as e:
+                logging.debug(f"Ignoring transport message : {e}")
+                continue
+            except InvalidMessageException as e:
+                raise RiverException(
+                    ERROR_HANDSHAKE,
+                    f"Got invalid transport message, closing connection : {e}",
+                )
+
     async def _establish_handshake(
         self,
         transport_id: str,
@@ -270,30 +291,9 @@ class ClientTransport(Transport):
                 ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
             )
         logging.debug("river client waiting for handshake response")
-        while True:
-            try:
-                logging.debug(f"websocket while waiting for response : {websocket.id}")
-                data = await websocket.recv()
-            except ConnectionClosed:
-                logging.debug(
-                    "Connection closed during waiting for handshake response : {e}"
-                )
-                raise RiverException(ERROR_HANDSHAKE, "Hand shake failed")
-            try:
-                first_message = parse_transport_msg(data, self._transport_options)
-            except IgnoreMessageException as e:
-                logging.debug(f"Ignoring transport message : {e}")
-                continue
-            except InvalidMessageException as e:
-                raise RiverException(
-                    ERROR_HANDSHAKE,
-                    f"Got invalid transport message, closing connection : {e}",
-                )
-            break
         try:
-            handshake_response = ControlMessageHandshakeResponse(
-                **first_message.payload
-            )
+            response_msg = await self._get_handshake_response_msg(websocket)
+            handshake_response = ControlMessageHandshakeResponse(**response_msg.payload)
             logging.debug(f"river client get handshake response : {handshake_response}")
         except ValidationError as e:
             raise RiverException(

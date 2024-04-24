@@ -37,7 +37,7 @@ class TransportOptions(BaseModel):
             os.getenv("SESSION_DISCONNECT_GRACE_MS", 5_000)
         )
         heartbeat_ms = float(os.getenv("HEARTBEAT_MS", 2000))
-        heartbeats_to_dead = float(os.getenv("HEARTBEATS_UNTIL_DEAD", 2))
+        heartbeats_to_dead = int(os.getenv("HEARTBEATS_UNTIL_DEAD", 2))
         return TransportOptions(
             session_disconnect_grace_ms=session_disconnect_grace_ms,
             heartbeat_ms=heartbeat_ms,

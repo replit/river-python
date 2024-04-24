@@ -67,6 +67,7 @@ class ControlMessageHandshakeResponse(BaseModel):
 
 class TransportMessage(BaseModel):
     id: str
+    # from_ is used instead of from because from is a reserved keyword in Python
     from_: str = Field(..., alias="from")
     to: str
     seq: int

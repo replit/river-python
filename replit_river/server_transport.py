@@ -1,5 +1,5 @@
 import logging
-from typing import Optional, Tuple
+from typing import Tuple
 
 import nanoid  # type: ignore  # type: ignore
 from pydantic import ValidationError
@@ -39,7 +39,7 @@ class ServerTransport(Transport):
         async for message in websocket:
             try:
                 msg = parse_transport_msg(message, self._transport_options)
-                ws, handshake_request, handshake_response = (
+                _, handshake_request, handshake_response = (
                     await self._establish_handshake(msg, websocket)
                 )
             except IgnoreMessageException:

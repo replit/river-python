@@ -46,6 +46,10 @@ class Transport:
             if session._to_id in self._sessions:
                 del self._sessions[session._to_id]
 
+    async def _set_session(self, session: Session) -> None:
+        async with self._session_lock:
+            self._sessions[session._to_id] = session
+
     def generate_nanoid(self) -> str:
         return str(nanoid.generate())
 
@@ -134,6 +138,5 @@ class Transport:
             logging.info(
                 f"Closed stale session {session_to_close.advertised_session_id}"
             )
-        async with self._session_lock:
-            self._sessions[to_id] = new_session
+        await self._set_session(new_session)
         return new_session
