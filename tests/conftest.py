@@ -142,7 +142,7 @@ async def client(
             try:
                 yield client
             finally:
-                logging.debug(f"Start closing test client : {'test_client'}")
+                logging.debug("Start closing test client : %s", "test_client")
                 await client.close()
     finally:
         logging.debug("Start closing test server")

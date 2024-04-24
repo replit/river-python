@@ -126,8 +126,9 @@ class Session(object):
             # already in grace period, no need to set again
             return
         logging.debug(
-            f"websocket closed from {self._transport_id} to {self._to_id}, "
-            "begin grace period"
+            "websocket closed from %s to %s begin grace period",
+            self._transport_id,
+            self._to_id,
         )
         grace_period_ms = self._transport_options.session_disconnect_grace_ms
         self._close_session_after_time_secs = (
@@ -142,10 +143,10 @@ class Session(object):
                     await self._handle_messages_from_ws(self._ws, tg)
                 except ConnectionClosed as e:
                     await self._on_websocket_unexpected_close()
-                    logging.debug(f"ConnectionClosed while serving: {e}")
+                    logging.debug("ConnectionClosed while serving: %r", e)
                 except FailedSendingMessageException as e:
                     # Expected error if the connection is closed.
-                    logging.debug(f"FailedSendingMessageException while serving: {e}")
+                    logging.debug("FailedSendingMessageException while serving: %r", e)
                 except Exception:
                     logging.exception("caught exception at message iterator")
         except ExceptionGroup as eg:
@@ -164,8 +165,9 @@ class Session(object):
         self, websocket: WebSocketCommonProtocol, tg: Optional[asyncio.TaskGroup] = None
     ) -> None:
         logging.debug(
-            f'{"server" if self._is_server else "client"} start handling messages from'
-            f" ws {websocket.id}"
+            "%s start handling messages from ws %s",
+            "server" if self._is_server else "client",
+            websocket.id,
         )
         try:
             async for message in websocket:
@@ -197,7 +199,7 @@ class Session(object):
                         async with self._stream_lock:
                             del self._streams[msg.streamId]
                 except IgnoreMessageException as e:
-                    logging.debug(f"Ignoring transport message : {e}")
+                    logging.debug("Ignoring transport message : %r", e)
                     continue
                 except InvalidMessageException as e:
                     logging.error(
@@ -255,9 +257,10 @@ class Session(object):
             await asyncio.sleep(self._transport_options.heartbeat_ms / 1000)
             if self._state != SessionState.ACTIVE:
                 logging.debug(
-                    f"Session is closed, no need to send heartbeat, state : "
-                    f"{self._state} close_session_after_this: "
-                    f"{self._close_session_after_time_secs}"
+                    "Session is closed, no need to send heartbeat, state : "
+                    "%r close_session_after_this: %r",
+                    {self._state},
+                    {self._close_session_after_time_secs},
                 )
                 # session is closing, no need to send heartbeat
                 continue
@@ -276,7 +279,8 @@ class Session(object):
                     >= self._transport_options.heartbeats_until_dead
                 ):
                     logging.debug(
-                        f"{self.session_id} closing websocket because of heartbeat misses"
+                        "%r closing websocket because of heartbeat misses",
+                        self.session_id,
                     )
                     await self._on_websocket_unexpected_close()
                     await self.close_websocket(
@@ -420,7 +424,7 @@ class Session(object):
                 # TODO: should we wait here?
                 task = asyncio.create_task(ws.close())
                 task.add_done_callback(
-                    lambda _: logging.debug(f"old websocket {ws.id} closed.")
+                    lambda _: logging.debug("old websocket %s closed.", ws.id)
                 )
             self._ws_state = WsState.CLOSED
         if should_retry and self._retry_connection_callback:

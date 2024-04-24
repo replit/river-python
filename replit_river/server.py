@@ -35,7 +35,7 @@ class Server(object):
 
     async def serve(self, websocket: WebSocketServerProtocol) -> None:
         logging.debug(
-            f"River server started establishing session with ws: {websocket.id}"
+            "River server started establishing session with ws: %s", websocket.id
         )
         try:
             session = await self._transport.handshake_to_get_session(websocket)
@@ -55,7 +55,7 @@ class Server(object):
             # grace period.
             await session.serve()
         except ConnectionClosed as e:
-            logging.debug(f"ConnectionClosed while serving {e}")
+            logging.debug("ConnectionClosed while serving %r", e)
             # We don't have to close the websocket here, it is already closed.
         except Exception as e:
             logging.error(f"River transport error in server {self._server_id}: {e}")

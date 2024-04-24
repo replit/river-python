@@ -99,7 +99,7 @@ class ClientTransport(Transport):
                 logging.info(f"Retrying build handshake number {i} times")
             if not rate_limit.has_budget(user_id):
                 logging.debug(
-                    f"No retry budget for {user_id}, waiting for budget restoration."
+                    "No retry budget for %s, waiting for budget restoration.", user_id
                 )
                 await asyncio.sleep(
                     rate_limit.options.budget_restore_interval_ms / 1000.0
@@ -258,13 +258,13 @@ class ClientTransport(Transport):
                 data = await websocket.recv()
             except ConnectionClosed as e:
                 logging.debug(
-                    f"Connection closed during waiting for handshake response : {e}"
+                    "Connection closed during waiting for handshake response : %r", e
                 )
                 raise RiverException(ERROR_HANDSHAKE, "Hand shake failed")
             try:
                 return parse_transport_msg(data, self._transport_options)
             except IgnoreMessageException as e:
-                logging.debug(f"Ignoring transport message : {e}")
+                logging.debug("Ignoring transport message : %r", e)
                 continue
             except InvalidMessageException as e:
                 raise RiverException(
@@ -294,7 +294,9 @@ class ClientTransport(Transport):
         try:
             response_msg = await self._get_handshake_response_msg(websocket)
             handshake_response = ControlMessageHandshakeResponse(**response_msg.payload)
-            logging.debug(f"river client get handshake response : {handshake_response}")
+            logging.debug(
+                "river client get handshake response : %r", handshake_response
+            )
         except ValidationError as e:
             raise RiverException(
                 ERROR_HANDSHAKE, f"Failed to parse handshake response : {e}"

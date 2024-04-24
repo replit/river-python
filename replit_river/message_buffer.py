@@ -6,10 +6,10 @@ from replit_river.rpc import TransportMessage
 
 
 class MessageBuffer:
-    """A buffer to strore messages and support current updates"""
+    """A buffer to store messages and support current updates"""
 
-    def __init__(self, max_size: int = 1000):
-        self.max_size = max_size
+    def __init__(self, max_num_messages: int = 1000):
+        self.max_size = max_num_messages
         self.buffer: list[TransportMessage] = []
         self._lock = asyncio.Lock()
 
@@ -27,13 +27,13 @@ class MessageBuffer:
             self.buffer.append(message)
 
     async def peek(self) -> Optional[TransportMessage]:
-        """Peek the first message in the buffer"""
+        """Peek the first message in the buffer, returns None if the buffer is empty."""
         async with self._lock:
             if len(self.buffer) == 0:
                 return None
             return self.buffer[0]
 
-    async def remove_old_messages(self, ack: int) -> None:
-        """Remove all messages in the buffer"""
+    async def remove_old_messages(self, min_seq: int) -> None:
+        """Remove messages in the buffer with a seq number less than min_seq."""
         async with self._lock:
-            self.buffer = [msg for msg in self.buffer if msg.seq >= ack]
+            self.buffer = [msg for msg in self.buffer if msg.seq >= min_seq]

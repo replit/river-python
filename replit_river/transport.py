@@ -86,7 +86,7 @@ class Transport:
         async with self._session_lock:
             if to_id not in self._sessions:
                 logging.debug(
-                    f'Creating new session with "{to_id}" using ws: {websocket.id}'
+                    'Creating new session with "%s" using ws: %s', to_id, websocket.id
                 )
                 new_session = Session(
                     transport_id,
@@ -103,9 +103,11 @@ class Transport:
                 old_session = self._sessions[to_id]
                 if old_session.advertised_session_id != advertised_session_id:
                     logging.debug(
-                        f'Create new session with "{to_id}" for session'
-                        f" id {advertised_session_id} and close old session "
-                        f" {old_session.advertised_session_id}"
+                        'Create new session with "%s" for session id %s'
+                        " and close old session %s",
+                        to_id,
+                        advertised_session_id,
+                        old_session.advertised_session_id,
                     )
                     session_to_close = old_session
                     new_session = Session(
@@ -123,7 +125,9 @@ class Transport:
                     # If the instance id is the same, we reuse the session and assign
                     # a new websocket to it.
                     logging.debug(
-                        f'Reuse old session with "{to_id}" using new ws: {websocket.id}'
+                        'Reuse old session with "%s" using new ws: %s',
+                        to_id,
+                        websocket.id,
                     )
                     try:
                         await old_session.replace_with_new_websocket(websocket)
