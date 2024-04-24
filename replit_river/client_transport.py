@@ -2,7 +2,6 @@ import asyncio
 import logging
 from typing import Optional, Tuple
 
-import nanoid
 import websockets
 from pydantic import ValidationError
 from websockets import (

@@ -1,6 +1,6 @@
-import pytest
 import asyncio
-from typing import Any
+
+import pytest
 
 from replit_river.rate_limiter import LeakyBucketRateLimit
 from replit_river.transport_options import ConnectionRetryOptions

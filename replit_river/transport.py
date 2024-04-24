@@ -3,13 +3,14 @@ import logging
 from typing import Dict, Optional, Tuple
 
 import nanoid  # type: ignore
+from websockets import WebSocketCommonProtocol
+
 from replit_river.messages import FailedSendingMessageException
 from replit_river.rpc import (
     GenericRpcHandler,
 )
 from replit_river.session import Session
 from replit_river.transport_options import TransportOptions
-from websockets import WebSocketCommonProtocol
 
 
 class Transport:

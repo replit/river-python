@@ -353,7 +353,8 @@ class Session(object):
                 try:
                     await self._buffer.put(msg)
                 except Exception:
-                    # We should close the session when there are too many messages in buffer
+                    # We should close the session when there are too many messages in
+                    # buffer
                     await self.close(True)
                     return
                 await self._send_transport_message(
