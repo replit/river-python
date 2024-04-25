@@ -19,10 +19,16 @@ from typing import (
 )
 
 import grpc
-from aiochannel import Channel
+from aiochannel import Channel, ChannelClosed
 from pydantic import BaseModel, ConfigDict, Field
 
-from replit_river.error_schema import RiverError
+from replit_river.error_schema import (
+    ERROR_CODE_STREAM_CLOSED,
+    RiverError,
+    RiverException,
+)
+from replit_river.task_manager import BackgroundTaskManager
+from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
 
 InitType = TypeVar("InitType")
 RequestType = TypeVar("RequestType")
@@ -45,13 +51,12 @@ STREAM_CLOSED_BIT = 0x0004
 class ControlMessageHandshakeRequest(BaseModel):
     type: Literal["HANDSHAKE_REQ"] = "HANDSHAKE_REQ"
     protocolVersion: str
-    instanceId: str
+    sessionId: str
 
 
 class HandShakeStatus(BaseModel):
     ok: bool
-    # Instance id should be server level id, each server have one
-    instanceId: Optional[str] = None
+    sessionId: Optional[str] = None
     # Reason for failure
     reason: Optional[str] = None
 
@@ -63,6 +68,7 @@ class ControlMessageHandshakeResponse(BaseModel):
 
 class TransportMessage(BaseModel):
     id: str
+    # from_ is used instead of from because from is a reserved keyword in Python
     from_: str = Field(..., alias="from")
     to: str
     seq: int
@@ -196,7 +202,7 @@ def rpc_method_handler(
                 }
             )
         except Exception as e:
-            logging.exception("Uncaught exception")
+            logging.exception("Uncaught exception during river rpc")
             await output.put(
                 {
                     "ok": False,
@@ -243,7 +249,7 @@ def subscription_method_handler(
                 }
             )
         except Exception as e:
-            logging.exception("Uncaught exception in subscription")
+            logging.exception("Uncaught exception in river server subscription")
             await output.put(
                 {
                     "ok": False,
@@ -272,9 +278,10 @@ def upload_method_handler(
         input: Channel[Any],
         output: Channel[Any],
     ) -> None:
+        task_manager = BackgroundTaskManager()
         try:
             context = GrpcContext(peer)
-            request: Channel[RequestType] = Channel(1024)
+            request: Channel[RequestType] = Channel(MAX_MESSAGE_BUFFER_SIZE)
 
             async def _convert_inputs() -> None:
                 try:
@@ -289,8 +296,10 @@ def upload_method_handler(
                     await output.put(
                         get_response_or_error_payload(response, response_serializer)
                     )
+                except ChannelClosed:
+                    raise RiverException(ERROR_CODE_STREAM_CLOSED, "Channel closed")
                 except Exception as e:
-                    print("upload caught exception", e)
+                    logging.error("Uncaught exception in river server upload")
                     await output.put(
                         {
                             "ok": False,
@@ -303,9 +312,10 @@ def upload_method_handler(
                 finally:
                     output.close()
 
-            convert_inputs_task = asyncio.create_task(_convert_inputs())
-            convert_outputs_task = asyncio.create_task(_convert_outputs())
+            convert_inputs_task = await task_manager.create_task(_convert_inputs())
+            convert_outputs_task = await task_manager.create_task(_convert_outputs())
             await asyncio.wait((convert_inputs_task, convert_outputs_task))
+
         except Exception as e:
             logging.exception("Uncaught exception in upload")
             await output.put(
@@ -318,6 +328,7 @@ def upload_method_handler(
                 }
             )
         finally:
+            await task_manager.cancel_all_tasks()
             output.close()
 
     return wrapped
@@ -336,9 +347,10 @@ def stream_method_handler(
         input: Channel[Any],
         output: Channel[Any],
     ) -> None:
+        task_manager = BackgroundTaskManager()
         try:
             context = GrpcContext(peer)
-            request: Channel[RequestType] = Channel(1024)
+            request: Channel[RequestType] = Channel(MAX_MESSAGE_BUFFER_SIZE)
 
             async def _convert_inputs() -> None:
                 try:
@@ -358,11 +370,11 @@ def stream_method_handler(
                 finally:
                     output.close()
 
-            convert_inputs_task = asyncio.create_task(_convert_inputs())
-            convert_outputs_task = asyncio.create_task(_convert_outputs())
+            convert_inputs_task = await task_manager.create_task(_convert_inputs())
+            convert_outputs_task = await task_manager.create_task(_convert_outputs())
             await asyncio.wait((convert_inputs_task, convert_outputs_task))
         except grpc.RpcError:
-            logging.exception("Uncaught exception in stream")
+            logging.exception("RPC exception in stream")
             await output.put(
                 {
                     "ok": False,
@@ -385,6 +397,7 @@ def stream_method_handler(
                 }
             )
         finally:
+            await task_manager.cancel_all_tasks()
             output.close()
 
     return wrapped

@@ -46,9 +46,9 @@ def message_decoder(
         "    return m",
     ]
     # Non-oneof fields.
-    oneofs: DefaultDict[int, List[descriptor_pb2.FieldDescriptorProto]] = (
-        collections.defaultdict(list)
-    )
+    oneofs: DefaultDict[
+        int, List[descriptor_pb2.FieldDescriptorProto]
+    ] = collections.defaultdict(list)
     for field in m.field:
         if field.HasField("oneof_index"):
             oneofs[field.oneof_index].append(field)
@@ -157,9 +157,9 @@ def message_encoder(
         "  d: Dict[str, Any] = {}",
     ]
     # Non-oneof fields.
-    oneofs: DefaultDict[int, List[descriptor_pb2.FieldDescriptorProto]] = (
-        collections.defaultdict(list)
-    )
+    oneofs: DefaultDict[
+        int, List[descriptor_pb2.FieldDescriptorProto]
+    ] = collections.defaultdict(list)
     for field in m.field:
         if field.HasField("oneof_index"):
             oneofs[field.oneof_index].append(field)

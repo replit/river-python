@@ -4,13 +4,13 @@ import logging
 from replit_river.rpc import TransportMessage
 
 
-class IgnoreTransportMessageException(Exception):
+class IgnoreMessageException(Exception):
     """Exception to ignore a transport message, but good to continue."""
 
     pass
 
 
-class InvalidTransportMessageException(Exception):
+class InvalidMessageException(Exception):
     """Error processing a transport message, should raise a exception."""
 
     pass
@@ -26,6 +26,7 @@ class SeqManager:
         self.seq = 0
         self._ack_lock = asyncio.Lock()
         self.ack = 0
+        self.receiver_ack = 0
 
     async def get_seq_and_increment(self) -> int:
         """Get the current sequence number and increment it.
@@ -53,17 +54,20 @@ class SeqManager:
         async with self._ack_lock:
             if msg.seq != self.ack:
                 if msg.seq < self.ack:
-                    logging.debug(
+                    raise IgnoreMessageException(
                         f"{msg.from_} received duplicate msg, got {msg.seq}"
                         f" expected {self.ack}"
                     )
-                    raise IgnoreTransportMessageException
                 else:
                     logging.error(
-                        f"{msg.from_} received duplicate msg, got {msg.seq}"
+                        f"Out of order message received got {msg.seq} expected "
+                        f"{self.ack}"
+                    )
+                    raise InvalidMessageException(
+                        f"{msg.from_} received out of order, got {msg.seq}"
                         f" expected {self.ack}"
                     )
-                    raise InvalidTransportMessageException
+            self.receiver_ack = msg.ack
         await self._set_ack(msg.seq + 1)
 
     async def _set_ack(self, new_ack: int) -> int:

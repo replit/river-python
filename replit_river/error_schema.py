@@ -3,6 +3,8 @@ from typing import Any
 from pydantic import BaseModel
 
 ERROR_CODE_STREAM_CLOSED = "stream_closed"
+ERROR_HANDSHAKE = "handshake_failed"
+ERROR_SESSION = "session_error"
 
 
 class RiverError(BaseModel):

@@ -1,413 +1,150 @@
 import asyncio
 import logging
-from typing import Any, Dict, Optional, Set, Tuple
+from typing import Dict, Optional, Tuple
 
-import msgpack  # type: ignore
 import nanoid  # type: ignore
-import websockets
-from aiochannel import Channel
-from pydantic import ValidationError
-from pydantic_core import ValidationError as PydanticCoreValidationError
-from websockets.exceptions import ConnectionClosedError
-from websockets.server import WebSocketServerProtocol
+from websockets import WebSocketCommonProtocol
 
-from replit_river.seq_manager import (
-    IgnoreTransportMessageException,
-    InvalidTransportMessageException,
-    SeqManager,
-)
-
-from .rpc import (
-    ACK_BIT,
-    STREAM_CLOSED_BIT,
-    STREAM_OPEN_BIT,
-    ControlMessageHandshakeRequest,
-    ControlMessageHandshakeResponse,
+from replit_river.messages import FailedSendingMessageException
+from replit_river.rpc import (
     GenericRpcHandler,
-    HandShakeStatus,
-    TransportMessage,
 )
-
-PROTOCOL_VERSION = "v1"
-HEART_BEAT_INTERVAL_SECS = 2
-
-
-class FailedSendingMessageException(Exception):
-    pass
+from replit_river.session import Session
+from replit_river.transport_options import TransportOptions
 
 
-class TransportManager:
-    def __init__(self) -> None:
-        self._transports_by_id: Dict[str, "Transport"] = {}
-        self._lock = asyncio.Lock()
-
-    async def add_transport(self, transport_id: str, transport: "Transport") -> None:
-        transport_to_close = None
-        async with self._lock:
-            if transport_id in self._transports_by_id:
-                if (
-                    self._transports_by_id[transport_id]._client_instance_id
-                    != transport._client_instance_id
-                ):
-                    transport_to_close = self._transports_by_id[transport_id]
-            self._transports_by_id[transport_id] = transport
-        if transport_to_close:
-            await transport_to_close.close()
-
-    async def remove_transport(self, transport_id: str) -> None:
-        transport_to_stop = None
-        async with self._lock:
-            if transport_id in self._transports_by_id:
-                transport_to_stop = self._transports_by_id.pop(transport_id)
-
-        if transport_to_stop:
-            logging.debug("Stopping transport websocket")
-            await transport_to_stop.close()
-
-
-class Transport(object):
-    """A transport object that handles the websocket connection with a client."""
-
+class Transport:
     def __init__(
         self,
-        server_instance_id: str,
-        handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]],
-        websocket: WebSocketServerProtocol,
-        transports_manager: TransportManager,
+        transport_id: str,
+        transport_options: TransportOptions,
+        is_server: bool,
+        handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]] = {},
     ) -> None:
-        self._server_instance_id = server_instance_id
-        self._client_instance_id: Optional[str] = None
+        self._transport_id = transport_id
+        self._transport_options = transport_options
+        self._is_server = is_server
+        self._sessions: Dict[str, Session] = {}
         self._handlers = handlers
-        self.websocket = websocket
-        self.streams: Dict[str, Channel[Any]] = {}
-        self.background_tasks: Set[asyncio.Task] = set()
-        self.is_handshake_success = False
-        self._transports_manager = transports_manager
-        self._seq_manager = SeqManager()
+        self._session_lock = asyncio.Lock()
 
-    async def send_message(
-        self,
-        initial_message: TransportMessage,
-        ws: WebSocketServerProtocol,
-        control_flags: int,
-        payload: Dict,
-        is_hand_shake: bool = False,
-    ) -> None:
-        """Send serialized messages to the websockets."""
-        msg = TransportMessage(
-            streamId=initial_message.streamId,
-            id=nanoid.generate(),
-            from_=initial_message.to,
-            to=initial_message.from_,
-            seq=0 if is_hand_shake else await self._seq_manager.get_seq_and_increment(),
-            ack=await self._seq_manager.get_ack(),
-            controlFlags=control_flags,
-            payload=payload,
-            serviceName=initial_message.serviceName,
-            procedureName=initial_message.procedureName,
-        )
-        logging.debug("sent a message %r", msg)
-        try:
-            await ws.send(
-                msgpack.packb(
-                    msg.model_dump(by_alias=True, exclude_none=True), datetime=True
-                )
-            )
-        except websockets.exceptions.ConnectionClosedOK:
-            logging.warning(
-                "Trying to send message while connection closed "
-                f"for between server : {self._server_instance_id} and "
-                f"client : {self._client_instance_id}"
-            )
-            raise FailedSendingMessageException()
-
-    async def send_responses(
-        self,
-        initial_message: TransportMessage,
-        ws: WebSocketServerProtocol,
-        output: Channel[Any],
-        is_stream: bool,
-    ) -> None:
-        """Send serialized messages to the websockets."""
-        logging.debug("sent response of stream %r", initial_message.streamId)
-        async for payload in output:
-            if not is_stream:
-                await self.send_message(initial_message, ws, STREAM_CLOSED_BIT, payload)
-                return
-            await self.send_message(initial_message, ws, 0, payload)
-        logging.debug("sent an end of stream %r", initial_message.streamId)
-        await self.send_message(
-            initial_message, ws, STREAM_CLOSED_BIT, {"type": "CLOSE"}
-        )
-
-    async def _process_handshake_request_message(
-        self, transport_message: TransportMessage, websocket: WebSocketServerProtocol
-    ) -> ControlMessageHandshakeRequest:
-        """Returns the instance id instance id."""
-        try:
-            handshake_request = ControlMessageHandshakeRequest(
-                **transport_message.payload
-            )
-        except (ValidationError, ValueError):
-            response_message = ControlMessageHandshakeResponse(
-                status=HandShakeStatus(
-                    ok=False, reason="failed validate handshake request"
-                )
-            )
-            await self.send_message(
-                transport_message,
-                websocket,
-                0,
-                response_message.model_dump(by_alias=True, exclude_none=True),
-                is_hand_shake=True,
-            )
-            logging.exception("failed to parse handshake request")
-            raise InvalidTransportMessageException("failed validate handshake request")
-
-        if handshake_request.protocolVersion != PROTOCOL_VERSION:
-            response_message = ControlMessageHandshakeResponse(
-                status=HandShakeStatus(ok=False, reason="protocol version mismatch")
-            )
-            await self.send_message(
-                transport_message,
-                websocket,
-                0,
-                response_message.model_dump(by_alias=True, exclude_none=True),
-                is_hand_shake=True,
-            )
-            error_str = (
-                "protocol version mismatch: "
-                + f"{handshake_request.protocolVersion} != {PROTOCOL_VERSION}"
-            )
-            logging.error(error_str)
-            raise InvalidTransportMessageException(error_str)
-
-        response_message = ControlMessageHandshakeResponse(
-            status=HandShakeStatus(ok=True, instanceId=self._server_instance_id)
-        )
-        await self.send_message(
-            transport_message,
-            websocket,
-            0,
-            response_message.model_dump(by_alias=True, exclude_none=True),
-            is_hand_shake=True,
-        )
-        return handshake_request
-
-    def _formatted_bytes(self, message: bytes) -> str:
-        return " ".join(f"{b:02x}" for b in message)
-
-    def _parse_transport_msg(self, message: str | bytes) -> TransportMessage:
-        if isinstance(message, str):
-            logging.debug(
-                "ignored a message beacuse it was a text frame: %r",
-                message,
-            )
-            raise IgnoreTransportMessageException()
-        try:
-            unpacked_message = msgpack.unpackb(message, timestamp=3)
-        except (msgpack.UnpackException, msgpack.exceptions.ExtraData):
-            logging.exception("received non-msgpack message")
-            raise InvalidTransportMessageException()
-        try:
-            msg = TransportMessage(**unpacked_message)
-        except (
-            ValidationError,
-            ValueError,
-            msgpack.UnpackException,
-            PydanticCoreValidationError,
-        ):
-            logging.exception(f"failed to parse message:{message.decode()}")
-            raise InvalidTransportMessageException()
-        return msg
-
-    async def _establish_handshake(
-        self, msg: TransportMessage, websocket: WebSocketServerProtocol
-    ) -> None:
-        try:
-            handshake_request = await self._process_handshake_request_message(
-                msg, websocket
-            )
-            self._client_instance_id = handshake_request.instanceId
-        except InvalidTransportMessageException:
-            raise
-        transport_id = msg.from_
-        await self._transports_manager.add_transport(transport_id, self)
-
-    async def _heartbeat(
-        self,
-        msg: TransportMessage,
-        websocket: WebSocketServerProtocol,
-    ) -> None:
-        logging.debug("Start heartbeat")
-        while True:
-            await asyncio.sleep(HEART_BEAT_INTERVAL_SECS)
-            try:
-                await self.send_message(
-                    msg,
-                    websocket,
-                    ACK_BIT,
-                    {
-                        "ack": msg.id,
-                    },
-                )
-            except ConnectionClosedError:
-                logging.debug("heartbeat failed")
-                return
-
-    def remove_task(
-        self,
-        task_to_remove: asyncio.Task[Any],
-        background_tasks: Set[asyncio.Task],
-    ) -> None:
-        if task_to_remove in background_tasks:
-            background_tasks.remove(task_to_remove)
-        try:
-            exception = task_to_remove.exception()
-        except asyncio.CancelledError:
-            logging.debug("Task was cancelled", exc_info=False)
-            return
-        except Exception:
-            logging.error("Error retrieving task exception", exc_info=True)
-            return
-        if exception:
-            logging.error(
-                "Task resulted in an exception",
-                exc_info=exception,
-            )
-
-    def _create_task(self, fn: Any, tg: asyncio.TaskGroup) -> None:
-        task = tg.create_task(fn)
-        self.background_tasks.add(task)
-        task.add_done_callback(lambda x: self.remove_task(x, self.background_tasks))
-
-    async def handle_messages_from_ws(
-        self, websocket: WebSocketServerProtocol, tg: asyncio.TaskGroup
-    ) -> None:
-        async for message in websocket:
-            try:
-                msg = self._parse_transport_msg(message)
-            except IgnoreTransportMessageException:
-                continue
-            except InvalidTransportMessageException:
-                logging.error("Got invalid transport message, closing connection")
-                return
-
-            logging.debug("got a message %r", msg)
-
-            if not self.is_handshake_success:
-                try:
-                    await self._establish_handshake(msg, websocket)
-                    self.is_handshake_success = True
-                    self._create_task(self._heartbeat(msg, websocket), tg)
-                    logging.debug(
-                        "handshake success for client_instance_id :"
-                        f" {self._client_instance_id}"
-                    )
-
-                    continue
-                except InvalidTransportMessageException:
-                    logging.error("Got invalid transport message, closing connection")
-                    return
-
-            try:
-                await self._seq_manager.check_seq_and_update(msg)
-            except IgnoreTransportMessageException:
-                continue
-            except InvalidTransportMessageException:
-                return
-            if msg.controlFlags & ACK_BIT != 0:
-                # Ignore ack messages.
-                continue
-
-            stream = self.streams.get(msg.streamId, None)
-            if msg.controlFlags & STREAM_OPEN_BIT != 0:
-                if not msg.serviceName or not msg.procedureName:
-                    logging.warning("no service or procedure name in %r", msg)
-                    return
-                key = (msg.serviceName, msg.procedureName)
-                handler = self._handlers.get(key, None)
-                if not handler:
-                    logging.exception(
-                        "No handler for %s handlers : " f"{self._handlers.keys()}",
-                        key,
-                    )
-                    return
-                method_type, handler_func = handler
-                is_streaming_output = method_type in (
-                    "subscription-stream",  # subscription
-                    "stream",
-                )
-                is_streaming_input = method_type in (
-                    "upload-stream",  # subscription
-                    "stream",
-                )
-                # New channel pair.
-                input_stream: Channel[Any] = Channel(1024 if is_streaming_input else 1)
-                output_stream: Channel[Any] = Channel(
-                    1024 if is_streaming_output else 1
-                )
-                await input_stream.put(msg.payload)
-                if not stream:
-                    # We'll need to save it for later.
-                    self.streams[msg.streamId] = input_stream
-                # Start the handler.
-                self._create_task(
-                    handler_func(msg.from_, input_stream, output_stream), tg
-                )
-                self._create_task(
-                    self.send_responses(
-                        msg, websocket, output_stream, is_streaming_output
-                    ),
-                    tg,
-                )
-
-            else:
-                # messages after stream is opened
-                if not stream:
-                    logging.warning("no stream for %s", msg.streamId)
-                    continue
-                if not (
-                    msg.controlFlags & STREAM_CLOSED_BIT != 0
-                    and msg.payload.get("type", None) == "CLOSE"
-                ):
-                    # close message is not sent to the stream
-                    await stream.put(msg.payload)
-
-            if msg.controlFlags & STREAM_CLOSED_BIT != 0:
-                if stream:
-                    stream.close()
-                del self.streams[msg.streamId]
-
-    async def serve(self) -> None:
-        try:
-            async with asyncio.TaskGroup() as tg:
-                try:
-                    await self.handle_messages_from_ws(self.websocket, tg)
-                except ConnectionClosedError as e:
-                    # This is fine.
-                    logging.debug(f"ConnectionClosedError while serving: {e}")
-                    pass
-                except FailedSendingMessageException as e:
-                    # Expected error if the connection is closed.
-                    logging.debug(f"FailedSendingMessageException while serving: {e}")
-                    pass
-                except Exception:
-                    logging.exception("caught exception at message iterator")
-                finally:
-                    await self.close()
-        except ExceptionGroup as eg:
-            _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosedError))
-            if unhandled:
-                raise ExceptionGroup(
-                    "Unhandled exceptions on River server", unhandled.exceptions
-                )
+    def generate_session_id(self) -> str:
+        return self.generate_nanoid()
 
     async def close(self) -> None:
-        for previous_input in self.streams.values():
-            previous_input.close()
-        self.streams.clear()
-        for task in self.background_tasks:
-            task.cancel()
-        if self.websocket:
-            await self.websocket.close()
+        await self._close_all_sessions()
+
+    async def _close_all_sessions(self) -> None:
+        sessions = self._sessions.values()
+        logging.info(
+            f"start closing transport {self._transport_id}, number sessions : "
+            f"{len(sessions)}"
+        )
+        sessions_to_close = list(sessions)
+        tasks = [session.close(False) for session in sessions_to_close]
+        await asyncio.gather(*tasks)
+        logging.info(f"Transport closed {self._transport_id}")
+
+    async def _delete_session(self, session: Session) -> None:
+        async with self._session_lock:
+            if session._to_id in self._sessions:
+                del self._sessions[session._to_id]
+
+    async def _set_session(self, session: Session) -> None:
+        async with self._session_lock:
+            self._sessions[session._to_id] = session
+
+    def generate_nanoid(self) -> str:
+        return str(nanoid.generate())
+
+    async def _get_or_create_session_id(
+        self,
+        to_id: str,
+        advertised_session_id: str,
+    ) -> str:
+        try:
+            async with self._session_lock:
+                if to_id not in self._sessions:
+                    return self.generate_session_id()
+                else:
+                    old_session = self._sessions[to_id]
+
+                    if old_session.advertised_session_id != advertised_session_id:
+                        return self.generate_session_id()
+                    else:
+                        return old_session.session_id
+        except Exception as e:
+            logging.error(f"Error getting or creating session id {e}")
+            raise e
+
+    async def get_or_create_session(
+        self,
+        transport_id: str,
+        to_id: str,
+        session_id: str,
+        advertised_session_id: str,
+        websocket: WebSocketCommonProtocol,
+    ) -> Session:
+        session_to_close: Optional[Session] = None
+        new_session: Optional[Session] = None
+        async with self._session_lock:
+            if to_id not in self._sessions:
+                logging.debug(
+                    'Creating new session with "%s" using ws: %s', to_id, websocket.id
+                )
+                new_session = Session(
+                    transport_id,
+                    to_id,
+                    session_id,
+                    advertised_session_id,
+                    websocket,
+                    self._transport_options,
+                    self._is_server,
+                    self._handlers,
+                    close_session_callback=self._delete_session,
+                )
+            else:
+                old_session = self._sessions[to_id]
+                if old_session.advertised_session_id != advertised_session_id:
+                    logging.debug(
+                        'Create new session with "%s" for session id %s'
+                        " and close old session %s",
+                        to_id,
+                        advertised_session_id,
+                        old_session.advertised_session_id,
+                    )
+                    session_to_close = old_session
+                    new_session = Session(
+                        transport_id,
+                        to_id,
+                        session_id,
+                        advertised_session_id,
+                        websocket,
+                        self._transport_options,
+                        self._is_server,
+                        self._handlers,
+                        close_session_callback=self._delete_session,
+                    )
+                else:
+                    # If the instance id is the same, we reuse the session and assign
+                    # a new websocket to it.
+                    logging.debug(
+                        'Reuse old session with "%s" using new ws: %s',
+                        to_id,
+                        websocket.id,
+                    )
+                    try:
+                        await old_session.replace_with_new_websocket(websocket)
+                        new_session = old_session
+                    except FailedSendingMessageException as e:
+                        raise e
+        if session_to_close:
+            logging.info(
+                f"Closing stale session {session_to_close.advertised_session_id}"
+            )
+            await session_to_close.close(False)
+            logging.info(
+                f"Closed stale session {session_to_close.advertised_session_id}"
+            )
+        await self._set_session(new_session)
+        return new_session
