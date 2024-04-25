@@ -291,7 +291,10 @@ class ClientTransport(Transport):
             )
         logging.debug("river client waiting for handshake response")
         try:
-            response_msg = await self._get_handshake_response_msg(websocket)
+            response_msg = await asyncio.wait_for(
+                self._get_handshake_response_msg(websocket),
+                timeout=self._transport_options.session_disconnect_grace_ms / 1000,
+            )
             handshake_response = ControlMessageHandshakeResponse(**response_msg.payload)
             logging.debug(
                 "river client get handshake response : %r", handshake_response
