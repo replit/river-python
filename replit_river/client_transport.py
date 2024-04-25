@@ -303,6 +303,10 @@ class ClientTransport(Transport):
             raise RiverException(
                 ERROR_HANDSHAKE, f"Failed to parse handshake response : {e}"
             )
+        except asyncio.TimeoutError:
+            raise RiverException(
+                ERROR_HANDSHAKE, "Handshake response timeout, closing connection"
+            )
         if not handshake_response.status.ok:
             raise RiverException(
                 ERROR_HANDSHAKE, f"Handshake failed: {handshake_response.status.reason}"
