@@ -96,7 +96,7 @@ class ServerTransport(Transport):
             procedureName=request_message.procedureName,
         )
 
-        async def websocket_closed_callback() -> None:
+        def websocket_closed_callback() -> None:
             logging.error("websocket closed before handshake response")
 
         try:

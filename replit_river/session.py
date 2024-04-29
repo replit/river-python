@@ -12,6 +12,7 @@ from websockets.exceptions import ConnectionClosed
 from replit_river.message_buffer import MessageBuffer
 from replit_river.messages import (
     FailedSendingMessageException,
+    WebsocketClosedException,
     parse_transport_msg,
     send_transport_message,
 )
@@ -304,7 +305,7 @@ class Session(object):
                     websocket,
                     prefix_bytes=self._transport_options.get_prefix_bytes(),
                 )
-            except ConnectionClosed as e:
+            except WebsocketClosedException as e:
                 logging.info(f"Connection closed while sending buffered messages : {e}")
                 break
             except FailedSendingMessageException as e:
@@ -321,7 +322,7 @@ class Session(object):
             await send_transport_message(
                 msg, ws, self._on_websocket_unexpected_close, prefix_bytes
             )
-        except ConnectionClosed as e:
+        except WebsocketClosedException as e:
             raise e
         except FailedSendingMessageException as e:
             raise e
@@ -336,6 +337,9 @@ class Session(object):
         procedure_name: str | None = None,
     ) -> None:
         """Send serialized messages to the websockets."""
+        # if the session is not active, we should not do anything
+        if self._state != SessionState.ACTIVE:
+            return
         msg = TransportMessage(
             streamId=stream_id,
             id=nanoid.generate(),
@@ -364,7 +368,7 @@ class Session(object):
                     ws,
                     prefix_bytes=self._transport_options.get_prefix_bytes(),
                 )
-        except ConnectionClosed as e:
+        except WebsocketClosedException as e:
             logging.error(
                 f"Connection closed while sending message : {e}, waiting for "
                 "retry from buffer"

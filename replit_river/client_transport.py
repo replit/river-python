@@ -13,12 +13,12 @@ from replit_river.client_session import ClientSession
 from replit_river.error_schema import (
     ERROR_CODE_STREAM_CLOSED,
     ERROR_HANDSHAKE,
-    ERROR_SESSION,
     RiverException,
 )
 from replit_river.messages import (
     PROTOCOL_VERSION,
     FailedSendingMessageException,
+    WebsocketClosedException,
     parse_transport_msg,
     send_transport_message,
 )
@@ -226,8 +226,8 @@ class ClientTransport(Transport):
         )
         stream_id = self.generate_nanoid()
 
-        def websocket_closed_callback() -> None:
-            raise RiverException(ERROR_SESSION, "Session closed while sending")
+        async def websocket_closed_callback() -> None:
+            logging.error("websocket closed before handshake response")
 
         try:
             await send_transport_message(
@@ -246,7 +246,7 @@ class ClientTransport(Transport):
                 websocket_closed_callback=websocket_closed_callback,
             )
             return handshake_request
-        except ConnectionClosed:
+        except (WebsocketClosedException, FailedSendingMessageException):
             raise RiverException(ERROR_HANDSHAKE, "Hand shake failed")
 
     async def _get_handshake_response_msg(

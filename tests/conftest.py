@@ -1,5 +1,7 @@
+import asyncio
 import logging
 from typing import Any, AsyncGenerator
+from unittest.mock import MagicMock, patch
 
 import nanoid  # type: ignore
 import pytest
@@ -128,8 +130,14 @@ def server(transport_options: TransportOptions) -> Server:
 
 
 @pytest.fixture
+def no_logging_error() -> MagicMock:
+    with patch("logging.error") as mock_error:
+        yield mock_error
+
+
+@pytest.fixture
 async def client(
-    server: Server, transport_options: TransportOptions
+    server: Server, transport_options: TransportOptions, no_logging_error: MagicMock
 ) -> AsyncGenerator[Client, None]:
     try:
         async with serve(server.serve, "localhost", 8765):
@@ -145,5 +153,8 @@ async def client(
                 logging.debug("Start closing test client : %s", "test_client")
                 await client.close()
     finally:
+        await asyncio.sleep(1)
         logging.debug("Start closing test server")
         await server.close()
+        # Server should close normally
+        no_logging_error.assert_not_called()
