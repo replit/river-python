@@ -13,6 +13,7 @@ from replit_river.client_session import ClientSession
 from replit_river.error_schema import (
     ERROR_CODE_STREAM_CLOSED,
     ERROR_HANDSHAKE,
+    ERROR_SESSION,
     RiverException,
 )
 from replit_river.messages import (

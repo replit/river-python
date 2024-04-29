@@ -49,12 +49,14 @@ async def send_transport_message(
         )
     except websockets.exceptions.ConnectionClosed:
         await websocket_closed_callback()
-        raise WebsocketClosedException()
+        raise WebsocketClosedException("Websocket closed during send message")
     except RuntimeError:
         # RuntimeError: Unexpected ASGI message 'websocket.send',
         # after sending 'websocket.close'
         await websocket_closed_callback()
-        raise WebsocketClosedException()
+        raise WebsocketClosedException(
+            "Websocket closed RuntimeError during send message"
+        )
     except Exception as e:
         raise FailedSendingMessageException(
             f"Exception during send message : {type(e)} {e}"
