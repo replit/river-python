@@ -19,6 +19,10 @@ from replit_river.seq_manager import (
 from replit_river.transport_options import TransportOptions
 
 
+class WebsocketClosedException(Exception):
+    pass
+
+
 class FailedSendingMessageException(Exception):
     pass
 
@@ -43,11 +47,20 @@ async def send_transport_message(
                 msg.model_dump(by_alias=True, exclude_none=True), datetime=True
             )
         )
-    except websockets.exceptions.ConnectionClosed as e:
+    except websockets.exceptions.ConnectionClosed:
         await websocket_closed_callback()
-        raise e
+        raise WebsocketClosedException("Websocket closed during send message")
+    except RuntimeError:
+        # RuntimeError: Unexpected ASGI message 'websocket.send',
+        # after sending 'websocket.close'
+        await websocket_closed_callback()
+        raise WebsocketClosedException(
+            "Websocket closed RuntimeError during send message"
+        )
     except Exception as e:
-        raise FailedSendingMessageException(f"Exception during send message : {e}")
+        raise FailedSendingMessageException(
+            f"Exception during send message : {type(e)} {e}"
+        )
 
 
 def formatted_bytes(message: bytes) -> str:
