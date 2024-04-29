@@ -369,9 +369,11 @@ class Session(object):
                     prefix_bytes=self._transport_options.get_prefix_bytes(),
                 )
         except WebsocketClosedException as e:
-            logging.error(
-                f"Connection closed while sending message : {e}, waiting for "
-                "retry from buffer"
+            logging.debug(
+                "Connection closed while sending message %r: %r, waiting for "
+                "retry from buffer",
+                type(e),
+                e,
             )
         except FailedSendingMessageException as e:
             logging.error(
