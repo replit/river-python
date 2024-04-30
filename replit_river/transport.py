@@ -139,8 +139,8 @@ class Transport:
                     except FailedSendingMessageException as e:
                         raise e
         if session_to_close:
-            logging.info(
-                f"Closing stale session {session_to_close.advertised_session_id}"
+            logging.debug(
+                "Closing stale session %s", session_to_close.advertised_session_id
             )
             await session_to_close.close(False)
             logging.info(

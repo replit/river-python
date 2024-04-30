@@ -113,8 +113,8 @@ class Session(object):
 
     async def _on_websocket_unexpected_close(self) -> None:
         """Handle unexpected websocket close."""
-        logging.info(
-            f"Unexpected websocket close from {self._transport_id} to {self._to_id}"
+        logging.debug(
+            "Unexpected websocket close from %s to %s", self._transport_id, self._to_id
         )
         await self._begin_close_session_countdown()
 
@@ -244,8 +244,8 @@ class Session(object):
                 continue
             current_time = await self._get_current_time()
             if current_time > self._close_session_after_time_secs:
-                logging.info(
-                    "Grace period ended for :" f" {self._transport_id}, closing session"
+                logging.debug(
+                    "Grace period ended for %s, closing session", self._transport_id
                 )
                 await self.close(False)
                 return
