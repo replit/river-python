@@ -244,8 +244,8 @@ class Session(object):
                 continue
             current_time = await self._get_current_time()
             if current_time > self._close_session_after_time_secs:
-                logging.info(
-                    "Grace period ended for :" f" {self._transport_id}, closing session"
+                logging.debug(
+                    "Grace period ended for %s, closing session", self._transport_id
                 )
                 await self.close(False)
                 return
