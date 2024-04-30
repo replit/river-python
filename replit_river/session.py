@@ -113,8 +113,8 @@ class Session(object):
 
     async def _on_websocket_unexpected_close(self) -> None:
         """Handle unexpected websocket close."""
-        logging.info(
-            f"Unexpected websocket close from {self._transport_id} to {self._to_id}"
+        logging.debug(
+            "Unexpected websocket close from %s to %s", self._transport_id, self._to_id
         )
         await self._begin_close_session_countdown()
 
