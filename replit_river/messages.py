@@ -84,7 +84,14 @@ def parse_transport_msg(
                 f"Got message without prefix bytes: {formatted_bytes(message)[:5]}"
             )
     try:
-        unpacked_message = msgpack.unpackb(message)
+        # :param int timestamp:
+        #     Control how timestamp type is unpacked:
+
+        #         0 - Timestamp
+        #         1 - float  (Seconds from the EPOCH)
+        #         2 - int  (Nanoseconds from the EPOCH)
+        #         3 - datetime.datetime  (UTC).
+        unpacked_message = msgpack.unpackb(message, timestamp=3)
     except (msgpack.UnpackException, msgpack.exceptions.ExtraData):
         raise InvalidMessageException("received non-msgpack message")
     try:
