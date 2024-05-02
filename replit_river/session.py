@@ -277,6 +277,13 @@ class Session(object):
                     ACK_BIT,
                 )
                 self._heartbeat_misses += 1
+                logging.debug(
+                    "heartbeat right now : {} {} {}".format(
+                        self._heartbeat_misses,
+                        self._transport_options.heartbeats_until_dead,
+                        self._transport_options.heartbeat_ms,
+                    )
+                )
                 if (
                     self._heartbeat_misses
                     >= self._transport_options.heartbeats_until_dead
