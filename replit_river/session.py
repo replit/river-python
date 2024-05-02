@@ -6,7 +6,6 @@ from typing import Any, Callable, Coroutine, Dict, Optional, Tuple
 import nanoid  # type: ignore
 import websockets
 from aiochannel import Channel, ChannelClosed
-from websockets import WebSocketCommonProtocol
 from websockets.exceptions import ConnectionClosed
 
 from replit_river.message_buffer import MessageBuffer
@@ -23,6 +22,7 @@ from replit_river.seq_manager import (
 )
 from replit_river.task_manager import BackgroundTaskManager
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOptions
+from replit_river.websocket_wrapper import WebsocketWrapper
 
 from .rpc import (
     ACK_BIT,
@@ -35,12 +35,6 @@ from .rpc import (
 
 class SessionState(enum.Enum):
     ACTIVE = 0
-    CLOSING = 1
-    CLOSED = 2
-
-
-class WsState(enum.Enum):
-    OPEN = 0
     CLOSING = 1
     CLOSED = 2
 
@@ -82,8 +76,7 @@ class Session(object):
 
         # ws state
         self._ws_lock = asyncio.Lock()
-        self._ws_state = WsState.OPEN
-        self._ws = websocket
+        self._ws_wrapper = WebsocketWrapper(websocket)
         self._heartbeat_misses = 0
         self._retry_connection_callback = retry_connection_callback
 
@@ -109,7 +102,7 @@ class Session(object):
 
     async def is_websocket_open(self) -> bool:
         async with self._ws_lock:
-            return self._ws_state == WsState.OPEN
+            return await self._ws_wrapper.is_open()
 
     async def _on_websocket_unexpected_close(self) -> None:
         """Handle unexpected websocket close."""
@@ -141,7 +134,7 @@ class Session(object):
         try:
             async with asyncio.TaskGroup() as tg:
                 try:
-                    await self._handle_messages_from_ws(self._ws, tg)
+                    await self._handle_messages_from_ws(tg)
                 except ConnectionClosed as e:
                     await self._on_websocket_unexpected_close()
                     logging.debug("ConnectionClosed while serving: %r", e)
@@ -163,15 +156,15 @@ class Session(object):
         self._reset_session_close_countdown()
 
     async def _handle_messages_from_ws(
-        self, websocket: WebSocketCommonProtocol, tg: Optional[asyncio.TaskGroup] = None
+        self, tg: Optional[asyncio.TaskGroup] = None
     ) -> None:
         logging.debug(
             "%s start handling messages from ws %s",
             "server" if self._is_server else "client",
-            websocket.id,
+            self._ws_wrapper.id,
         )
         try:
-            async for message in websocket:
+            async for message in self._ws_wrapper.ws:
                 try:
                     msg = parse_transport_msg(message, self._transport_options)
 
@@ -215,15 +208,13 @@ class Session(object):
         self, new_ws: websockets.WebSocketCommonProtocol
     ) -> None:
         async with self._ws_lock:
-            old_ws = self._ws
-            self._ws_state = WsState.CLOSING
-        if new_ws.id != old_ws.id:
-            self._reset_session_close_countdown()
-            await self.close_websocket(old_ws, should_retry=False)
-        async with self._ws_lock:
-            self._ws = new_ws
-            self._ws_state = WsState.OPEN
-        await self._send_buffered_messages(new_ws)
+            old_wrapper = self._ws_wrapper
+            old_ws_id = old_wrapper.ws.id
+            if new_ws.id != old_ws_id:
+                self._reset_session_close_countdown()
+                await old_wrapper.close()
+            self._ws_wrapper = WebsocketWrapper(new_ws)
+            await self._send_buffered_messages(new_ws)
         # Server will call serve itself.
         if not self._is_server:
             await self.start_serve_responses()
@@ -273,7 +264,6 @@ class Session(object):
                     {
                         "ack": 0,
                     },
-                    self._ws,
                     ACK_BIT,
                 )
                 self._heartbeat_misses += 1
@@ -287,7 +277,7 @@ class Session(object):
                     )
                     await self._on_websocket_unexpected_close()
                     await self.close_websocket(
-                        self._ws, should_retry=not self._is_server
+                        self._ws_wrapper, should_retry=not self._is_server
                     )
                     continue
             except FailedSendingMessageException:
@@ -315,12 +305,12 @@ class Session(object):
     async def _send_transport_message(
         self,
         msg: TransportMessage,
-        ws: WebSocketCommonProtocol,
+        websocket: websockets.WebSocketCommonProtocol,
         prefix_bytes: bytes = b"",
     ) -> None:
         try:
             await send_transport_message(
-                msg, ws, self._on_websocket_unexpected_close, prefix_bytes
+                msg, websocket, self._on_websocket_unexpected_close, prefix_bytes
             )
         except WebsocketClosedException as e:
             raise e
@@ -331,7 +321,6 @@ class Session(object):
         self,
         stream_id: str,
         payload: Dict | str,
-        ws: WebSocketCommonProtocol,
         control_flags: int = 0,
         service_name: str | None = None,
         procedure_name: str | None = None,
@@ -363,11 +352,14 @@ class Session(object):
                     # buffer
                     await self.close(True)
                     return
-                await self._send_transport_message(
-                    msg,
-                    ws,
-                    prefix_bytes=self._transport_options.get_prefix_bytes(),
-                )
+                async with self._ws_lock:
+                    if await self._ws_wrapper.is_open():
+                        # if it is not open it's fine, we already put it the buffer
+                        await self._send_transport_message(
+                            msg,
+                            self._ws_wrapper.ws,
+                            prefix_bytes=self._transport_options.get_prefix_bytes(),
+                        )
         except WebsocketClosedException as e:
             logging.debug(
                 "Connection closed while sending message %r: %r, waiting for "
@@ -388,25 +380,13 @@ class Session(object):
     ) -> None:
         """Send serialized messages to the websockets."""
         try:
-            # TODO: This blocking is not ideal, we should close this task when websocket
-            # is closed, and start another one when websocket reconnects.
-            ws = None
             async for payload in output:
-                ws = self._ws
-                while self._ws_state != WsState.OPEN:
-                    await asyncio.sleep(
-                        self._transport_options.close_session_check_interval_ms / 1000
-                    )
-                    ws = self._ws
                 if not is_streaming_output:
-                    await self.send_message(stream_id, payload, ws, STREAM_CLOSED_BIT)
+                    await self.send_message(stream_id, payload, STREAM_CLOSED_BIT)
                     return
-                await self.send_message(stream_id, payload, ws)
-            if ws:
-                logging.debug("sent an end of stream %r", stream_id)
-                await self.send_message(
-                    stream_id, {"type": "CLOSE"}, ws, STREAM_CLOSED_BIT
-                )
+                await self.send_message(stream_id, payload)
+            logging.debug("sent an end of stream %r", stream_id)
+            await self.send_message(stream_id, {"type": "CLOSE"}, STREAM_CLOSED_BIT)
         except FailedSendingMessageException as e:
             logging.error(f"Error while sending responses, {type(e)} : {e}")
         except (RuntimeError, ChannelClosed) as e:
@@ -415,28 +395,11 @@ class Session(object):
             logging.error(f"Unknown error while river sending responses back : {e}")
 
     async def close_websocket(
-        self, ws: WebSocketCommonProtocol, should_retry: bool
+        self, ws_wrapper: WebsocketWrapper, should_retry: bool
     ) -> None:
         """Mark the websocket as closed, close the websocket, and retry if needed."""
         async with self._ws_lock:
-            if self._ws.id != ws.id:
-                # already replaced with new ws
-                return
-            if self._ws_state != WsState.OPEN:
-                # Already closed
-                return
-            logging.info(
-                f"River session from {self._transport_id} to {self._to_id} "
-                f"closing websocket {ws.id}"
-            )
-            self._ws_state = WsState.CLOSING
-            if ws:
-                # TODO: should we wait here?
-                task = asyncio.create_task(ws.close())
-                task.add_done_callback(
-                    lambda _: logging.debug("old websocket %s closed.", ws.id)
-                )
-            self._ws_state = WsState.CLOSED
+            await ws_wrapper.close()
         if should_retry and self._retry_connection_callback:
             await self._retry_connection_callback(self)
 
@@ -519,7 +482,8 @@ class Session(object):
         """Close the session and all associated streams."""
         logging.info(
             f"{self._transport_id} closing session "
-            f"to {self._to_id}, ws: {self._ws.id}, current_state : {self._ws_state}"
+            f"to {self._to_id}, ws: {self._ws_wrapper.id}, "
+            f"current_state : {self._ws_wrapper}"
         )
         async with self._state_lock:
             if self._state != SessionState.ACTIVE:
@@ -527,7 +491,7 @@ class Session(object):
                 return
             self._state = SessionState.CLOSING
             self._reset_session_close_countdown()
-            await self.close_websocket(self._ws, should_retry=False)
+            await self.close_websocket(self._ws_wrapper, should_retry=False)
             # Clear the session in transports
             await self._close_session_callback(self)
             await self._task_manager.cancel_all_tasks()
