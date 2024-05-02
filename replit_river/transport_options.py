@@ -21,7 +21,7 @@ class ConnectionRetryOptions(BaseModel):
 class TransportOptions(BaseModel):
     session_disconnect_grace_ms: float = 5_000
     heartbeat_ms: float = 500
-    heartbeats_until_dead: int = 2
+    heartbeats_to_dead: int = 2
     use_prefix_bytes: bool = False
     close_session_check_interval_ms: float = 100
     connection_retry_options: ConnectionRetryOptions = ConnectionRetryOptions()
@@ -31,7 +31,7 @@ class TransportOptions(BaseModel):
         return PID2_PREFIX_BYTES if self.use_prefix_bytes else b""
 
     def websocket_disconnect_grace_ms(self) -> float:
-        return self.heartbeat_ms * self.heartbeats_until_dead
+        return self.heartbeat_ms * self.heartbeats_to_dead
 
     @classmethod
     def create_from_env(cls) -> "TransportOptions":
@@ -39,9 +39,9 @@ class TransportOptions(BaseModel):
             os.getenv("SESSION_DISCONNECT_GRACE_MS", 5_000)
         )
         heartbeat_ms = float(os.getenv("HEARTBEAT_MS", 2000))
-        heartbeats_to_dead = int(os.getenv("HEARTBEATS_UNTIL_DEAD", 2))
+        heartbeats_to_dead = int(os.getenv("HEARTBEATS_TO_DEAD", 2))
         return TransportOptions(
             session_disconnect_grace_ms=session_disconnect_grace_ms,
             heartbeat_ms=heartbeat_ms,
-            heartbeats_until_dead=heartbeats_to_dead,
+            heartbeats_to_dead=heartbeats_to_dead,
         )

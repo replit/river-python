@@ -267,10 +267,7 @@ class Session(object):
                     ACK_BIT,
                 )
                 self._heartbeat_misses += 1
-                if (
-                    self._heartbeat_misses
-                    >= self._transport_options.heartbeats_until_dead
-                ):
+                if self._heartbeat_misses >= self._transport_options.heartbeats_to_dead:
                     logging.debug(
                         "%r closing websocket because of heartbeat misses",
                         self.session_id,
