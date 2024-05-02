@@ -15,6 +15,9 @@ class ConnectionRetryOptions(BaseModel):
     budget_restore_interval_ms: float = 200
     max_retry: int = 10
 
+    class Config:
+        validate_assignment = True
+
 
 # setup in replit web can be found at
 # https://github.com/replit/repl-it-web/blob/main/pkg/pid2/src/entrypoints/protocol.ts#L13
@@ -26,6 +29,9 @@ class TransportOptions(BaseModel):
     close_session_check_interval_ms: float = 100
     connection_retry_options: ConnectionRetryOptions = ConnectionRetryOptions()
     buffer_size: int = 1_000
+
+    class Config:
+        validate_assignment = True
 
     def get_prefix_bytes(self) -> bytes:
         return PID2_PREFIX_BYTES if self.use_prefix_bytes else b""
