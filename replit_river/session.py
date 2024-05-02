@@ -52,7 +52,7 @@ class Session(object):
         transport_options: TransportOptions,
         is_server: bool,
         handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]],
-        close_session_callback: Callable[["Session"], Coroutine[Any, Any, None]],
+        close_session_callback: Callable[["Session", bool], Coroutine[Any, Any, None]],
         retry_connection_callback: Optional[
             Callable[
                 ["Session"],
@@ -104,13 +104,6 @@ class Session(object):
         async with self._ws_lock:
             return await self._ws_wrapper.is_open()
 
-    async def _on_websocket_unexpected_close(self) -> None:
-        """Handle unexpected websocket close."""
-        logging.debug(
-            "Unexpected websocket close from %s to %s", self._transport_id, self._to_id
-        )
-        await self._begin_close_session_countdown()
-
     async def _begin_close_session_countdown(self) -> None:
         """Begin the countdown to close session, this should be called when
         websocket is closed.
@@ -119,6 +112,7 @@ class Session(object):
         if self._close_session_after_time_secs is not None:
             # already in grace period, no need to set again
             return
+        await self._ws_wrapper.close()
         logging.debug(
             "websocket closed from %s to %s begin grace period",
             self._transport_id,
@@ -137,7 +131,7 @@ class Session(object):
                 try:
                     await self._handle_messages_from_ws(tg)
                 except ConnectionClosed as e:
-                    await self._on_websocket_unexpected_close()
+                    await self._begin_close_session_countdown()
                     logging.debug("ConnectionClosed while serving: %r", e)
                 except FailedSendingMessageException as e:
                     # Expected error if the connection is closed.
@@ -292,7 +286,7 @@ class Session(object):
                         "%r closing websocket because of heartbeat misses",
                         self.session_id,
                     )
-                    await self._on_websocket_unexpected_close()
+                    await self._begin_close_session_countdown()
                     await self.close_websocket(
                         self._ws_wrapper, should_retry=not self._is_server
                     )
@@ -327,7 +321,7 @@ class Session(object):
     ) -> None:
         try:
             await send_transport_message(
-                msg, websocket, self._on_websocket_unexpected_close, prefix_bytes
+                msg, websocket, self._begin_close_session_countdown, prefix_bytes
             )
         except WebsocketClosedException as e:
             raise e
@@ -416,6 +410,9 @@ class Session(object):
     ) -> None:
         """Mark the websocket as closed, close the websocket, and retry if needed."""
         async with self._ws_lock:
+            # Already closed.
+            if not await ws_wrapper.is_open():
+                return
             await ws_wrapper.close()
         if should_retry and self._retry_connection_callback:
             await self._retry_connection_callback(self)
@@ -495,7 +492,9 @@ class Session(object):
     async def start_serve_responses(self) -> None:
         await self._task_manager.create_task(self.serve())
 
-    async def close(self, is_unexpected_close: bool) -> None:
+    async def close(
+        self, is_unexpected_close: bool, acquire_transport_lock: bool = True
+    ) -> None:
         """Close the session and all associated streams."""
         logging.info(
             f"{self._transport_id} closing session "
@@ -508,9 +507,10 @@ class Session(object):
                 return
             self._state = SessionState.CLOSING
             self._reset_session_close_countdown()
-            await self.close_websocket(self._ws_wrapper, should_retry=False)
+            async with self._ws_lock:
+                await self._ws_wrapper.close()
             # Clear the session in transports
-            await self._close_session_callback(self)
+            await self._close_session_callback(self, acquire_transport_lock)
             await self._task_manager.cancel_all_tasks()
             # TODO: unexpected_close should close stream differently here to
             # throw exception correctly.
