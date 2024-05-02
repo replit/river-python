@@ -38,7 +38,6 @@ class ClientSession(Session):
         output: Channel[Any] = Channel(1)
         self._streams[stream_id] = output
         await self.send_message(
-            ws=self._ws,
             stream_id=stream_id,
             control_flags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
             payload=request_serializer(request),
@@ -91,7 +90,6 @@ class ClientSession(Session):
             if init and init_serializer:
                 await self.send_message(
                     stream_id=stream_id,
-                    ws=self._ws,
                     control_flags=STREAM_OPEN_BIT,
                     service_name=service_name,
                     procedure_name=procedure_name,
@@ -107,7 +105,6 @@ class ClientSession(Session):
                     first_message = False
                 await self.send_message(
                     stream_id=stream_id,
-                    ws=self._ws,
                     service_name=service_name,
                     procedure_name=procedure_name,
                     control_flags=control_flags,
@@ -158,7 +155,6 @@ class ClientSession(Session):
         output: Channel[Any] = Channel(MAX_MESSAGE_BUFFER_SIZE)
         self._streams[stream_id] = output
         await self.send_message(
-            ws=self._ws,
             service_name=service_name,
             procedure_name=procedure_name,
             stream_id=stream_id,
@@ -209,7 +205,6 @@ class ClientSession(Session):
         try:
             if init and init_serializer:
                 await self.send_message(
-                    ws=self._ws,
                     service_name=service_name,
                     procedure_name=procedure_name,
                     stream_id=stream_id,
@@ -221,7 +216,6 @@ class ClientSession(Session):
                 request_iter = aiter(request)
                 first = await anext(request_iter)
                 await self.send_message(
-                    ws=self._ws,
                     service_name=service_name,
                     procedure_name=procedure_name,
                     stream_id=stream_id,
@@ -238,7 +232,6 @@ class ClientSession(Session):
                 if item is None:
                     continue
                 await self.send_message(
-                    ws=self._ws,
                     service_name=service_name,
                     procedure_name=procedure_name,
                     stream_id=stream_id,
@@ -275,7 +268,6 @@ class ClientSession(Session):
     ) -> None:
         # close stream
         await self.send_message(
-            ws=self._ws,
             service_name=service_name,
             procedure_name=procedure_name,
             stream_id=stream_id,
