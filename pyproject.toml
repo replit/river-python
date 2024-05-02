@@ -4,7 +4,11 @@ build-backend = "poetry.core.masonry.api"
 
 [tool.poetry]
 name="replit-river"
+<<<<<<< HEAD
 version="0.1.15"
+=======
+version="0.1.13"
+>>>>>>> origin/main
 description="Replit river toolkit for Python"
 authors = ["Replit <eng@replit.com>"]
 license = "LICENSE"
