@@ -112,6 +112,7 @@ class ClientTransport(Transport):
                     if not existing_session
                     else existing_session.session_id
                 )
+                logging.error(f"##### existing session : {existing_session}")
                 rate_limit.consume_budget(client_id)
                 handshake_request, handshake_response = await self._establish_handshake(
                     self._transport_id, self._server_id, session_id, ws
@@ -173,12 +174,16 @@ class ClientTransport(Transport):
             return session_to_replace_ws
 
     async def _get_or_create_session(self) -> ClientSession:
+        logging.error(f"####### _get_or_create_session")
+
         async with self._create_session_lock:
             existing_session = await self._get_existing_session()
             if existing_session:
                 if await existing_session.is_websocket_open():
+                    logging.error(f"####### use existing session")
                     return existing_session
                 else:
+                    logging.error(f"####### retry session connection")
                     session = await self._retry_session_connection(existing_session)
                     # This should never happen, adding here to make mypy happy
                     if not isinstance(session, ClientSession):
@@ -188,6 +193,7 @@ class ClientTransport(Transport):
                         )
                     return session
             else:
+                logging.error(f"####### establish new connection")
                 new_ws, hs_request, hs_response = await self._establish_new_connection()
                 advertised_session_id = hs_response.status.sessionId
                 if not advertised_session_id:
