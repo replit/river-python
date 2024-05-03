@@ -124,7 +124,6 @@ class Session(object):
 
     async def serve(self) -> None:
         """Serve messages from the websocket."""
-        logging.error("####### serve started")
         try:
             async with asyncio.TaskGroup() as tg:
                 try:
@@ -143,16 +142,11 @@ class Session(object):
                 raise ExceptionGroup(
                     "Unhandled exceptions on River server", unhandled.exceptions
                 )
-        logging.error("####### serve finished")
 
     async def _update_book_keeping(self, msg: TransportMessage) -> None:
-        logging.error("####### _update_book_keeping started")
         await self._seq_manager.check_seq_and_update(msg)
         await self._remove_acked_messages_in_buffer()
         self._reset_session_close_countdown()
-        logging.error(
-            f"####### _update_book_keeping end: {self._heartbeat_misses} {self._close_session_after_time_secs}"
-        )
 
     async def _handle_messages_from_ws(
         self, tg: Optional[asyncio.TaskGroup] = None
@@ -213,9 +207,7 @@ class Session(object):
     async def replace_with_new_websocket(
         self, new_ws: websockets.WebSocketCommonProtocol
     ) -> None:
-        logging.debug(f"#### replace_with_new_websocket 1 : {new_ws.id}")
         async with self._ws_lock:
-            logging.debug(f"#### replace_with_new_websocket 2 : {new_ws.id}")
             old_wrapper = self._ws_wrapper
             old_ws_id = old_wrapper.ws.id
             if new_ws.id != old_ws_id:
@@ -223,7 +215,6 @@ class Session(object):
                 await old_wrapper.close()
             self._ws_wrapper = WebsocketWrapper(new_ws)
             await self._send_buffered_messages(new_ws)
-        logging.debug(f"#### replace_with_new_websocket 3 : {new_ws.id}")
         # Server will call serve itself.
         if not self._is_server:
             await self.start_serve_responses()
@@ -232,7 +223,6 @@ class Session(object):
         return asyncio.get_event_loop().time()
 
     def _reset_session_close_countdown(self) -> None:
-        logging.debug("#### reset_session_close_countdown")
         self._heartbeat_misses = 0
         self._close_session_after_time_secs = None
 
@@ -241,13 +231,9 @@ class Session(object):
             await asyncio.sleep(
                 self._transport_options.close_session_check_interval_ms / 1000
             )
-            logging.error("#### _check_to_close_session")
             if not self._close_session_after_time_secs:
                 continue
             current_time = await self._get_current_time()
-            logging.error(
-                f"#### _check_to_close_session : current_time: {current_time} self._close_session_after_time_secs: {self._close_session_after_time_secs}, {current_time > self._close_session_after_time_secs}"
-            )
             if current_time > self._close_session_after_time_secs:
                 logging.debug(
                     "Grace period ended for %s, closing session", self._transport_id
@@ -425,7 +411,6 @@ class Session(object):
                 return
             await ws_wrapper.close()
         if should_retry and self._retry_connection_callback:
-            logging.error("### running retry_connection_callback")
             await self._task_manager.create_task(self._retry_connection_callback(self))
 
     async def _open_stream_and_call_handler(

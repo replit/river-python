@@ -56,6 +56,7 @@ class ClientTransport(Transport):
         self._rate_limiter = LeakyBucketRateLimit(
             transport_options.connection_retry_options
         )
+        # We want to make sure there's only one session creation at a time
         self._create_session_lock = asyncio.Lock()
 
     async def close(self) -> None:
@@ -94,24 +95,15 @@ class ClientTransport(Transport):
         for i in range(max_retry):
             if i > 0:
                 logging.info(f"Retrying build handshake number {i} times")
-                logging.info(
-                    f"old_session: {old_session}, old_session.is_session_open(): {await old_session.is_session_open() if old_session else None}"
-                )
             if not rate_limit.has_budget(client_id):
                 logging.debug("No retry budget for %s.", client_id)
                 break
             try:
-                logging.error(
-                    f"##### _establish_new_connection: old session : {old_session}"
-                )
                 ws = await websockets.connect(self._websocket_uri)
                 session_id = (
                     self.generate_session_id()
                     if not old_session
                     else old_session.session_id
-                )
-                logging.error(
-                    f"##### _establish_new_connection: existing session : {old_session}"
                 )
                 rate_limit.consume_budget(client_id)
                 handshake_request, handshake_response = await self._establish_handshake(
@@ -158,49 +150,28 @@ class ClientTransport(Transport):
         return new_session
 
     async def _get_or_create_session(self) -> ClientSession:
-        logging.error(f"####### start get or create session")
         async with self._create_session_lock:
             existing_session = await self._get_existing_session()
             if not existing_session:
-                logging.error(f"##### _get_or_create_session No existing session")
                 return await self._create_new_session()
             is_session_open = await existing_session.is_session_open()
             if not is_session_open:
-                logging.error(
-                    f"##### _get_or_create_session session open, creating new session"
-                )
-                await existing_session.close(
-                    is_unexpected_close=False, acquire_transport_lock=True
-                )
                 return await self._create_new_session()
             is_ws_open = await existing_session.is_websocket_open()
             if is_ws_open:
-                logging.error(f"##### _get_or_create_session Reuse existing session")
                 return existing_session
             else:
-                try:
-                    new_ws, _, hs_response = await self._establish_new_connection(
-                        existing_session
-                    )
-                except RiverException as e:
-                    logging.error(
-                        f"##### _get_or_create_session failed to establish new connection : {e}"
-                    )
-                    return existing_session
+                new_ws, _, hs_response = await self._establish_new_connection(
+                    existing_session
+                )
                 if (
                     hs_response.status.sessionId
                     == existing_session.advertised_session_id
                 ):
-                    logging.error(
-                        f"##### _get_or_create_session session open, replacing websocket"
-                    )
                     await existing_session.replace_with_new_websocket(new_ws)
                     return existing_session
                 else:
-                    logging.error(f"##### session open, not same session id, reuse")
-                    await existing_session.close(
-                        is_unexpected_close=False, acquire_transport_lock=True
-                    )
+                    await existing_session.close(is_unexpected_close=False)
                     return await self._create_new_session()
 
     async def _send_handshake_request(
