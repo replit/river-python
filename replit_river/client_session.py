@@ -240,7 +240,7 @@ class ClientSession(Session):
                 )
             await self.send_close_stream(service_name, procedure_name, stream_id)
 
-        await self._task_manager.create_task(_encode_stream())
+        self._task_manager.create_task(_encode_stream())
 
         # Handle potential errors during communication
         try:

@@ -312,8 +312,8 @@ def upload_method_handler(
                 finally:
                     output.close()
 
-            convert_inputs_task = await task_manager.create_task(_convert_inputs())
-            convert_outputs_task = await task_manager.create_task(_convert_outputs())
+            convert_inputs_task = task_manager.create_task(_convert_inputs())
+            convert_outputs_task = task_manager.create_task(_convert_outputs())
             await asyncio.wait((convert_inputs_task, convert_outputs_task))
 
         except Exception as e:
@@ -370,8 +370,8 @@ def stream_method_handler(
                 finally:
                     output.close()
 
-            convert_inputs_task = await task_manager.create_task(_convert_inputs())
-            convert_outputs_task = await task_manager.create_task(_convert_outputs())
+            convert_inputs_task = task_manager.create_task(_convert_inputs())
+            convert_outputs_task = task_manager.create_task(_convert_outputs())
             await asyncio.wait((convert_inputs_task, convert_outputs_task))
         except grpc.RpcError:
             logging.exception("RPC exception in stream")

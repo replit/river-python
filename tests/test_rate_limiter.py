@@ -63,7 +63,6 @@ async def test_concurrent_access(rate_limiter: LeakyBucketRateLimit) -> None:
     ), "Concurrent access should be handled correctly"
 
 
-@pytest.mark.asyncio
 def test_close(rate_limiter: LeakyBucketRateLimit) -> None:
     rate_limiter.close()
     assert not rate_limiter.tasks, "All tasks should be cancelled upon close"

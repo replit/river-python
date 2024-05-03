@@ -79,7 +79,7 @@ class BackgroundTaskManager:
                     "Exception on cancelling task: %r", exception, exc_info=True
                 )
 
-    async def create_task(
+    def create_task(
         self, fn: Any, tg: Optional[asyncio.TaskGroup] = None
     ) -> asyncio.Task:
         """Creates a task from a callable and adds it to the background tasks set.

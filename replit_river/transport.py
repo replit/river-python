@@ -45,14 +45,12 @@ class Transport:
         await asyncio.gather(*tasks)
         logging.info(f"Transport closed {self._transport_id}")
 
-    async def _delete_session(self, session: Session) -> None:
-        async with self._session_lock:
-            if session._to_id in self._sessions:
-                del self._sessions[session._to_id]
+    def _delete_session(self, session: Session) -> None:
+        if session._to_id in self._sessions:
+            del self._sessions[session._to_id]
 
-    async def _set_session(self, session: Session) -> None:
-        async with self._session_lock:
-            self._sessions[session._to_id] = session
+    def _set_session(self, session: Session) -> None:
+        self._sessions[session._to_id] = session
 
     def generate_nanoid(self) -> str:
         return str(nanoid.generate())
@@ -85,9 +83,9 @@ class Transport:
         advertised_session_id: str,
         websocket: WebSocketCommonProtocol,
     ) -> Session:
-        session_to_close: Optional[Session] = None
-        new_session: Optional[Session] = None
         async with self._session_lock:
+            session_to_close: Optional[Session] = None
+            new_session: Optional[Session] = None
             if to_id not in self._sessions:
                 logging.debug(
                     'Creating new session with "%s" using ws: %s', to_id, websocket.id
@@ -138,13 +136,11 @@ class Transport:
                         new_session = old_session
                     except FailedSendingMessageException as e:
                         raise e
-        if session_to_close:
-            logging.debug(
-                "Closing stale session %s", session_to_close.advertised_session_id
-            )
-            await session_to_close.close(False)
-            logging.info(
-                f"Closed stale session {session_to_close.advertised_session_id}"
-            )
-        await self._set_session(new_session)
+
+            if session_to_close:
+                logging.debug(
+                    "Closing stale session %s", session_to_close.advertised_session_id
+                )
+                await session_to_close.close(is_unexpected_close=False)
+            self._set_session(new_session)
         return new_session
