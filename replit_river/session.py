@@ -211,7 +211,7 @@ class Session(object):
                 self._reset_session_close_countdown()
                 await old_wrapper.close()
             self._ws_wrapper = WebsocketWrapper(new_ws)
-            await self._send_buffered_messages(new_ws)
+        await self._send_buffered_messages(new_ws)
         # Server will call serve itself.
         if not self._is_server:
             await self.start_serve_responses()
