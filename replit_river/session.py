@@ -108,11 +108,9 @@ class Session(object):
         """Begin the countdown to close session, this should be called when
         websocket is closed.
         """
-        logging.debug("begin_close_session_countdown")
         if self._close_session_after_time_secs is not None:
             # already in grace period, no need to set again
             return
-        await self._ws_wrapper.close()
         logging.debug(
             "websocket closed from %s to %s begin grace period",
             self._transport_id,
@@ -122,6 +120,7 @@ class Session(object):
         self._close_session_after_time_secs = (
             await self._get_current_time() + grace_period_ms / 1000
         )
+        await self.close_websocket(self._ws_wrapper, should_retry=not self._is_server)
 
     async def serve(self) -> None:
         """Serve messages from the websocket."""
@@ -164,8 +163,15 @@ class Session(object):
             self._ws_wrapper.id,
         )
         try:
-            async for message in self._ws_wrapper.ws:
+            ws_wrapper = self._ws_wrapper
+            async for message in ws_wrapper.ws:
                 try:
+                    logging.error(
+                        f" await ws_wrapper.is_open(): : { await ws_wrapper.is_open()}"
+                    )
+                    if not await ws_wrapper.is_open():
+                        # We should not process messages if the websocket is closed.
+                        break
                     msg = parse_transport_msg(message, self._transport_options)
 
                     logging.debug(f"{self._transport_id} got a message %r", msg)
@@ -235,9 +241,13 @@ class Session(object):
             await asyncio.sleep(
                 self._transport_options.close_session_check_interval_ms / 1000
             )
+            logging.error("#### _check_to_close_session")
             if not self._close_session_after_time_secs:
                 continue
             current_time = await self._get_current_time()
+            logging.error(
+                f"#### _check_to_close_session : current_time: {current_time} self._close_session_after_time_secs: {self._close_session_after_time_secs}, {current_time > self._close_session_after_time_secs}"
+            )
             if current_time > self._close_session_after_time_secs:
                 logging.debug(
                     "Grace period ended for %s, closing session", self._transport_id
@@ -282,14 +292,14 @@ class Session(object):
                     self._heartbeat_misses
                     >= self._transport_options.heartbeats_until_dead
                 ):
+                    if self._close_session_after_time_secs is not None:
+                        # already in grace period, no need to set again
+                        continue
                     logging.debug(
                         "%r closing websocket because of heartbeat misses",
                         self.session_id,
                     )
                     await self._begin_close_session_countdown()
-                    await self.close_websocket(
-                        self._ws_wrapper, should_retry=not self._is_server
-                    )
                     continue
             except FailedSendingMessageException:
                 # this is expected during websocket closed period
@@ -415,7 +425,8 @@ class Session(object):
                 return
             await ws_wrapper.close()
         if should_retry and self._retry_connection_callback:
-            await self._retry_connection_callback(self)
+            logging.error("### running retry_connection_callback")
+            await self._task_manager.create_task(self._retry_connection_callback(self))
 
     async def _open_stream_and_call_handler(
         self,

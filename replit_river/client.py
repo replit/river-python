@@ -44,6 +44,7 @@ class Client:
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> ResponseType:
+        logging.error(f"#send_rpc : {request}")
         session = await self._transport._get_or_create_session()
         return await session.send_rpc(
             service_name,

@@ -61,8 +61,7 @@ class Transport:
             async with self._session_lock:
                 self._sessions[session._to_id] = session
         else:
-            if session._to_id in self._sessions:
-                del self._sessions[session._to_id]
+            self._sessions[session._to_id] = session
 
     def generate_nanoid(self) -> str:
         return str(nanoid.generate())

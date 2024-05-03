@@ -13,7 +13,7 @@ class ConnectionRetryOptions(BaseModel):
     max_backoff_ms: float = 32_000
     attempt_budget_capacity: float = 5
     budget_restore_interval_ms: float = 200
-    max_retry: int = 10
+    max_retry: int = 100
 
 
 # setup in replit web can be found at
