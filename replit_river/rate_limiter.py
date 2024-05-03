@@ -71,6 +71,7 @@ class LeakyBucketRateLimit:
         """
         if user in self.tasks:
             self.tasks[user].cancel()
+            del self.tasks[user]
         current_budget = self.get_budget_consumed(user)
         self.budget_consumed[user] = current_budget + 1
 

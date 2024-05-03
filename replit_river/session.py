@@ -357,13 +357,14 @@ class Session(object):
                     await self.close(True)
                     return
                 async with self._ws_lock:
-                    if await self._ws_wrapper.is_open():
-                        # if it is not open it's fine, we already put it the buffer
-                        await self._send_transport_message(
-                            msg,
-                            self._ws_wrapper.ws,
-                            prefix_bytes=self._transport_options.get_prefix_bytes(),
-                        )
+                    if not await self._ws_wrapper.is_open():
+                        # If the websocket is closed, we should not send the message
+                        return
+                await self._send_transport_message(
+                    msg,
+                    self._ws_wrapper.ws,
+                    prefix_bytes=self._transport_options.get_prefix_bytes(),
+                )
         except WebsocketClosedException as e:
             logging.debug(
                 "Connection closed while sending message %r: %r, waiting for "

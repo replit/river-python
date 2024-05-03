@@ -98,6 +98,7 @@ class ClientTransport(Transport):
             if not rate_limit.has_budget(client_id):
                 logging.debug("No retry budget for %s.", client_id)
                 break
+            rate_limit.consume_budget(client_id)
             try:
                 ws = await websockets.connect(self._websocket_uri)
                 session_id = (
@@ -105,7 +106,6 @@ class ClientTransport(Transport):
                     if not old_session
                     else old_session.session_id
                 )
-                rate_limit.consume_budget(client_id)
                 handshake_request, handshake_response = await self._establish_handshake(
                     self._transport_id, self._server_id, session_id, ws
                 )
