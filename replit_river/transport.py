@@ -83,10 +83,9 @@ class Transport:
         advertised_session_id: str,
         websocket: WebSocketCommonProtocol,
     ) -> Session:
-        session_to_close: Optional[Session] = None
-        new_session: Optional[Session] = None
-        logging.error(f"## get_or_create_session, {to_id}")
         async with self._session_lock:
+            session_to_close: Optional[Session] = None
+            new_session: Optional[Session] = None
             if to_id not in self._sessions:
                 logging.debug(
                     'Creating new session with "%s" using ws: %s', to_id, websocket.id
