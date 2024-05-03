@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from socket import timeout
 from typing import Optional, Tuple
 
 import websockets
@@ -88,6 +89,7 @@ class ClientTransport(Transport):
         ControlMessageHandshakeResponse,
     ]:
         """Build a new websocket connection with retry logic."""
+        logging.error(f"##### start _establish_new_connection")
         rate_limit = self._rate_limiter
         max_retry = self._transport_options.connection_retry_options.max_retry
         client_id = self._client_id
@@ -100,11 +102,12 @@ class ClientTransport(Transport):
             if not rate_limit.has_budget(client_id):
                 logging.debug("No retry budget for %s.", client_id)
                 break
+            rate_limit.consume_budget(client_id)
             try:
                 logging.error(
                     f"##### _establish_new_connection: old session : {old_session}"
                 )
-                ws = await websockets.connect(self._websocket_uri)
+                ws = await websockets.connect(self._websocket_uri, timeout=5)
                 session_id = (
                     self.generate_session_id()
                     if not old_session
@@ -113,7 +116,6 @@ class ClientTransport(Transport):
                 logging.error(
                     f"##### _establish_new_connection: existing session : {old_session}"
                 )
-                rate_limit.consume_budget(client_id)
                 handshake_request, handshake_response = await self._establish_handshake(
                     self._transport_id, self._server_id, session_id, ws
                 )
@@ -133,6 +135,7 @@ class ClientTransport(Transport):
     async def _create_new_session(
         self,
     ) -> ClientSession:
+        logging.error(f"####### start creating new session")
         new_ws, hs_request, hs_response = await self._establish_new_connection()
         advertised_session_id = hs_response.status.sessionId
         if not advertised_session_id:
@@ -154,7 +157,9 @@ class ClientTransport(Transport):
         )
 
         await self._set_session(new_session, acquire_lock=False)
+        logging.error(f"####### start creating new session session set")
         await new_session.start_serve_responses()
+        logging.error(f"####### start creating new session start_serve_responses ok")
         return new_session
 
     async def _get_or_create_session(self) -> ClientSession:
@@ -173,15 +178,23 @@ class ClientTransport(Transport):
                     is_unexpected_close=False, acquire_transport_lock=True
                 )
                 return await self._create_new_session()
+            logging.error(f"##### _get_or_create_session check if websocket open")
             is_ws_open = await existing_session.is_websocket_open()
+            logging.error(
+                f"##### _get_or_create_session check is_ws_open: {is_ws_open}"
+            )
             if is_ws_open:
                 logging.error(f"##### _get_or_create_session Reuse existing session")
                 return existing_session
             else:
                 try:
+                    logging.error(
+                        f"##### _get_or_create_session establishing new connection"
+                    )
                     new_ws, _, hs_response = await self._establish_new_connection(
                         existing_session
                     )
+                    logging.error(f"##### connection established: {hs_response}")
                 except RiverException as e:
                     logging.error(
                         f"##### _get_or_create_session failed to establish new connection : {e}"
@@ -195,11 +208,17 @@ class ClientTransport(Transport):
                         f"##### _get_or_create_session session open, replacing websocket"
                     )
                     await existing_session.replace_with_new_websocket(new_ws)
+                    logging.error(
+                        f"##### _get_or_create_session session open, replacing websocket finished"
+                    )
                     return existing_session
                 else:
                     logging.error(f"##### session open, not same session id, reuse")
                     await existing_session.close(
                         is_unexpected_close=False, acquire_transport_lock=True
+                    )
+                    logging.error(
+                        f"##### session open, not same session id, reuse finished"
                     )
                     return await self._create_new_session()
 

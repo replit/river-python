@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import random
 from typing import Dict
 
@@ -35,6 +36,7 @@ class LeakyBucketRateLimit:
             int: The backoff time in milliseconds, including a random jitter.
         """
         exponent = max(0, self.get_budget_consumed(user) - 1)
+        logging.error(f"#### exponent : {exponent}")
         jitter = random.randint(0, self.options.max_jitter_ms)
         backoff_ms = min(
             self.options.base_interval_ms * (2**exponent), self.options.max_backoff_ms
@@ -71,6 +73,7 @@ class LeakyBucketRateLimit:
         """
         if user in self.tasks:
             self.tasks[user].cancel()
+            del self.tasks[user]
         current_budget = self.get_budget_consumed(user)
         self.budget_consumed[user] = current_budget + 1
 

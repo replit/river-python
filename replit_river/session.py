@@ -101,7 +101,9 @@ class Session(object):
             return self._state == SessionState.ACTIVE
 
     async def is_websocket_open(self) -> bool:
+        logging.error("#### is_websocket_open 1")
         async with self._ws_lock:
+            logging.error("#### is_websocket_open 2")
             return await self._ws_wrapper.is_open()
 
     async def _begin_close_session_countdown(self) -> None:
@@ -373,14 +375,18 @@ class Session(object):
                     # buffer
                     await self.close(True)
                     return
+                logging.error("#send transport message 1")
                 async with self._ws_lock:
-                    if await self._ws_wrapper.is_open():
-                        # if it is not open it's fine, we already put it the buffer
-                        await self._send_transport_message(
-                            msg,
-                            self._ws_wrapper.ws,
-                            prefix_bytes=self._transport_options.get_prefix_bytes(),
-                        )
+                    logging.error("#send transport message 2")
+                    if not await self._ws_wrapper.is_open():
+                        # If the websocket is closed, we should not send the message
+                        return
+                await self._send_transport_message(
+                    msg,
+                    self._ws_wrapper.ws,
+                    prefix_bytes=self._transport_options.get_prefix_bytes(),
+                )
+                logging.error("#send transport message 3")
         except WebsocketClosedException as e:
             logging.debug(
                 "Connection closed while sending message %r: %r, waiting for "
@@ -419,10 +425,15 @@ class Session(object):
         self, ws_wrapper: WebsocketWrapper, should_retry: bool
     ) -> None:
         """Mark the websocket as closed, close the websocket, and retry if needed."""
+        logging.error("### closing websocket1 ")
         async with self._ws_lock:
+            logging.error("### closing websocket2")
             # Already closed.
             if not await ws_wrapper.is_open():
+                logging.error("### closing websocket3")
                 return
+            logging.error("### closing websocket4")
+            logging.error("ws_wrapper.close()")
             await ws_wrapper.close()
         if should_retry and self._retry_connection_callback:
             logging.error("### running retry_connection_callback")
@@ -518,8 +529,12 @@ class Session(object):
                 return
             self._state = SessionState.CLOSING
             self._reset_session_close_countdown()
+
+            logging.error("### session close 1")
             async with self._ws_lock:
+                logging.error("### session close 2")
                 await self._ws_wrapper.close()
+            logging.error("### session close 3")
             # Clear the session in transports
             await self._close_session_callback(self, acquire_transport_lock)
             await self._task_manager.cancel_all_tasks()

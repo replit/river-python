@@ -43,7 +43,7 @@ class Server(object):
                 self._transport.handshake_to_get_session(websocket),
                 self._transport_options.session_disconnect_grace_ms / 1000,
             )
-        except Exception as e:
+        except TimeoutError as e:
             logging.error(
                 f"Error establishing handshake, closing websocket: {e}", exc_info=True
             )
