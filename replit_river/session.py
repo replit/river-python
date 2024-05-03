@@ -160,9 +160,6 @@ class Session(object):
             ws_wrapper = self._ws_wrapper
             async for message in ws_wrapper.ws:
                 try:
-                    logging.error(
-                        f" await ws_wrapper.is_open(): : { await ws_wrapper.is_open()}"
-                    )
                     if not await ws_wrapper.is_open():
                         # We should not process messages if the websocket is closed.
                         break
