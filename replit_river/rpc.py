@@ -386,7 +386,6 @@ def stream_method_handler(
                 }
             )
         except Exception as e:
-            breakpoint()
             logging.exception("Uncaught exception in stream")
             await output.put(
                 {
