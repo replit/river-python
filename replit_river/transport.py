@@ -45,23 +45,12 @@ class Transport:
         await asyncio.gather(*tasks)
         logging.info(f"Transport closed {self._transport_id}")
 
-    async def _delete_session(
-        self, session: Session, acquire_lock: bool = True
-    ) -> None:
-        if acquire_lock:
-            async with self._session_lock:
-                if session._to_id in self._sessions:
-                    del self._sessions[session._to_id]
-        else:
-            if session._to_id in self._sessions:
-                del self._sessions[session._to_id]
+    def _delete_session(self, session: Session) -> None:
+        if session._to_id in self._sessions:
+            del self._sessions[session._to_id]
 
-    async def _set_session(self, session: Session, acquire_lock: bool = True) -> None:
-        if acquire_lock:
-            async with self._session_lock:
-                self._sessions[session._to_id] = session
-        else:
-            self._sessions[session._to_id] = session
+    def _set_session(self, session: Session) -> None:
+        self._sessions[session._to_id] = session
 
     def generate_nanoid(self) -> str:
         return str(nanoid.generate())
@@ -153,8 +142,6 @@ class Transport:
                 logging.debug(
                     "Closing stale session %s", session_to_close.advertised_session_id
                 )
-                await session_to_close.close(
-                    is_unexpected_close=False, acquire_transport_lock=False
-                )
-            await self._set_session(new_session, acquire_lock=False)
+                await session_to_close.close(is_unexpected_close=False)
+            self._set_session(new_session)
         return new_session

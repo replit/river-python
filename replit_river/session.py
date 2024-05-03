@@ -52,7 +52,7 @@ class Session(object):
         transport_options: TransportOptions,
         is_server: bool,
         handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]],
-        close_session_callback: Callable[["Session", bool], Coroutine[Any, Any, None]],
+        close_session_callback: Callable[["Session"], None],
         retry_connection_callback: Optional[
             Callable[
                 ["Session"],
@@ -273,7 +273,7 @@ class Session(object):
                 )
                 if (
                     self._heartbeat_misses
-                    >= self._transport_options.heartbeats_until_dead
+                    > self._transport_options.heartbeats_until_dead
                 ):
                     if self._close_session_after_time_secs is not None:
                         # already in grace period, no need to set again
@@ -485,9 +485,7 @@ class Session(object):
     async def start_serve_responses(self) -> None:
         await self._task_manager.create_task(self.serve())
 
-    async def close(
-        self, is_unexpected_close: bool, acquire_transport_lock: bool = True
-    ) -> None:
+    async def close(self, is_unexpected_close: bool) -> None:
         """Close the session and all associated streams."""
         logging.info(
             f"{self._transport_id} closing session "
@@ -503,7 +501,7 @@ class Session(object):
             async with self._ws_lock:
                 await self._ws_wrapper.close()
             # Clear the session in transports
-            await self._close_session_callback(self, acquire_transport_lock)
+            self._close_session_callback(self)
             await self._task_manager.cancel_all_tasks()
             # TODO: unexpected_close should close stream differently here to
             # throw exception correctly.

@@ -145,7 +145,7 @@ class ClientTransport(Transport):
             retry_connection_callback=lambda x: self._get_or_create_session(),
         )
 
-        await self._set_session(new_session, acquire_lock=False)
+        self._set_session(new_session)
         await new_session.start_serve_responses()
         return new_session
 
