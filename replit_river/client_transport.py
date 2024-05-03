@@ -63,20 +63,21 @@ class ClientTransport(Transport):
         await self._close_all_sessions()
 
     async def _get_existing_session(self) -> Optional[ClientSession]:
-        if not self._sessions:
-            return None
-        if len(self._sessions) > 1:
-            raise RiverException(
-                "session_error",
-                "More than one session found in client, should only be one",
-            )
-        session = list(self._sessions.values())[0]
-        if isinstance(session, ClientSession):
-            return session
-        else:
-            raise RiverException(
-                "session_error", f"Client session type wrong, got {type(session)}"
-            )
+        async with self._session_lock:
+            if not self._sessions:
+                return None
+            if len(self._sessions) > 1:
+                raise RiverException(
+                    "session_error",
+                    "More than one session found in client, should only be one",
+                )
+            session = list(self._sessions.values())[0]
+            if isinstance(session, ClientSession):
+                return session
+            else:
+                raise RiverException(
+                    "session_error", f"Client session type wrong, got {type(session)}"
+                )
 
     async def _establish_new_connection(
         self,
