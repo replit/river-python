@@ -21,6 +21,7 @@ class ConnectionRetryOptions(BaseModel):
 class TransportOptions(BaseModel):
     session_disconnect_grace_ms: float = 5_000
     heartbeat_ms: float = 500
+    # TODO: This shoudl have a better name like max_failed_heartbeats
     heartbeats_until_dead: int = 2
     use_prefix_bytes: bool = False
     close_session_check_interval_ms: float = 100

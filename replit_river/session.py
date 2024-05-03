@@ -90,11 +90,11 @@ class Session(object):
         self._buffer = MessageBuffer(self._transport_options.buffer_size)
         self._task_manager = BackgroundTaskManager()
 
-        asyncio.create_task(self._setup_heartbeats_task())
+        self._setup_heartbeats_task()
 
-    async def _setup_heartbeats_task(self) -> None:
-        await self._task_manager.create_task(self._heartbeat())
-        await self._task_manager.create_task(self._check_to_close_session())
+    def _setup_heartbeats_task(self) -> None:
+        self._task_manager.create_task(self._heartbeat())
+        self._task_manager.create_task(self._check_to_close_session())
 
     async def is_session_open(self) -> bool:
         async with self._state_lock:
@@ -265,7 +265,8 @@ class Session(object):
                 )
                 self._heartbeat_misses += 1
                 logging.debug(
-                    "heartbeat right now : {} {} {}".format(
+                    "heartbeat right now : %d, %f, %f"
+                    % (
                         self._heartbeat_misses,
                         self._transport_options.heartbeats_until_dead,
                         self._transport_options.heartbeat_ms,
@@ -359,6 +360,7 @@ class Session(object):
                 async with self._ws_lock:
                     if not await self._ws_wrapper.is_open():
                         # If the websocket is closed, we should not send the message
+                        # and wait for the retry from the buffer.
                         return
                 await self._send_transport_message(
                     msg,
@@ -409,7 +411,7 @@ class Session(object):
                 return
             await ws_wrapper.close()
         if should_retry and self._retry_connection_callback:
-            await self._task_manager.create_task(self._retry_connection_callback(self))
+            self._task_manager.create_task(self._retry_connection_callback(self))
 
     async def _open_stream_and_call_handler(
         self,
@@ -453,10 +455,10 @@ class Session(object):
             async with self._stream_lock:
                 self._streams[msg.streamId] = input_stream
         # Start the handler.
-        await self._task_manager.create_task(
+        self._task_manager.create_task(
             handler_func(msg.from_, input_stream, output_stream), tg
         )
-        await self._task_manager.create_task(
+        self._task_manager.create_task(
             self._send_responses_from_output_stream(
                 msg.streamId, output_stream, is_streaming_output
             ),
@@ -484,7 +486,7 @@ class Session(object):
         await self._buffer.remove_old_messages(self._seq_manager.receiver_ack)
 
     async def start_serve_responses(self) -> None:
-        await self._task_manager.create_task(self.serve())
+        self._task_manager.create_task(self.serve())
 
     async def close(self, is_unexpected_close: bool) -> None:
         """Close the session and all associated streams."""
