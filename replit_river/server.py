@@ -45,8 +45,7 @@ class Server(object):
                 self._transport_options.session_disconnect_grace_ms / 1000,
             )
         except WebsocketClosedException:
-            # it is fine if the ws is closed during handshake, we just close the ws
-            await websocket.close()
+            # it is fine if the ws is closed during handshake, we just return
             return
         except Exception as e:
             logging.error(
