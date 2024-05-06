@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import Mapping, Tuple
 
+import websockets
 from websockets.exceptions import ConnectionClosed
 from websockets.server import WebSocketServerProtocol
 
@@ -44,7 +45,7 @@ class Server(object):
                 self._transport.handshake_to_get_session(websocket),
                 self._transport_options.session_disconnect_grace_ms / 1000,
             )
-        except WebsocketClosedException:
+        except (websockets.exceptions.ConnectionClosed, WebsocketClosedException):
             # it is fine if the ws is closed during handshake, we just close the ws
             await websocket.close()
             return
