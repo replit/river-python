@@ -2,9 +2,11 @@ import asyncio
 import logging
 from typing import Mapping, Tuple
 
+import websockets
 from websockets.exceptions import ConnectionClosed
 from websockets.server import WebSocketServerProtocol
 
+from replit_river.messages import WebsocketClosedException
 from replit_river.server_transport import ServerTransport
 from replit_river.transport import TransportOptions
 
@@ -43,6 +45,10 @@ class Server(object):
                 self._transport.handshake_to_get_session(websocket),
                 self._transport_options.session_disconnect_grace_ms / 1000,
             )
+        except (websockets.exceptions.ConnectionClosed, WebsocketClosedException):
+            # it is fine if the ws is closed during handshake, we just close the ws
+            await websocket.close()
+            return
         except Exception as e:
             logging.error(
                 f"Error establishing handshake, closing websocket: {e}", exc_info=True

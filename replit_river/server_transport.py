@@ -12,6 +12,7 @@ from websockets.exceptions import ConnectionClosed
 from replit_river.messages import (
     PROTOCOL_VERSION,
     FailedSendingMessageException,
+    WebsocketClosedException,
     parse_transport_msg,
     send_transport_message,
 )
@@ -72,7 +73,7 @@ class ServerTransport(Transport):
                 )
                 raise InvalidMessageException(error_msg)
             return session
-        raise InvalidMessageException("No handshake message received")
+        raise WebsocketClosedException("No handshake message received")
 
     async def _send_handshake_response(
         self,
