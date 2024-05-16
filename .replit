@@ -4,13 +4,3 @@ modules = ["python-3.11"]
 
 [nix]
 channel = "stable-23_11"
-
-[unitTest]
-language = "python3"
-
-[gitHubImport]
-requiredFiles = [".replit", "replit.nix"]
-
-[deployment]
-run = ["python3", "main.py"]
-deploymentTarget = "cloudrun"
