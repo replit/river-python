@@ -37,7 +37,8 @@ class LeakyBucketRateLimit:
         exponent = max(0, self.get_budget_consumed(user) - 1)
         jitter = random.randint(0, self.options.max_jitter_ms)
         backoff_ms = min(
-            self.options.base_interval_ms * (2**exponent), self.options.max_backoff_ms
+            float(self.options.base_interval_ms * (2**exponent)),
+            float(self.options.max_backoff_ms),
         )
         return backoff_ms + jitter
 

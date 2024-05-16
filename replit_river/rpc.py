@@ -44,7 +44,6 @@ ACK_BIT = 0x0001
 STREAM_OPEN_BIT = 0x0002
 STREAM_CLOSED_BIT = 0x0004
 
-
 # Equivalent of https://github.com/replit/river/blob/c1345f1ff6a17a841d4319fad5c153b5bda43827/transport/message.ts#L23-L33
 
 
@@ -178,11 +177,13 @@ def rpc_method_handler(
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
 ) -> GenericRpcHandler:
+
     async def wrapped(
         peer: str,
         input: Channel[Any],
         output: Channel[Any],
     ) -> None:
+        context = None
         try:
             context = GrpcContext(peer)
             request = request_deserializer(await input.get())
@@ -191,13 +192,17 @@ def rpc_method_handler(
                 get_response_or_error_payload(response, response_serializer)
             )
         except grpc.RpcError:
+            code = grpc.StatusCode(context._abort_code).name if context else "UNKNOWN"
+            message = (
+                f"{method.__name__} threw an exception: "
+                f"{context._abort_details if context else 'Unknown error details'}"
+            )
             await output.put(
                 {
                     "ok": False,
                     "payload": {
-                        "code": grpc.StatusCode(context._abort_code).name,
-                        "message": f"{method.__name__} threw an exception: "
-                        f"{context._abort_details}",
+                        "code": code,
+                        "message": message,
                     },
                 }
             )
@@ -230,6 +235,7 @@ def subscription_method_handler(
         input: Channel[Any],
         output: Channel[Any],
     ) -> None:
+        context = None
         try:
             context = GrpcContext(peer)
             request = request_deserializer(await input.get())
@@ -238,14 +244,15 @@ def subscription_method_handler(
                     get_response_or_error_payload(response, response_serializer)
                 )
         except grpc.RpcError:
+            code = grpc.StatusCode(context._abort_code).name if context else "UNKNOWN"
+            message = (
+                f"{method.__name__} threw an exception: "
+                f"{context._abort_details if context else 'Unknown error details'}"
+            )
             await output.put(
                 {
                     "ok": False,
-                    "payload": {
-                        "code": grpc.StatusCode(context._abort_code).name,
-                        "message": f"{method.__name__} threw an exception: "
-                        f"{context._abort_details}",
-                    },
+                    "payload": {"code": code, "message": message},
                 }
             )
         except Exception as e:
@@ -348,6 +355,7 @@ def stream_method_handler(
         output: Channel[Any],
     ) -> None:
         task_manager = BackgroundTaskManager()
+        context = None
         try:
             context = GrpcContext(peer)
             request: Channel[RequestType] = Channel(MAX_MESSAGE_BUFFER_SIZE)
@@ -375,13 +383,17 @@ def stream_method_handler(
             await asyncio.wait((convert_inputs_task, convert_outputs_task))
         except grpc.RpcError:
             logging.exception("RPC exception in stream")
+            code = grpc.StatusCode(context._abort_code).name if context else "UNKNOWN"
+            message = (
+                f"{method.__name__} threw an exception: "
+                f"{context._abort_details if context else 'Unknown error details'}"
+            )
             await output.put(
                 {
                     "ok": False,
                     "payload": {
-                        "code": grpc.StatusCode(context._abort_code).name,
-                        "message": f"{method.__name__} threw an exception: "
-                        f"{context._abort_details}",
+                        "code": code,
+                        "message": message,
                     },
                 }
             )
