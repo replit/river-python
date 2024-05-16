@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
 
 import websockets
 from pydantic import ValidationError
@@ -44,6 +44,7 @@ class ClientTransport(Transport):
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
+        handshake_metadata: Optional[Any] = None,
     ):
         super().__init__(
             transport_id=client_id,
@@ -56,6 +57,7 @@ class ClientTransport(Transport):
         self._rate_limiter = LeakyBucketRateLimit(
             transport_options.connection_retry_options
         )
+        self._handshake_metadata = handshake_metadata
         # We want to make sure there's only one session creation at a time
         self._create_session_lock = asyncio.Lock()
 
@@ -107,7 +109,11 @@ class ClientTransport(Transport):
                     else old_session.session_id
                 )
                 handshake_request, handshake_response = await self._establish_handshake(
-                    self._transport_id, self._server_id, session_id, ws
+                    self._transport_id,
+                    self._server_id,
+                    session_id,
+                    self._handshake_metadata,
+                    ws,
                 )
                 rate_limit.start_restoring_budget(client_id)
                 return ws, handshake_request, handshake_response
@@ -179,12 +185,14 @@ class ClientTransport(Transport):
         transport_id: str,
         to_id: str,
         session_id: str,
+        handshake_metadata: Optional[Any],
         websocket: WebSocketCommonProtocol,
     ) -> ControlMessageHandshakeRequest:
         handshake_request = ControlMessageHandshakeRequest(
             type="HANDSHAKE_REQ",
             protocolVersion=PROTOCOL_VERSION,
             sessionId=session_id,
+            metadata=handshake_metadata,
         )
         stream_id = self.generate_nanoid()
 
@@ -238,6 +246,7 @@ class ClientTransport(Transport):
         transport_id: str,
         to_id: str,
         session_id: str,
+        handshake_metadata: Optional[Any],
         websocket: WebSocketCommonProtocol,
     ) -> Tuple[ControlMessageHandshakeRequest, ControlMessageHandshakeResponse]:
         try:
@@ -245,6 +254,7 @@ class ClientTransport(Transport):
                 transport_id=transport_id,
                 to_id=to_id,
                 session_id=session_id,
+                handshake_metadata=handshake_metadata,
                 websocket=websocket,
             )
         except FailedSendingMessageException:

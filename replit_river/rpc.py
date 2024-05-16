@@ -51,6 +51,7 @@ class ControlMessageHandshakeRequest(BaseModel):
     type: Literal["HANDSHAKE_REQ"] = "HANDSHAKE_REQ"
     protocolVersion: str
     sessionId: str
+    metadata: Optional[Any]
 
 
 class HandShakeStatus(BaseModel):
