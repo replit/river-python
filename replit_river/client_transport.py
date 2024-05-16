@@ -181,7 +181,7 @@ class ClientTransport(Transport):
         transport_id: str,
         to_id: str,
         session_id: str,
-        handshake_metadata: Optional[Any]
+        handshake_metadata: Optional[Any],
         websocket: WebSocketCommonProtocol,
     ) -> ControlMessageHandshakeRequest:
         handshake_request = ControlMessageHandshakeRequest(
