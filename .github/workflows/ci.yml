@@ -30,6 +30,15 @@ jobs:
       - name: Install dependencies
         run: |
           poetry install --no-interaction
+      - name: Format check
+        run: |
+          poetry run black --check .
+      - name: Lint check
+        run: |
+          poetry run ruff .
+      - name: Type check
+        run: |
+          poetry run mypy .
       - name: Test with pytest
         run: |
           poetry run pytest tests

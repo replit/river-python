@@ -1,0 +1,6 @@
+run = "poetry run pytest tests"
+
+modules = ["python-3.11"]
+
+[nix]
+channel = "stable-23_11"

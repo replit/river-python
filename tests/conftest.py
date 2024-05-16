@@ -1,6 +1,7 @@
 import asyncio
 import logging
-from typing import Any, AsyncGenerator
+from collections.abc import AsyncIterator
+from typing import Any, AsyncGenerator, Generator
 from unittest.mock import MagicMock, patch
 
 import nanoid  # type: ignore
@@ -74,9 +75,7 @@ async def subscription_handler(
         yield f"Subscription message {i} for {request}"
 
 
-async def upload_handler(
-    request: AsyncGenerator[str, None], context: GrpcContext
-) -> str:
+async def upload_handler(request: AsyncIterator[str], context: Any) -> str:
     uploaded_data = []
     async for data in request:
         uploaded_data.append(data)
@@ -84,7 +83,7 @@ async def upload_handler(
 
 
 async def stream_handler(
-    request: AsyncGenerator[str, None], context: GrpcContext
+    request: AsyncIterator[str], context: GrpcContext
 ) -> AsyncGenerator[str, None]:
     async for data in request:
         yield f"Stream response for {data}"
@@ -130,7 +129,7 @@ def server(transport_options: TransportOptions) -> Server:
 
 
 @pytest.fixture
-def no_logging_error() -> MagicMock:
+def no_logging_error() -> Generator[MagicMock, None, None]:
     with patch("logging.error") as mock_error:
         yield mock_error
 
