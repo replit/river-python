@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional, Tuple, Any
+from typing import Any, Optional, Tuple
 
 import websockets
 from pydantic import ValidationError
@@ -109,7 +109,11 @@ class ClientTransport(Transport):
                     else old_session.session_id
                 )
                 handshake_request, handshake_response = await self._establish_handshake(
-                    self._transport_id, self._server_id, session_id, self._handshake_metadata, ws
+                    self._transport_id,
+                    self._server_id,
+                    session_id,
+                    self._handshake_metadata,
+                    ws,
                 )
                 rate_limit.start_restoring_budget(client_id)
                 return ws, handshake_request, handshake_response
@@ -188,7 +192,7 @@ class ClientTransport(Transport):
             type="HANDSHAKE_REQ",
             protocolVersion=PROTOCOL_VERSION,
             sessionId=session_id,
-            metadata=handshake_metadata
+            metadata=handshake_metadata,
         )
         stream_id = self.generate_nanoid()
 
