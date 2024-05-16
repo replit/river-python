@@ -44,7 +44,7 @@ class ClientTransport(Transport):
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
-        handshake_metadata: Optional[Any],
+        handshake_metadata: Optional[Any] = None,
     ):
         super().__init__(
             transport_id=client_id,
