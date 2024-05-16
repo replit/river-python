@@ -57,7 +57,7 @@ class ClientTransport(Transport):
         self._rate_limiter = LeakyBucketRateLimit(
             transport_options.connection_retry_options
         )
-        self.handshake_metadata = handshake_metadata
+        self._handshake_metadata = handshake_metadata
         # We want to make sure there's only one session creation at a time
         self._create_session_lock = asyncio.Lock()
 
