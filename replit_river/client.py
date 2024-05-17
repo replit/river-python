@@ -20,6 +20,7 @@ class Client:
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
+        handshake_metadata: Optional[Any] = None,
     ) -> None:
         self._client_id = client_id
         self._server_id = server_id
@@ -28,6 +29,7 @@ class Client:
             client_id=client_id,
             server_id=server_id,
             transport_options=transport_options,
+            handshake_metadata=handshake_metadata,
         )
 
     async def close(self) -> None:
