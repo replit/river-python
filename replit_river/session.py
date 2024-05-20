@@ -485,7 +485,7 @@ class Session(object):
         logging.info(
             f"{self._transport_id} closing session "
             f"to {self._to_id}, ws: {self._ws_wrapper.id}, "
-            f"current_state : {self._ws_wrapper}"
+            f"current_state : {self._ws_wrapper.ws.state.name}"
         )
         async with self._state_lock:
             if self._state != SessionState.ACTIVE:
