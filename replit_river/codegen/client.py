@@ -65,6 +65,8 @@ def encode_type(
         if type.type == "Uint8Array":
             return ("bytes", ())
         if type.type == "number":
+            return ("float", ())
+        if type.type == "integer":
             return ("int", ())
         if type.type == "boolean":
             return ("bool", ())
