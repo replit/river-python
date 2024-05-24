@@ -11,3 +11,11 @@ This includes the necessary machinery to act as a client or server for River:
   `python -m river.codegen client --output pkgs/river/river/schema.py --client-name Pid2Client pkgs/river/schema.json`
 * If we need to create the client-side of a Python gRPC River server, we also need to generate the JSON schema from the .proto file, with this command:
   `python -m river.codegen server-schema --output pkgs/river/river/schema.py  pkgs/river/tests/client/proto/test.proto  && cat ./test_schema.json`
+
+## Publishing
+
+Make sure you have pypi token setup, easiest way is to set env var `POETRY_PYPI_TOKEN_PYPI`.
+
+- update version either manually or via `poetry version`
+- `poetry build`
+- `poetry publish`
