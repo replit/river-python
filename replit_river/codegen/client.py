@@ -65,6 +65,9 @@ def encode_type(
         if type.type == "Uint8Array":
             return ("bytes", ())
         if type.type == "number":
+            if type.const is not None:
+                # enums are represented as const number in the schema
+                return ("int", ())
             return ("float", ())
         if type.type == "integer":
             return ("int", ())
