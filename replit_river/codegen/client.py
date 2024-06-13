@@ -95,14 +95,21 @@ def encode_type(
                     prop, prefix + name.title(), base_model
                 )
                 chunks.extend(type_chunks)
-                if name not in type.required:
-                    type_name = f"Optional[{type_name}]"
                 if name == "$kind":
-                    current_chunks.append(
-                        f"  kind: {type_name} = Field(..., alias='{name}')"
-                    )
+                    if name not in type.required:
+                        current_chunks.append(
+                            f"  kind: Optional[{type_name}] = "
+                            f"Field(..., alias='{name}', default=None)"
+                        )
+                    else:
+                        current_chunks.append(
+                            f"  kind: {type_name} = Field(..., alias='{name}')"
+                        )
                 else:
-                    current_chunks.append(f"  {name}: {type_name}")
+                    if name not in type.required:
+                        current_chunks.append(f"  {name}: Optional[{type_name}] = None")
+                    else:
+                        current_chunks.append(f"  {name}: {type_name}")
         else:
             current_chunks.append("  pass")
         current_chunks.append("")
