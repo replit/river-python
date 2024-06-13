@@ -183,7 +183,7 @@ def message_encoder(
             value = f"_{field.name}"
         chunks.extend(
             [
-                f"  _{field.name} = getattr(e, '{field.name}', None)",
+                f"  _{field.name} = e.{field.name}",
                 f"  if _{field.name} is not None:",
                 f"    d['{to_camel_case(field.name)}'] = {value}",
             ]
@@ -193,12 +193,12 @@ def message_encoder(
         chunks.append(f"  match e.WhichOneof('{oneof.name}'):")
         for field in oneofs[index]:
             if field.type_name == ".google.protobuf.Timestamp":
-                value = f"getattr(e, '{field.name}', None).ToDatetime()"
+                value = f"e.{field.name}.ToDatetime()"
             elif field.type == descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE:
                 encode_method_name = get_encoder_name(field)
-                value = f"{encode_method_name}(getattr(e, '{field.name}', None))"
+                value = f"{encode_method_name}(e.{field.name})"
             else:
-                value = f"getattr(e, '{field.name}', None)"
+                value = f"e.{field.name}"
             chunks.extend(
                 [
                     f"    case '{field.name}':",
