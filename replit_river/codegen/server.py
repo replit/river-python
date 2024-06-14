@@ -98,42 +98,43 @@ def message_decoder(
         chunks.extend(
             [
                 f"  _{oneof.name} = d.get('{to_camel_case(oneof.name)}', {{}})",
-                f"  match _{oneof.name}.get('$kind', None):",
+                f"  if _{oneof.name}:",
+                f"    match _{oneof.name}.get('$kind', None):",
             ]
         )
         for field in oneofs[index]:
             chunks.append(
-                f"      case '{to_camel_case(field.name)}':",
+                f"        case '{to_camel_case(field.name)}':",
             )
             if field.type_name == ".google.protobuf.Timestamp":
                 chunks.extend(
                     [
-                        f"        _{field.name} = timestamp_pb2.Timestamp()"
-                        f"        _{field.name}.FromDatetime(",
-                        f"            _{oneof.name}['{to_camel_case(field.name)}'],",
-                        "        )",
-                        f"        m.{field.name}.MergeFrom(_{field.name})",
+                        f"          _{field.name} = timestamp_pb2.Timestamp()"
+                        f"          _{field.name}.FromDatetime(",
+                        f"              _{oneof.name}['{to_camel_case(field.name)}'],",
+                        "          )",
+                        f"          m.{field.name}.MergeFrom(_{field.name})",
                     ]
                 )
             elif field.label == FieldDescriptor.LABEL_REPEATED:
                 chunks.append(
-                    f"        m.{field.name}.MergeFrom"
+                    f"          m.{field.name}.MergeFrom"
                     f"(_{oneof.name}['{to_camel_case(field.name)}'])"
                 )
             elif field.type == descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE:
                 decode_method_name = get_decoder_name(field)
                 chunks.append(
-                    f"        m.{field.name}.MergeFrom({decode_method_name}"
+                    f"          m.{field.name}.MergeFrom({decode_method_name}"
                     f"(_{oneof.name}['{to_camel_case(field.name)}']))"
                 )
             else:
                 chunks.extend(
                     [
-                        "        setattr(",
-                        "          m,",
-                        f"          '{field.name}',",
-                        f"          _{oneof.name}['{to_camel_case(field.name)}'],",
-                        "        )",
+                        "          setattr(",
+                        "            m,",
+                        f"            '{field.name}',",
+                        f"            _{oneof.name}['{to_camel_case(field.name)}'],",
+                        "          )",
                     ]
                 )
     chunks.extend(
