@@ -34,6 +34,11 @@ from .rpc import (
 
 
 class SessionState(enum.Enum):
+    """The state a session can be in.
+
+    Can only transition from ACTIVE to CLOSING to CLOSED.
+    """
+
     ACTIVE = 0
     CLOSING = 1
     CLOSED = 2
@@ -108,6 +113,13 @@ class Session(object):
         """Begin the countdown to close session, this should be called when
         websocket is closed.
         """
+        # calculate the value now before establishing it so that there are no
+        # await points between the check and the assignment to avoid a TOCTOU
+        # race.
+        grace_period_ms = self._transport_options.session_disconnect_grace_ms
+        close_session_after_time_secs = (
+            await self._get_current_time() + grace_period_ms / 1000
+        )
         if self._close_session_after_time_secs is not None:
             # already in grace period, no need to set again
             return
@@ -116,10 +128,7 @@ class Session(object):
             self._transport_id,
             self._to_id,
         )
-        grace_period_ms = self._transport_options.session_disconnect_grace_ms
-        self._close_session_after_time_secs = (
-            await self._get_current_time() + grace_period_ms / 1000
-        )
+        self._close_session_after_time_secs = close_session_after_time_secs
         await self.close_websocket(self._ws_wrapper, should_retry=not self._is_server)
 
     async def serve(self) -> None:
@@ -228,9 +237,15 @@ class Session(object):
             await asyncio.sleep(
                 self._transport_options.close_session_check_interval_ms / 1000
             )
+            if self._state != SessionState.ACTIVE:
+                # already closing
+                return
+            # calculate the value now before comparing it so that there are no
+            # await points between the check and the comparison to avoid a TOCTOU
+            # race.
+            current_time = await self._get_current_time()
             if not self._close_session_after_time_secs:
                 continue
-            current_time = await self._get_current_time()
             if current_time > self._close_session_after_time_secs:
                 logging.debug(
                     "Grace period ended for %s, closing session", self._transport_id
@@ -251,8 +266,8 @@ class Session(object):
                     {self._state},
                     {self._close_session_after_time_secs},
                 )
-                # session is closing, no need to send heartbeat
-                continue
+                # session is closing / closed, no need to send heartbeat anymore
+                return
             try:
                 await self.send_message(
                     str(nanoid.generate()),
