@@ -55,6 +55,26 @@ class Transport:
     def generate_nanoid(self) -> str:
         return str(nanoid.generate())
 
+    async def _get_existing_session_id(
+        self,
+        to_id: str,
+        advertised_session_id: str,
+        next_expected_seq: int,
+    ) -> Optional[str]:
+        try:
+            async with self._session_lock:
+                old_session = self._sessions.get(to_id, None)
+                if (
+                    old_session is None
+                    or await old_session.get_next_expected_ack() < next_expected_seq
+                    or old_session.advertised_session_id != advertised_session_id
+                ):
+                    return None
+                return old_session.session_id
+        except Exception as e:
+            logging.error(f"Error getting existing session id {e}")
+            raise e
+
     async def _get_or_create_session_id(
         self,
         to_id: str,

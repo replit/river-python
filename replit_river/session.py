@@ -329,6 +329,14 @@ class Session(object):
         except FailedSendingMessageException as e:
             raise e
 
+    async def get_next_expected_seq(self) -> int:
+        """Get the next expected sequence number from the server."""
+        return await self._seq_manager.get_ack()
+
+    async def get_next_expected_ack(self) -> int:
+        """Get the next expected ack that the client expects."""
+        return await self._seq_manager.get_seq()
+
     async def send_message(
         self,
         stream_id: str,

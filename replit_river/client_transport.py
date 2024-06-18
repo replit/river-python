@@ -27,6 +27,7 @@ from replit_river.rate_limiter import LeakyBucketRateLimit
 from replit_river.rpc import (
     ControlMessageHandshakeRequest,
     ControlMessageHandshakeResponse,
+    ExpectedSessionState,
     TransportMessage,
 )
 from replit_river.seq_manager import (
@@ -114,6 +115,7 @@ class ClientTransport(Transport):
                     session_id,
                     self._handshake_metadata,
                     ws,
+                    old_session,
                 )
                 rate_limit.start_restoring_budget(client_id)
                 return ws, handshake_request, handshake_response
@@ -183,12 +185,14 @@ class ClientTransport(Transport):
         session_id: str,
         handshake_metadata: Optional[Any],
         websocket: WebSocketCommonProtocol,
+        expected_session_state: ExpectedSessionState,
     ) -> ControlMessageHandshakeRequest:
         handshake_request = ControlMessageHandshakeRequest(
             type="HANDSHAKE_REQ",
             protocolVersion=PROTOCOL_VERSION,
             sessionId=session_id,
             metadata=handshake_metadata,
+            expectedSessionState=expected_session_state,
         )
         stream_id = self.generate_nanoid()
 
@@ -244,6 +248,7 @@ class ClientTransport(Transport):
         session_id: str,
         handshake_metadata: Optional[Any],
         websocket: WebSocketCommonProtocol,
+        old_session: Optional[ClientSession],
     ) -> Tuple[ControlMessageHandshakeRequest, ControlMessageHandshakeResponse]:
         try:
             handshake_request = await self._send_handshake_request(
@@ -252,6 +257,14 @@ class ClientTransport(Transport):
                 session_id=session_id,
                 handshake_metadata=handshake_metadata,
                 websocket=websocket,
+                expected_session_state=ExpectedSessionState(
+                    reconnect=old_session is not None,
+                    nextExpectedSeq=(
+                        await old_session.get_next_expected_seq()
+                        if old_session is not None
+                        else 0
+                    ),
+                ),
             )
         except FailedSendingMessageException:
             raise RiverException(
