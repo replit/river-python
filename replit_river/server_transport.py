@@ -39,7 +39,6 @@ class ServerTransport(Transport):
             try:
                 msg = parse_transport_msg(message, self._transport_options)
                 (
-                    _,
                     handshake_request,
                     handshake_response,
                 ) = await self._establish_handshake(msg, websocket)
@@ -58,7 +57,7 @@ class ServerTransport(Transport):
                 raise InvalidMessageException("No session id in handshake response")
             advertised_session_id = handshake_request.sessionId
             try:
-                session = await self.get_or_create_session(
+                return await self.get_or_create_session(
                     transport_id,
                     to_id,
                     session_id,
@@ -72,7 +71,6 @@ class ServerTransport(Transport):
                     f" error: {e}"
                 )
                 raise InvalidMessageException(error_msg)
-            return session
         raise WebsocketClosedException("No handshake message received")
 
     async def _send_handshake_response(
@@ -113,7 +111,6 @@ class ServerTransport(Transport):
     async def _establish_handshake(
         self, request_message: TransportMessage, websocket: WebSocketCommonProtocol
     ) -> Tuple[
-        WebSocketCommonProtocol,
         ControlMessageHandshakeRequest,
         ControlMessageHandshakeResponse,
     ]:
@@ -148,12 +145,30 @@ class ServerTransport(Transport):
                 websocket,
             )
             raise InvalidMessageException("handshake request to wrong server")
-        my_session_id = await self._get_or_create_session_id(
-            request_message.from_, handshake_request.sessionId
-        )
+        if handshake_request.expectedSessionState is None:
+            # TODO: remove once we have upgraded all clients
+            my_session_id = await self._get_or_create_session_id(
+                request_message.from_, handshake_request.sessionId
+            )
+        elif handshake_request.expectedSessionState.reconnect:
+            maybe_my_session_id = await self._get_existing_session_id(
+                request_message.from_,
+                handshake_request.sessionId,
+                handshake_request.expectedSessionState.nextExpectedSeq,
+            )
+            if maybe_my_session_id is None:
+                handshake_response = await self._send_handshake_response(
+                    request_message,
+                    HandShakeStatus(ok=False, reason="session state mismatch"),
+                    websocket,
+                )
+                raise InvalidMessageException("session state mismatch")
+            my_session_id = maybe_my_session_id
+        else:
+            my_session_id = self.generate_session_id()
         handshake_response = await self._send_handshake_response(
             request_message,
             HandShakeStatus(ok=True, sessionId=my_session_id),
             websocket,
         )
-        return websocket, handshake_request, handshake_response
+        return handshake_request, handshake_response

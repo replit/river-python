@@ -47,10 +47,16 @@ STREAM_CLOSED_BIT = 0x0004
 # Equivalent of https://github.com/replit/river/blob/c1345f1ff6a17a841d4319fad5c153b5bda43827/transport/message.ts#L23-L33
 
 
+class ExpectedSessionState(BaseModel):
+    reconnect: bool
+    nextExpectedSeq: int
+
+
 class ControlMessageHandshakeRequest(BaseModel):
     type: Literal["HANDSHAKE_REQ"] = "HANDSHAKE_REQ"
     protocolVersion: str
     sessionId: str
+    expectedSessionState: Optional[ExpectedSessionState] = None
     metadata: Optional[Any] = None
 
 
@@ -178,7 +184,6 @@ def rpc_method_handler(
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
 ) -> GenericRpcHandler:
-
     async def wrapped(
         peer: str,
         input: Channel[Any],
