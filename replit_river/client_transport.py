@@ -166,19 +166,15 @@ class ClientTransport(Transport):
             is_ws_open = await existing_session.is_websocket_open()
             if is_ws_open:
                 return existing_session
+            new_ws, _, hs_response = await self._establish_new_connection(
+                existing_session
+            )
+            if hs_response.status.sessionId == existing_session.advertised_session_id:
+                await existing_session.replace_with_new_websocket(new_ws)
+                return existing_session
             else:
-                new_ws, _, hs_response = await self._establish_new_connection(
-                    existing_session
-                )
-                if (
-                    hs_response.status.sessionId
-                    == existing_session.advertised_session_id
-                ):
-                    await existing_session.replace_with_new_websocket(new_ws)
-                    return existing_session
-                else:
-                    await existing_session.close(is_unexpected_close=False)
-                    return await self._create_new_session()
+                await existing_session.close(is_unexpected_close=False)
+                return await self._create_new_session()
 
     async def _send_handshake_request(
         self,
