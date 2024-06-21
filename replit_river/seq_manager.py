@@ -16,6 +16,13 @@ class InvalidMessageException(Exception):
     pass
 
 
+class SessionStateMismatchException(Exception):
+    """Error when the session state mismatch, we reject handshake and
+    close the connection"""
+
+    pass
+
+
 class SeqManager:
     """Manages the sequence number and ack number for a connection."""
 

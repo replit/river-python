@@ -7,6 +7,7 @@ from websockets.exceptions import ConnectionClosed
 from websockets.server import WebSocketServerProtocol
 
 from replit_river.messages import WebsocketClosedException
+from replit_river.seq_manager import SessionStateMismatchException
 from replit_river.server_transport import ServerTransport
 from replit_river.transport import TransportOptions
 
@@ -47,6 +48,12 @@ class Server(object):
             )
         except (websockets.exceptions.ConnectionClosed, WebsocketClosedException):
             # it is fine if the ws is closed during handshake, we just close the ws
+            await websocket.close()
+            return
+        except SessionStateMismatchException as e:
+            logging.info(
+                f"Session state mismatch, closing websocket: {e}", exc_info=True
+            )
             await websocket.close()
             return
         except Exception as e:
