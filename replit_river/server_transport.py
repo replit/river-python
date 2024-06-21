@@ -25,6 +25,7 @@ from replit_river.rpc import (
 from replit_river.seq_manager import (
     IgnoreMessageException,
     InvalidMessageException,
+    SessionStateMismatchException,
 )
 from replit_river.session import Session
 from replit_river.transport import Transport
@@ -47,6 +48,8 @@ class ServerTransport(Transport):
             except InvalidMessageException:
                 error_msg = "Got invalid transport message, closing connection"
                 raise InvalidMessageException(error_msg)
+            except SessionStateMismatchException as e:
+                raise e
             except FailedSendingMessageException as e:
                 raise e
             logging.debug("handshake success on server: %r", handshake_request)
@@ -162,7 +165,7 @@ class ServerTransport(Transport):
                     HandShakeStatus(ok=False, reason="session state mismatch"),
                     websocket,
                 )
-                raise InvalidMessageException("session state mismatch")
+                raise SessionStateMismatchException("session state mismatch")
             my_session_id = maybe_my_session_id
         else:
             my_session_id = self.generate_session_id()
