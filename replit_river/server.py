@@ -9,8 +9,8 @@ from websockets.server import WebSocketServerProtocol
 from replit_river.messages import WebsocketClosedException
 from replit_river.seq_manager import SessionStateMismatchException
 from replit_river.server_transport import ServerTransport
-from replit_river.transport import TransportOptions
 from replit_river.session import Session
+from replit_river.transport import TransportOptions
 
 from .rpc import (
     GenericRpcHandler,
