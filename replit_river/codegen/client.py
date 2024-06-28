@@ -59,7 +59,7 @@ def encode_type(
     if isinstance(type, RiverConcreteType):
         if type.type is None:
             # Handle the case where type is not specified
-            return ("Any", ())  # or some other default behavior
+            return ("Any", ())
         if type.type == "string":
             if type.const:
                 return (f"Literal['{type.const}']", ())
