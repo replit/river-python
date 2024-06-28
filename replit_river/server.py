@@ -80,6 +80,10 @@ class Server(object):
             logging.error("Handshake timeout, closing websocket")
             await websocket.close()
             return
+        except asyncio.CancelledError:
+            logging.error("Handshake cancelled, closing websocket")
+            await websocket.close()
+            return
         logging.debug("River server session established, start serving messages")
 
         try:
