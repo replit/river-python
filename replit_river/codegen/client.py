@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, RootModel
 
 
 class RiverConcreteType(BaseModel):
-    type: str
+    type: Optional[str] = Field(default=None)
     properties: Dict[str, "RiverType"] = Field(default_factory=lambda: dict())
     required: Set[str] = Field(default=set())
     items: Optional["RiverType"] = Field(default=None)
@@ -57,6 +57,9 @@ def encode_type(
         chunks.append(f"{prefix} = Union[" + ", ".join(any_of) + "]")
         return (prefix, chunks)
     if isinstance(type, RiverConcreteType):
+        if type.type is None:
+            # Handle the case where type is not specified
+            return ("Any", ())  # or some other default behavior
         if type.type == "string":
             if type.const:
                 return (f"Literal['{type.const}']", ())
