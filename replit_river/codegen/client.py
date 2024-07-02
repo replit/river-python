@@ -70,9 +70,12 @@ def encode_type(
         if type.type == "number":
             if type.const is not None:
                 # enums are represented as const number in the schema
-                return ("int", ())
+                return (f"Literal[{type.const}]", ())
             return ("float", ())
         if type.type == "integer":
+            if type.const is not None:
+                # enums are represented as const number in the schema
+                return (f"Literal[{type.const}]", ())
             return ("int", ())
         if type.type == "boolean":
             return ("bool", ())
