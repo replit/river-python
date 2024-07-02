@@ -76,6 +76,8 @@ def encode_type(
             return ("int", ())
         if type.type == "boolean":
             return ("bool", ())
+        if type.type == "null":
+            return ("None", ())
         if type.type == "Date":
             return ("datetime.datetime", ())
         if type.type == "array" and type.items:
