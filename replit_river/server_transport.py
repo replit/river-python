@@ -152,7 +152,9 @@ class ServerTransport(Transport):
             # check invariants
 
             # ordering must be correct
-            clientNextExpectedSeq = handshake_request.expectedSessionState.nextExpectedSeq
+            clientNextExpectedSeq = (
+                handshake_request.expectedSessionState.nextExpectedSeq
+            )
             clientNextSentSeq = handshake_request.expectedSessionState.nextSentSeq or 0
             ourNextSeq = await oldSession.get_next_sent_seq()
             ourAck = await oldSession.get_next_expected_seq()
@@ -176,12 +178,14 @@ class ServerTransport(Transport):
                 raise SessionStateMismatchException(message)
         elif oldSession:
             # we have an old session but the session id is different
-            # just delete the old session 
+            # just delete the old session
             await oldSession.close()
             self._delete_session(oldSession)
         else:
             # no old session, see if the client is trying to resume a session
-            clientNextExpectedSeq = handshake_request.expectedSessionState.nextExpectedSeq
+            clientNextExpectedSeq = (
+                handshake_request.expectedSessionState.nextExpectedSeq
+            )
             clientNextSentSeq = handshake_request.expectedSessionState.nextSentSeq or 0
 
             if clientNextSentSeq > 0 or clientNextExpectedSeq > 0:
@@ -202,4 +206,3 @@ class ServerTransport(Transport):
         )
 
         return handshake_request, handshake_response
-

@@ -115,9 +115,7 @@ class Transport:
                         raise e
 
             if session_to_close:
-                logging.debug(
-                    "Closing stale session %s", session_to_close.session_id
-                )
+                logging.debug("Closing stale session %s", session_to_close.session_id)
                 await session_to_close.close()
             self._set_session(new_session)
         return new_session

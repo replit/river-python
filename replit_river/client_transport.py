@@ -294,7 +294,7 @@ class ClientTransport(Transport):
             )
         if not handshake_response.status.ok:
             if old_session and handshake_response.status.code == SESSION_MISMATCH_CODE:
-                # If the session status is mismatched, we should close the old session 
+                # If the session status is mismatched, we should close the old session
                 # and let the retry logic to create a new session.
                 await old_session.close()
 

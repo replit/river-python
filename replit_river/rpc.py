@@ -48,6 +48,7 @@ STREAM_CLOSED_BIT = 0x0004
 # https://github.com/replit/river/blob/72e4fc8d02263e551d66ee5f0995707e8fa6cd1b/transport/message.ts#L83
 SESSION_MISMATCH_CODE = "SESSION_STATE_MISMATCH"
 
+
 # Equivalent of https://github.com/replit/river/blob/c1345f1ff6a17a841d4319fad5c153b5bda43827/transport/message.ts#L23-L33
 class ExpectedSessionState(BaseModel):
     nextExpectedSeq: int
