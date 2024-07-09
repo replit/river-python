@@ -65,6 +65,7 @@ class ControlMessageHandshakeRequest(BaseModel):
 
 class HandShakeStatus(BaseModel):
     ok: bool
+    sessionId: Optional[str] = None
     reason: Optional[str] = None
     code: Optional[str] = None
 

@@ -175,7 +175,7 @@ class ClientTransport(Transport):
                 await existing_session.replace_with_new_websocket(new_ws)
                 return existing_session
             else:
-                await existing_session.close(is_unexpected_close=False)
+                await existing_session.close()
                 return await self._create_new_session()
 
     async def _send_handshake_request(
