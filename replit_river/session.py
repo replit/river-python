@@ -52,7 +52,6 @@ class Session(object):
         transport_id: str,
         to_id: str,
         session_id: str,
-        advertised_session_id: str,
         websocket: websockets.WebSocketCommonProtocol,
         transport_options: TransportOptions,
         is_server: bool,
@@ -68,7 +67,6 @@ class Session(object):
         self._transport_id = transport_id
         self._to_id = to_id
         self.session_id = session_id
-        self.advertised_session_id = advertised_session_id
         self._handlers = handlers
         self._is_server = is_server
         self._transport_options = transport_options
@@ -205,7 +203,7 @@ class Session(object):
                     logging.error(
                         f"Got invalid transport message, closing session : {e}"
                     )
-                    await self.close(True)
+                    await self.close()
                     return
         except ConnectionClosed as e:
             raise e
@@ -250,7 +248,7 @@ class Session(object):
                 logging.debug(
                     "Grace period ended for %s, closing session", self._transport_id
                 )
-                await self.close(False)
+                await self.close()
                 return
 
     async def _heartbeat(
@@ -333,6 +331,13 @@ class Session(object):
         """Get the next expected sequence number from the server."""
         return await self._seq_manager.get_ack()
 
+    async def get_next_sent_seq(self) -> int:
+        """Get the next sequence number that the client will send."""
+        nextMessage = await self._buffer.peek()
+        if nextMessage:
+            return nextMessage.seq
+        return await self._seq_manager.get_seq()
+
     async def get_next_expected_ack(self) -> int:
         """Get the next expected ack that the client expects."""
         return await self._seq_manager.get_seq()
@@ -370,7 +375,7 @@ class Session(object):
                 except Exception:
                     # We should close the session when there are too many messages in
                     # buffer
-                    await self.close(True)
+                    await self.close()
                     return
                 async with self._ws_lock:
                     if not await self._ws_wrapper.is_open():
@@ -503,7 +508,7 @@ class Session(object):
     async def start_serve_responses(self) -> None:
         self._task_manager.create_task(self.serve())
 
-    async def close(self, is_unexpected_close: bool) -> None:
+    async def close(self) -> None:
         """Close the session and all associated streams."""
         logging.info(
             f"{self._transport_id} closing session "

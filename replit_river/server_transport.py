@@ -57,20 +57,18 @@ class ServerTransport(Transport):
             to_id = msg.from_
             session_id = handshake_response.status.sessionId
             if not session_id:
-                raise InvalidMessageException("No session id in handshake response")
-            advertised_session_id = handshake_request.sessionId
+                raise InvalidMessageException("No session id in handshake request")
             try:
                 return await self.get_or_create_session(
                     transport_id,
                     to_id,
                     session_id,
-                    advertised_session_id,
                     websocket,
                 )
             except Exception as e:
                 error_msg = (
                     "Error building sessions from handshake request : "
-                    f"client_id: {transport_id}, session_id: {advertised_session_id},"
+                    f"client_id: {transport_id}, session_id: {session_id},"
                     f" error: {e}"
                 )
                 raise InvalidMessageException(error_msg)
@@ -148,30 +146,60 @@ class ServerTransport(Transport):
                 websocket,
             )
             raise InvalidMessageException("handshake request to wrong server")
-        if handshake_request.expectedSessionState is None:
-            # TODO: remove once we have upgraded all clients
-            my_session_id = await self._get_or_create_session_id(
-                request_message.from_, handshake_request.sessionId
-            )
-        elif handshake_request.expectedSessionState.reconnect:
-            maybe_my_session_id = await self._get_existing_session_id(
-                request_message.from_,
-                handshake_request.sessionId,
-                handshake_request.expectedSessionState.nextExpectedSeq,
-            )
-            if maybe_my_session_id is None:
-                handshake_response = await self._send_handshake_response(
+
+        oldSession = self._sessions.get(request_message.from_, None)
+        if oldSession and oldSession.session_id == handshake_request.sessionId:
+            # check invariants
+
+            # ordering must be correct
+            clientNextExpectedSeq = handshake_request.expectedSessionState.nextExpectedSeq
+            clientNextSentSeq = handshake_request.expectedSessionState.nextSentSeq or 0
+            ourNextSeq = await oldSession.get_next_sent_seq()
+            ourAck = await oldSession.get_next_expected_seq()
+
+            if clientNextSentSeq > ourAck:
+                message = f"client is in the future: server wanted next message to be {ourAck} but client would have sent {clientNextSentSeq}"
+                await self._send_handshake_response(
                     request_message,
-                    HandShakeStatus(ok=False, reason="session state mismatch"),
+                    HandShakeStatus(ok=False, reason=message),
                     websocket,
                 )
-                raise SessionStateMismatchException("session state mismatch")
-            my_session_id = maybe_my_session_id
+                raise SessionStateMismatchException(message)
+
+            if ourNextSeq > clientNextExpectedSeq:
+                message = f"server is in the future: client wanted next message to be {clientNextExpectedSeq} but server would have sent {ourNextSeq}"
+                await self._send_handshake_response(
+                    request_message,
+                    HandShakeStatus(ok=False, reason=message),
+                    websocket,
+                )
+                raise SessionStateMismatchException(message)
+        elif oldSession:
+            # we have an old session but the session id is different
+            # just delete the old session 
+            await oldSession.close()
+            self._delete_session(oldSession)
         else:
-            my_session_id = self.generate_session_id()
+            # no old session, see if the client is trying to resume a session
+            clientNextExpectedSeq = handshake_request.expectedSessionState.nextExpectedSeq
+            clientNextSentSeq = handshake_request.expectedSessionState.nextSentSeq or 0
+
+            if clientNextSentSeq > 0 or clientNextExpectedSeq > 0:
+                message = "client is trying to resume a session but we don't have it"
+                await self._send_handshake_response(
+                    request_message,
+                    HandShakeStatus(ok=False, reason=message),
+                    websocket,
+                )
+                raise SessionStateMismatchException(message)
+
+        # from this point on, we're committed to connecting
+        sessionId = handshake_request.sessionId
         handshake_response = await self._send_handshake_response(
             request_message,
-            HandShakeStatus(ok=True, sessionId=my_session_id),
+            HandShakeStatus(ok=True, sessionId=sessionId),
             websocket,
         )
+
         return handshake_request, handshake_response
+
