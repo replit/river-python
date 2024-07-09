@@ -160,7 +160,10 @@ class ServerTransport(Transport):
             ourAck = await oldSession.get_next_expected_seq()
 
             if clientNextSentSeq > ourAck:
-                message = f"client is in the future: server wanted next message to be {ourAck} but client would have sent {clientNextSentSeq}"
+                message = (
+                    "client is in the future: "
+                    f"server wanted {ourAck} but client has {clientNextSentSeq}"
+                )
                 await self._send_handshake_response(
                     request_message,
                     HandShakeStatus(ok=False, reason=message),
@@ -169,7 +172,10 @@ class ServerTransport(Transport):
                 raise SessionStateMismatchException(message)
 
             if ourNextSeq > clientNextExpectedSeq:
-                message = f"server is in the future: client wanted next message to be {clientNextExpectedSeq} but server would have sent {ourNextSeq}"
+                message = (
+                    "server is in the future: "
+                    f"client wanted {clientNextExpectedSeq} but server has {ourNextSeq}"
+                )
                 await self._send_handshake_response(
                     request_message,
                     HandShakeStatus(ok=False, reason=message),
