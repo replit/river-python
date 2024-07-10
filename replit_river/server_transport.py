@@ -155,7 +155,9 @@ class ServerTransport(Transport):
             client_next_expected_seq = (
                 handshake_request.expectedSessionState.nextExpectedSeq
             )
-            client_next_sent_seq = handshake_request.expectedSessionState.nextSentSeq or 0
+            client_next_sent_seq = (
+                handshake_request.expectedSessionState.nextSentSeq or 0
+            )
             our_next_seq = await old_session.get_next_sent_seq()
             our_ack = await old_session.get_next_expected_seq()
 
@@ -192,7 +194,9 @@ class ServerTransport(Transport):
             client_next_expected_seq = (
                 handshake_request.expectedSessionState.nextExpectedSeq
             )
-            client_next_sent_seq = handshake_request.expectedSessionState.nextSentSeq or 0
+            client_next_sent_seq = (
+                handshake_request.expectedSessionState.nextSentSeq or 0
+            )
 
             if client_next_sent_seq > 0 or client_next_expected_seq > 0:
                 message = "client is trying to resume a session but we don't have it"
