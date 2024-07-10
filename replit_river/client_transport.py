@@ -25,6 +25,7 @@ from replit_river.messages import (
 )
 from replit_river.rate_limiter import LeakyBucketRateLimit
 from replit_river.rpc import (
+    SESSION_MISMATCH_CODE,
     ControlMessageHandshakeRequest,
     ControlMessageHandshakeResponse,
     ExpectedSessionState,
@@ -134,23 +135,22 @@ class ClientTransport(Transport):
         self,
     ) -> ClientSession:
         new_ws, hs_request, hs_response = await self._establish_new_connection()
-        advertised_session_id = hs_response.status.sessionId
-        if not advertised_session_id:
+        if not hs_response.status.ok:
+            message = hs_response.status.reason
             raise RiverException(
                 ERROR_SESSION,
-                "Server did not return a sessionId in successful handshake",
+                f"Server did not return OK status on handshake response: {message}",
             )
         new_session = ClientSession(
             transport_id=self._transport_id,
             to_id=self._server_id,
             session_id=hs_request.sessionId,
-            advertised_session_id=advertised_session_id,
             websocket=new_ws,
             transport_options=self._transport_options,
             is_server=False,
             handlers={},
             close_session_callback=self._delete_session,
-            retry_connection_callback=lambda x: self._get_or_create_session(),
+            retry_connection_callback=lambda _: self._get_or_create_session(),
         )
 
         self._set_session(new_session)
@@ -171,11 +171,11 @@ class ClientTransport(Transport):
             new_ws, _, hs_response = await self._establish_new_connection(
                 existing_session
             )
-            if hs_response.status.sessionId == existing_session.advertised_session_id:
+            if hs_response.status.sessionId == existing_session.session_id:
                 await existing_session.replace_with_new_websocket(new_ws)
                 return existing_session
             else:
-                await existing_session.close(is_unexpected_close=False)
+                await existing_session.close()
                 return await self._create_new_session()
 
     async def _send_handshake_request(
@@ -258,9 +258,13 @@ class ClientTransport(Transport):
                 handshake_metadata=handshake_metadata,
                 websocket=websocket,
                 expected_session_state=ExpectedSessionState(
-                    reconnect=old_session is not None,
                     nextExpectedSeq=(
                         await old_session.get_next_expected_seq()
+                        if old_session is not None
+                        else 0
+                    ),
+                    nextSentSeq=(
+                        await old_session.get_next_sent_seq()
                         if old_session is not None
                         else 0
                     ),
@@ -289,6 +293,11 @@ class ClientTransport(Transport):
                 ERROR_HANDSHAKE, "Handshake response timeout, closing connection"
             )
         if not handshake_response.status.ok:
+            if old_session and handshake_response.status.code == SESSION_MISMATCH_CODE:
+                # If the session status is mismatched, we should close the old session
+                # and let the retry logic to create a new session.
+                await old_session.close()
+
             raise RiverException(
                 ERROR_HANDSHAKE, f"Handshake failed: {handshake_response.status.reason}"
             )
