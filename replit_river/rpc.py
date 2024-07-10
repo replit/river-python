@@ -45,7 +45,8 @@ STREAM_OPEN_BIT = 0x0002
 STREAM_CLOSED_BIT = 0x0004
 
 # these codes are retriable
-# if the server sends a response with one of these codes, the client will retry the request _after_
+# if the server sends a response with one of these codes,
+# the client will retry the request _after_
 # destroying its old session and startgin with a new one
 # https://github.com/replit/river/blob/72e4fc8d02263e551d66ee5f0995707e8fa6cd1b/transport/message.ts#L83
 SESSION_MISMATCH_CODE = "SESSION_STATE_MISMATCH"
