@@ -176,7 +176,8 @@ class ServerTransport(Transport):
             if our_next_seq > client_next_expected_seq:
                 message = (
                     "server is in the future: "
-                    f"client wanted {client_next_expected_seq} but server has {our_next_seq}"
+                    f"client wanted {client_next_expected_seq} "
+                    f"but server has {our_next_seq}"
                 )
                 await self._send_handshake_response(
                     request_message,
