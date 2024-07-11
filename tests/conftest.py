@@ -48,7 +48,7 @@ def serialize_request(request: str) -> dict:
 
 
 def deserialize_request(request: dict) -> str:
-    return request["data"] or ""
+    return request.get("data") or ""
 
 
 def serialize_response(response: str) -> dict:
@@ -56,7 +56,7 @@ def serialize_response(response: str) -> dict:
 
 
 def deserialize_response(response: dict) -> str:
-    return response["data"] or ""
+    return response.get("data") or ""
 
 
 def deserialize_error(response: dict) -> RiverError:
