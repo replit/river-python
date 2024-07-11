@@ -297,6 +297,7 @@ class ClientTransport(Transport):
                 # If the session status is mismatched, we should close the old session
                 # and let the retry logic to create a new session.
                 await old_session.close()
+                self._delete_session(old_session)
 
             raise RiverException(
                 ERROR_HANDSHAKE, f"Handshake failed: {handshake_response.status.reason}"
