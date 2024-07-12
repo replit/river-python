@@ -96,23 +96,21 @@ def message_decoder(
     # oneof fields.
     for index, oneof in enumerate(m.oneof_decl):
         for fieldIndex, field in enumerate(oneofs[index]):
-            accessor_key = (
-                "d"
-                if field.label == FieldDescriptor.LABEL_OPTIONAL
-                else f"_{oneof.name}"
-            )
+            accessor_key: str
 
             # don't wrap optional fields in additional object
             if field.label == FieldDescriptor.LABEL_OPTIONAL:
+                accessor_key = "d"
                 chunks.append(f"  if d.get('{to_camel_case(field.name)}') is not None:")
             else:
+                accessor_key = f"_{oneof.name}"
                 if fieldIndex == 0:
                     chunks.extend(
                         [
-                            f"_{oneof.name} ="
+                            f"{accessor_key} ="
                             f"d.get('{to_camel_case(oneof.name)}', {{}})",
-                            f"  if _{oneof.name}:",
-                            f"    match _{oneof.name}.get('$kind', None):",
+                            f"  if {accessor_key}:",
+                            f"    match {accessor_key}.get('$kind', None):",
                         ]
                     )
                 chunks.append(f"        case '{to_camel_case(field.name)}':")
