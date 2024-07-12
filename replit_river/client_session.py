@@ -112,7 +112,12 @@ class ClientSession(Session):
                 )
         except Exception as e:
             raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e))
-        await self.send_close_stream(service_name, procedure_name, stream_id)
+        await self.send_close_stream(
+            service_name,
+            procedure_name,
+            stream_id,
+            extra_control_flags=STREAM_OPEN_BIT if first_message else 0,
+        )
 
         # Handle potential errors during communication
         # TODO: throw a error when the transport is hard closed
@@ -202,6 +207,7 @@ class ClientSession(Session):
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(MAX_MESSAGE_BUFFER_SIZE)
         self._streams[stream_id] = output
+        empty_stream = False
         try:
             if init and init_serializer:
                 await self.send_message(
@@ -223,11 +229,23 @@ class ClientSession(Session):
                     payload=request_serializer(first),
                 )
 
+        except StopAsyncIteration:
+            empty_stream = True
+
         except Exception as e:
             raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e))
 
         # Create the encoder task
         async def _encode_stream() -> None:
+            if empty_stream:
+                await self.send_close_stream(
+                    service_name,
+                    procedure_name,
+                    stream_id,
+                    extra_control_flags=STREAM_OPEN_BIT,
+                )
+                return
+
             async for item in request:
                 if item is None:
                     continue
@@ -264,14 +282,18 @@ class ClientSession(Session):
             raise e
 
     async def send_close_stream(
-        self, service_name: str, procedure_name: str, stream_id: str
+        self,
+        service_name: str,
+        procedure_name: str,
+        stream_id: str,
+        extra_control_flags: int = 0,
     ) -> None:
         # close stream
         await self.send_message(
             service_name=service_name,
             procedure_name=procedure_name,
             stream_id=stream_id,
-            control_flags=STREAM_CLOSED_BIT,
+            control_flags=STREAM_CLOSED_BIT | extra_control_flags,
             payload={
                 "type": "CLOSE",
             },

@@ -467,10 +467,14 @@ class Session(object):
         output_stream: Channel[Any] = Channel(
             MAX_MESSAGE_BUFFER_SIZE if is_streaming_output else 1
         )
-        try:
-            await input_stream.put(msg.payload)
-        except (RuntimeError, ChannelClosed) as e:
-            raise InvalidMessageException(e)
+        if (
+            msg.controlFlags & STREAM_CLOSED_BIT == 0
+            or msg.payload.get("type", None) != "CLOSE"
+        ):
+            try:
+                await input_stream.put(msg.payload)
+            except (RuntimeError, ChannelClosed) as e:
+                raise InvalidMessageException(e)
         if not stream:
             async with self._stream_lock:
                 self._streams[msg.streamId] = input_stream

@@ -42,6 +42,25 @@ async def test_upload_method(client: Client) -> None:
 
 
 @pytest.mark.asyncio
+async def test_upload_empty(client: Client) -> None:
+    async def upload_data(enabled: bool = False) -> AsyncGenerator[str, None]:
+        if enabled:
+            yield "unreachable"
+
+    response = await client.send_upload(
+        "test_service",
+        "upload_method",
+        None,
+        upload_data(),
+        None,
+        serialize_request,
+        deserialize_response,
+        deserialize_response,
+    )  # type: ignore
+    assert response == "Uploaded: "
+
+
+@pytest.mark.asyncio
 async def test_subscription_method(client: Client) -> None:
     async for response in await client.send_subscription(
         "test_service",
@@ -80,6 +99,28 @@ async def test_stream_method(client: Client) -> None:
         "Stream response for Stream 2",
         "Stream response for Stream 3",
     ]
+
+
+@pytest.mark.asyncio
+async def test_stream_empty(client: Client) -> None:
+    async def stream_data(enabled: bool = False) -> AsyncGenerator[str, None]:
+        if enabled:
+            yield "unreachable"
+
+    responses = []
+    async for response in await client.send_stream(
+        "test_service",
+        "stream_method",
+        None,
+        stream_data(),
+        None,
+        serialize_request,
+        deserialize_response,
+        deserialize_error,
+    ):
+        responses.append(response)
+
+    assert responses == []
 
 
 @pytest.mark.asyncio
