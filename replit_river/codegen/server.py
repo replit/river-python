@@ -95,23 +95,32 @@ def message_decoder(
             )
     # oneof fields.
     for index, oneof in enumerate(m.oneof_decl):
-        chunks.extend(
-            [
-                f"  _{oneof.name} = d.get('{to_camel_case(oneof.name)}', {{}})",
-                f"  if _{oneof.name}:",
-                f"    match _{oneof.name}.get('$kind', None):",
-            ]
-        )
-        for field in oneofs[index]:
-            chunks.append(
-                f"        case '{to_camel_case(field.name)}':",
-            )
+        for fieldIndex, field in enumerate(oneofs[index]):
+            accessor_key: str
+
+            # don't wrap optional fields in additional object
+            if field.label == FieldDescriptor.LABEL_OPTIONAL:
+                accessor_key = "d"
+                chunks.append(f"  if d.get('{to_camel_case(field.name)}') is not None:")
+            else:
+                accessor_key = f"_{oneof.name}"
+                if fieldIndex == 0:
+                    chunks.extend(
+                        [
+                            f"{accessor_key} ="
+                            f"d.get('{to_camel_case(oneof.name)}', {{}})",
+                            f"  if {accessor_key}:",
+                            f"    match {accessor_key}.get('$kind', None):",
+                        ]
+                    )
+                chunks.append(f"        case '{to_camel_case(field.name)}':")
+
             if field.type_name == ".google.protobuf.Timestamp":
                 chunks.extend(
                     [
                         f"          _{field.name} = timestamp_pb2.Timestamp()"
                         f"          _{field.name}.FromDatetime(",
-                        f"              _{oneof.name}['{to_camel_case(field.name)}'],",
+                        f"              {accessor_key}['{to_camel_case(field.name)}'],",
                         "          )",
                         f"          m.{field.name}.MergeFrom(_{field.name})",
                     ]
@@ -119,13 +128,13 @@ def message_decoder(
             elif field.label == FieldDescriptor.LABEL_REPEATED:
                 chunks.append(
                     f"          m.{field.name}.MergeFrom"
-                    f"(_{oneof.name}['{to_camel_case(field.name)}'])"
+                    f"({accessor_key}['{to_camel_case(field.name)}'])"
                 )
             elif field.type == descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE:
                 decode_method_name = get_decoder_name(field)
                 chunks.append(
                     f"          m.{field.name}.MergeFrom({decode_method_name}"
-                    f"(_{oneof.name}['{to_camel_case(field.name)}']))"
+                    f"({accessor_key}['{to_camel_case(field.name)}']))"
                 )
             else:
                 chunks.extend(
@@ -133,7 +142,7 @@ def message_decoder(
                         "          setattr(",
                         "            m,",
                         f"            '{field.name}',",
-                        f"            _{oneof.name}['{to_camel_case(field.name)}'],",
+                        f"            {accessor_key}['{to_camel_case(field.name)}'],",
                         "          )",
                     ]
                 )
