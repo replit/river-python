@@ -150,12 +150,26 @@ class ClientTransport(Transport):
             is_server=False,
             handlers={},
             close_session_callback=self._delete_session,
-            retry_connection_callback=lambda _: self._get_or_create_session(),
+            retry_connection_callback=lambda _: self._retry_connection(),
         )
 
         self._set_session(new_session)
         await new_session.start_serve_responses()
         return new_session
+
+    async def _retry_connection(self) -> ClientSession:
+        """Deletes any outstanding sessions and creates a new one."""
+        async with self._session_lock:
+            sessions = self._sessions.values()
+            logging.info(
+                f"start closing transport {self._transport_id}, number sessions : "
+                f"{len(sessions)}"
+            )
+            sessions_to_close = list(sessions)
+            self._sessions.clear()
+        tasks = [session.close() for session in sessions_to_close]
+        await asyncio.gather(*tasks)
+        return await self._get_or_create_session()
 
     async def _get_or_create_session(self) -> ClientSession:
         async with self._create_session_lock:
