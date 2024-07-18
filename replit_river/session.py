@@ -536,4 +536,5 @@ class Session(object):
                 stream.close()
             async with self._stream_lock:
                 self._streams.clear()
+            await self.close_websocket(self._ws_wrapper, should_retry=False)
             self._state = SessionState.CLOSED
