@@ -56,7 +56,7 @@ class Session(object):
         transport_options: TransportOptions,
         is_server: bool,
         handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]],
-        close_session_callback: Callable[["Session"], None],
+        close_session_callback: Callable[["Session"], Coroutine[Any, Any, Any]],
         retry_connection_callback: Optional[
             Callable[
                 ["Session"],
@@ -525,15 +525,20 @@ class Session(object):
                 return
             self._state = SessionState.CLOSING
             self._reset_session_close_countdown()
+            await self._task_manager.cancel_all_tasks()
+
             async with self._ws_lock:
                 await self._ws_wrapper.close()
+
             # Clear the session in transports
-            self._close_session_callback(self)
-            await self._task_manager.cancel_all_tasks()
+            print("calling close session callback")
+            await self._close_session_callback(self)
+
             # TODO: unexpected_close should close stream differently here to
             # throw exception correctly.
             for stream in self._streams.values():
                 stream.close()
             async with self._stream_lock:
                 self._streams.clear()
+
             self._state = SessionState.CLOSED

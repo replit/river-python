@@ -160,6 +160,7 @@ class ClientTransport(Transport):
     async def _retry_connection(self) -> ClientSession:
         """Deletes any outstanding sessions and creates a new one."""
         if not self._transport_options.transparent_reconnect:
+            print("connection dropped and transparent reconn is off, closing all sessions")
             await self._close_all_sessions()
         return await self._get_or_create_session()
 
@@ -303,7 +304,7 @@ class ClientTransport(Transport):
                 # If the session status is mismatched, we should close the old session
                 # and let the retry logic to create a new session.
                 await old_session.close()
-                self._delete_session(old_session)
+                await self._delete_session(old_session)
 
             raise RiverException(
                 ERROR_HANDSHAKE, f"Handshake failed: {handshake_response.status.reason}"
