@@ -159,16 +159,8 @@ class ClientTransport(Transport):
 
     async def _retry_connection(self) -> ClientSession:
         """Deletes any outstanding sessions and creates a new one."""
-        async with self._session_lock:
-            sessions = self._sessions.values()
-            logging.info(
-                f"start closing transport {self._transport_id}, number sessions : "
-                f"{len(sessions)}"
-            )
-            sessions_to_close = list(sessions)
-            self._sessions.clear()
-        tasks = [session.close() for session in sessions_to_close]
-        await asyncio.gather(*tasks)
+        if not self._transport_options.transparent_reconnect:
+            await self._close_all_sessions()
         return await self._get_or_create_session()
 
     async def _get_or_create_session(self) -> ClientSession:
