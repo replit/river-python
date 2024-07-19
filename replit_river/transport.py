@@ -35,7 +35,6 @@ class Transport:
         await self._close_all_sessions()
 
     async def _close_all_sessions(self) -> None:
-        print("closing all sessions")
         sessions = self._sessions.values()
         logging.info(
             f"start closing sessions {self._transport_id}, number sessions : "
@@ -51,12 +50,9 @@ class Transport:
         logging.info(f"Transport closed {self._transport_id}")
 
     async def _delete_session(self, session: Session) -> None:
-        print("deleting session", session.session_id)
         async with self._session_lock:
             if session._to_id in self._sessions:
                 del self._sessions[session._to_id]
-
-        print("SUCCESS!")
 
     def _set_session(self, session: Session) -> None:
         self._sessions[session._to_id] = session

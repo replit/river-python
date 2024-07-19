@@ -433,7 +433,6 @@ class Session(object):
                 return
             await ws_wrapper.close()
         if should_retry and self._retry_connection_callback:
-            print("retrying ws")
             self._task_manager.create_task(self._retry_connection_callback())
 
     async def _open_stream_and_call_handler(
@@ -522,7 +521,6 @@ class Session(object):
             f"to {self._to_id}, ws: {self._ws_wrapper.id}, "
             f"current_state : {self._ws_wrapper.ws_state.name}"
         )
-        print("session closing", self.session_id)
         async with self._state_lock:
             if self._state != SessionState.ACTIVE:
                 # already closing
@@ -531,11 +529,9 @@ class Session(object):
             self._reset_session_close_countdown()
             await self._task_manager.cancel_all_tasks()
 
-            print("closing ws in close()")
             await self.close_websocket(self._ws_wrapper, should_retry=False)
 
             # Clear the session in transports
-            print("calling close session callback")
             await self._close_session_callback(self)
 
             # TODO: unexpected_close should close stream differently here to

@@ -165,9 +165,6 @@ class ClientTransport(Transport):
 
     async def _retry_connection(self) -> ClientSession:
         if not self._transport_options.transparent_reconnect:
-            print(
-                "connection dropped and transparent reconn is off, closing all sessions"
-            )
             await self._close_all_sessions()
         return await self._get_or_create_session()
 
@@ -295,20 +292,18 @@ class ClientTransport(Transport):
                 "Stream closed before response, closing connection",
             )
 
-        logging.debug("river client waiting for handshake response")
         startup_grace_sec = 60
         try:
-            # listen even before we send
             response_msg = await asyncio.wait_for(
                 self._get_handshake_response_msg(websocket), startup_grace_sec
             )
             handshake_response = ControlMessageHandshakeResponse(**response_msg.payload)
+            logging.debug("river client waiting for handshake response")
         except ValidationError as e:
             raise RiverException(
                 ERROR_HANDSHAKE, f"Failed to parse handshake response : {e}"
             )
         except asyncio.TimeoutError:
-            print(session_id, "TIMEOUT")
             raise RiverException(
                 ERROR_HANDSHAKE, "Handshake response timeout, closing connection"
             )
