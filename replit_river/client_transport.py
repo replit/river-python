@@ -129,7 +129,7 @@ class ClientTransport(Transport):
             except Exception as e:
                 backoff_time = rate_limit.get_backoff_ms(client_id)
                 logging.error(
-                    f"Error creating session: {e}, retrying with {backoff_time}ms backoff"
+                    f"Error connecting: {e}, retrying with {backoff_time}ms backoff"
                 )
                 await asyncio.sleep(backoff_time / 1000)
         raise RiverException(
