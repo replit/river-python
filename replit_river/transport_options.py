@@ -27,7 +27,7 @@ class TransportOptions(BaseModel):
     close_session_check_interval_ms: float = 100
     connection_retry_options: ConnectionRetryOptions = ConnectionRetryOptions()
     buffer_size: int = 1_000
-    transparent_reconnect: bool = False
+    transparent_reconnect: bool = True
 
     def get_prefix_bytes(self) -> bytes:
         return PID2_PREFIX_BYTES if self.use_prefix_bytes else b""
