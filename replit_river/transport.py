@@ -37,17 +37,22 @@ class Transport:
     async def _close_all_sessions(self) -> None:
         sessions = self._sessions.values()
         logging.info(
-            f"start closing transport {self._transport_id}, number sessions : "
+            f"start closing sessions {self._transport_id}, number sessions : "
             f"{len(sessions)}"
         )
         sessions_to_close = list(sessions)
-        tasks = [session.close() for session in sessions_to_close]
-        await asyncio.gather(*tasks)
+
+        # closing sessions requires access to the session lock, so we need to close
+        # them one by one to be safe
+        for session in sessions_to_close:
+            await session.close()
+
         logging.info(f"Transport closed {self._transport_id}")
 
-    def _delete_session(self, session: Session) -> None:
-        if session._to_id in self._sessions:
-            del self._sessions[session._to_id]
+    async def _delete_session(self, session: Session) -> None:
+        async with self._session_lock:
+            if session._to_id in self._sessions:
+                del self._sessions[session._to_id]
 
     def _set_session(self, session: Session) -> None:
         self._sessions[session._to_id] = session
