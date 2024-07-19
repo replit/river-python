@@ -160,7 +160,9 @@ class ClientTransport(Transport):
     async def _retry_connection(self) -> ClientSession:
         """Deletes any outstanding sessions and creates a new one."""
         if not self._transport_options.transparent_reconnect:
-            print("connection dropped and transparent reconn is off, closing all sessions")
+            print(
+                "connection dropped and transparent reconn is off, closing all sessions"
+            )
             await self._close_all_sessions()
         return await self._get_or_create_session()
 
