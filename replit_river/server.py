@@ -69,15 +69,15 @@ class Server(object):
         logging.debug(
             "River server started establishing session with ws: %s", websocket.id
         )
+        grace_ms = self._transport_options.session_disconnect_grace_ms / 1000
         try:
             session = await asyncio.wait_for(
-                self._handshake_to_get_session(websocket),
-                self._transport_options.session_disconnect_grace_ms / 1000,
+                self._handshake_to_get_session(websocket), grace_ms
             )
             if not session:
                 return
         except asyncio.TimeoutError:
-            logging.error("Handshake timeout, closing websocket")
+            logging.error(f"Handshake timeout after {grace_ms}ms, closing websocket")
             await websocket.close()
             return
         except asyncio.CancelledError:

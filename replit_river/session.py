@@ -59,7 +59,7 @@ class Session(object):
         close_session_callback: Callable[["Session"], Coroutine[Any, Any, Any]],
         retry_connection_callback: Optional[
             Callable[
-                ["Session"],
+                [],
                 Coroutine[Any, Any, Any],
             ]
         ] = None,
@@ -127,7 +127,6 @@ class Session(object):
             self._to_id,
         )
         self._close_session_after_time_secs = close_session_after_time_secs
-        await self.close_websocket(self._ws_wrapper, should_retry=not self._is_server)
 
     async def serve(self) -> None:
         """Serve messages from the websocket."""
@@ -288,6 +287,9 @@ class Session(object):
                         "%r closing websocket because of heartbeat misses",
                         self.session_id,
                     )
+                    await self.close_websocket(
+                        self._ws_wrapper, should_retry=not self._is_server
+                    )
                     await self._begin_close_session_countdown()
                     continue
             except FailedSendingMessageException:
@@ -431,7 +433,8 @@ class Session(object):
                 return
             await ws_wrapper.close()
         if should_retry and self._retry_connection_callback:
-            self._task_manager.create_task(self._retry_connection_callback(self))
+            print("retrying ws")
+            self._task_manager.create_task(self._retry_connection_callback())
 
     async def _open_stream_and_call_handler(
         self,
@@ -519,6 +522,7 @@ class Session(object):
             f"to {self._to_id}, ws: {self._ws_wrapper.id}, "
             f"current_state : {self._ws_wrapper.ws_state.name}"
         )
+        print("session closing", self.session_id)
         async with self._state_lock:
             if self._state != SessionState.ACTIVE:
                 # already closing
@@ -527,8 +531,8 @@ class Session(object):
             self._reset_session_close_countdown()
             await self._task_manager.cancel_all_tasks()
 
-            async with self._ws_lock:
-                await self._ws_wrapper.close()
+            print("closing ws in close()")
+            await self.close_websocket(self._ws_wrapper, should_retry=False)
 
             # Clear the session in transports
             print("calling close session callback")

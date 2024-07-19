@@ -110,20 +110,26 @@ class ClientTransport(Transport):
                     if not old_session
                     else old_session.session_id
                 )
-                handshake_request, handshake_response = await self._establish_handshake(
-                    self._transport_id,
-                    self._server_id,
-                    session_id,
-                    self._handshake_metadata,
-                    ws,
-                    old_session,
-                )
-                rate_limit.start_restoring_budget(client_id)
-                return ws, handshake_request, handshake_response
+                try:
+                    handshake_request, handshake_response = (
+                        await self._establish_handshake(
+                            self._transport_id,
+                            self._server_id,
+                            session_id,
+                            self._handshake_metadata,
+                            ws,
+                            old_session,
+                        )
+                    )
+                    rate_limit.start_restoring_budget(client_id)
+                    return ws, handshake_request, handshake_response
+                except RiverException as e:
+                    await ws.close()
+                    raise e
             except Exception as e:
                 backoff_time = rate_limit.get_backoff_ms(client_id)
                 logging.error(
-                    f"Error creating session: {e}, start backoff {backoff_time} ms"
+                    f"Error creating session: {e}, retrying with {backoff_time}ms backoff"
                 )
                 await asyncio.sleep(backoff_time / 1000)
         raise RiverException(
@@ -150,7 +156,7 @@ class ClientTransport(Transport):
             is_server=False,
             handlers={},
             close_session_callback=self._delete_session,
-            retry_connection_callback=lambda _: self._retry_connection(),
+            retry_connection_callback=self._retry_connection,
         )
 
         self._set_session(new_session)
@@ -158,7 +164,6 @@ class ClientTransport(Transport):
         return new_session
 
     async def _retry_connection(self) -> ClientSession:
-        """Deletes any outstanding sessions and creates a new one."""
         if not self._transport_options.transparent_reconnect:
             print(
                 "connection dropped and transparent reconn is off, closing all sessions"
@@ -226,7 +231,9 @@ class ClientTransport(Transport):
             )
             return handshake_request
         except (WebsocketClosedException, FailedSendingMessageException):
-            raise RiverException(ERROR_HANDSHAKE, "Hand shake failed")
+            raise RiverException(
+                ERROR_HANDSHAKE, "Handshake failed, conn closed while sending response"
+            )
 
     async def _get_handshake_response_msg(
         self, websocket: WebSocketCommonProtocol
@@ -238,7 +245,10 @@ class ClientTransport(Transport):
                 logging.debug(
                     "Connection closed during waiting for handshake response : %r", e
                 )
-                raise RiverException(ERROR_HANDSHAKE, "Hand shake failed")
+                raise RiverException(
+                    ERROR_HANDSHAKE,
+                    "Handshake failed, conn closed while waiting for response",
+                )
             try:
                 return parse_transport_msg(data, self._transport_options)
             except IgnoreMessageException as e:
@@ -281,26 +291,29 @@ class ClientTransport(Transport):
             )
         except FailedSendingMessageException:
             raise RiverException(
-                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+                ERROR_CODE_STREAM_CLOSED,
+                "Stream closed before response, closing connection",
             )
+
         logging.debug("river client waiting for handshake response")
+        startup_grace_sec = 60
         try:
+            # listen even before we send
             response_msg = await asyncio.wait_for(
-                self._get_handshake_response_msg(websocket),
-                timeout=self._transport_options.session_disconnect_grace_ms / 1000,
+                self._get_handshake_response_msg(websocket), startup_grace_sec
             )
             handshake_response = ControlMessageHandshakeResponse(**response_msg.payload)
-            logging.debug(
-                "river client get handshake response : %r", handshake_response
-            )
         except ValidationError as e:
             raise RiverException(
                 ERROR_HANDSHAKE, f"Failed to parse handshake response : {e}"
             )
         except asyncio.TimeoutError:
+            print(session_id, "TIMEOUT")
             raise RiverException(
                 ERROR_HANDSHAKE, "Handshake response timeout, closing connection"
             )
+
+        logging.debug("river client get handshake response : %r", handshake_response)
         if not handshake_response.status.ok:
             if old_session and handshake_response.status.code == SESSION_MISMATCH_CODE:
                 # If the session status is mismatched, we should close the old session
