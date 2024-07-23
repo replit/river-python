@@ -30,6 +30,8 @@ from replit_river.seq_manager import (
 from replit_river.session import Session
 from replit_river.transport import Transport
 
+logger = logging.getLogger(__name__)
+
 
 class ServerTransport(Transport):
     async def handshake_to_get_session(
@@ -52,7 +54,7 @@ class ServerTransport(Transport):
                 raise e
             except FailedSendingMessageException as e:
                 raise e
-            logging.debug("handshake success on server: %r", handshake_request)
+            logger.debug("handshake success on server: %r", handshake_request)
             transport_id = msg.to
             to_id = msg.from_
             session_id = handshake_response.status.sessionId
@@ -97,7 +99,7 @@ class ServerTransport(Transport):
         )
 
         async def websocket_closed_callback() -> None:
-            logging.error("websocket closed before handshake response")
+            logger.error("websocket closed before handshake response")
 
         try:
             await send_transport_message(
@@ -119,7 +121,7 @@ class ServerTransport(Transport):
             handshake_request = ControlMessageHandshakeRequest(
                 **request_message.payload
             )
-            logging.debug('Got handshake request "%r"', handshake_request)
+            logger.debug('Got handshake request "%r"', handshake_request)
         except (ValidationError, ValueError):
             await self._send_handshake_response(
                 request_message,

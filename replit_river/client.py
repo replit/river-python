@@ -12,6 +12,8 @@ from .rpc import (
     ResponseType,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class Client:
     def __init__(
@@ -33,9 +35,9 @@ class Client:
         )
 
     async def close(self) -> None:
-        logging.info(f"river client {self._client_id} start closing")
+        logger.info(f"river client {self._client_id} start closing")
         await self._transport.close()
-        logging.info(f"river client {self._client_id} closed")
+        logger.info(f"river client {self._client_id} closed")
 
     async def send_rpc(
         self,

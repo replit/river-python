@@ -3,6 +3,8 @@ import logging
 
 from replit_river.rpc import TransportMessage
 
+logger = logging.getLogger(__name__)
+
 
 class IgnoreMessageException(Exception):
     """Exception to ignore a transport message, but good to continue."""
@@ -66,7 +68,7 @@ class SeqManager:
                         f" expected {self.ack}"
                     )
                 else:
-                    logging.error(
+                    logger.error(
                         f"Out of order message received got {msg.seq} expected "
                         f"{self.ack}"
                     )

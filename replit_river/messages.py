@@ -18,6 +18,8 @@ from replit_river.seq_manager import (
 )
 from replit_river.transport_options import TransportOptions
 
+logger = logging.getLogger(__name__)
+
 
 class WebsocketClosedException(Exception):
     pass
@@ -39,7 +41,7 @@ async def send_transport_message(
     websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
     prefix_bytes: bytes = b"",
 ) -> None:
-    logging.debug("sending a message %r to ws %s", msg, ws)
+    logger.debug("sending a message %r to ws %s", msg, ws)
     try:
         await ws.send(
             prefix_bytes

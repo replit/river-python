@@ -157,3 +157,7 @@ async def client(
         await server.close()
         # Server should close normally
         no_logging_error.assert_not_called()
+
+        # Make sure we get called at least once, when we expect it
+        logging.error("An error occurred! /s")
+        no_logging_error.assert_called()

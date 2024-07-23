@@ -16,6 +16,8 @@ from .rpc import (
     GenericRpcHandler,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class Server(object):
     def __init__(self, server_id: str, transport_options: TransportOptions) -> None:
@@ -28,9 +30,9 @@ class Server(object):
         )
 
     async def close(self) -> None:
-        logging.info(f"river server {self._server_id} start closing")
+        logger.info(f"river server {self._server_id} start closing")
         await self._transport.close()
-        logging.info(f"river server {self._server_id} closed")
+        logger.info(f"river server {self._server_id} closed")
 
     def add_rpc_handlers(
         self,
@@ -53,20 +55,20 @@ class Server(object):
             await websocket.close()
             return None
         except SessionStateMismatchException as e:
-            logging.info(
+            logger.info(
                 f"Session state mismatch, closing websocket: {e}", exc_info=True
             )
             await websocket.close()
             return None
         except Exception as e:
-            logging.error(
+            logger.error(
                 f"Error establishing handshake, closing websocket: {e}", exc_info=True
             )
             await websocket.close()
             return None
 
     async def serve(self, websocket: WebSocketServerProtocol) -> None:
-        logging.debug(
+        logger.debug(
             "River server started establishing session with ws: %s", websocket.id
         )
         grace_ms = self._transport_options.session_disconnect_grace_ms / 1000
@@ -77,14 +79,14 @@ class Server(object):
             if not session:
                 return
         except asyncio.TimeoutError:
-            logging.error(f"Handshake timeout after {grace_ms}ms, closing websocket")
+            logger.error(f"Handshake timeout after {grace_ms}ms, closing websocket")
             await websocket.close()
             return
         except asyncio.CancelledError:
-            logging.error("Handshake cancelled, closing websocket")
+            logger.error("Handshake cancelled, closing websocket")
             await websocket.close()
             return
-        logging.debug("River server session established, start serving messages")
+        logger.debug("River server session established, start serving messages")
 
         try:
             # Session serve will be closed in two cases
@@ -94,8 +96,8 @@ class Server(object):
             # grace period.
             await session.serve()
         except ConnectionClosed as e:
-            logging.debug("ConnectionClosed while serving %r", e)
+            logger.debug("ConnectionClosed while serving %r", e)
             # We don't have to close the websocket here, it is already closed.
         except Exception as e:
-            logging.error(f"River transport error in server {self._server_id}: {e}")
+            logger.error(f"River transport error in server {self._server_id}: {e}")
             await websocket.close()

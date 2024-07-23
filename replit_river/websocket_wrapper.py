@@ -4,6 +4,8 @@ import logging
 
 from websockets import WebSocketCommonProtocol
 
+logger = logging.getLogger(__name__)
+
 
 class WsState(enum.Enum):
     OPEN = 0
@@ -28,6 +30,6 @@ class WebsocketWrapper:
                 self.ws_state = WsState.CLOSING
                 task = asyncio.create_task(self.ws.close())
                 task.add_done_callback(
-                    lambda _: logging.debug("old websocket %s closed.", self.ws.id)
+                    lambda _: logger.debug("old websocket %s closed.", self.ws.id)
                 )
                 self.ws_state = WsState.CLOSED

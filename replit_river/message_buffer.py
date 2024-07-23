@@ -5,6 +5,8 @@ from typing import Optional
 from replit_river.rpc import TransportMessage
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
 
+logger = logging.getLogger(__name__)
+
 
 class MessageBuffer:
     """A buffer to store messages and support current updates"""
@@ -23,7 +25,7 @@ class MessageBuffer:
         """Add a message to the buffer"""
         async with self._lock:
             if len(self.buffer) >= self.max_size:
-                logging.error("Buffer is full, dropping message")
+                logger.error("Buffer is full, dropping message")
                 raise ValueError("Buffer is full")
             self.buffer.append(message)
 

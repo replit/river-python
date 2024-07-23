@@ -32,6 +32,8 @@ from .rpc import (
     TransportMessage,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class SessionState(enum.Enum):
     """The state a session can be in.
@@ -121,7 +123,7 @@ class Session(object):
         if self._close_session_after_time_secs is not None:
             # already in grace period, no need to set again
             return
-        logging.debug(
+        logger.debug(
             "websocket closed from %s to %s begin grace period",
             self._transport_id,
             self._to_id,
@@ -136,12 +138,12 @@ class Session(object):
                     await self._handle_messages_from_ws(tg)
                 except ConnectionClosed as e:
                     await self._begin_close_session_countdown()
-                    logging.debug("ConnectionClosed while serving: %r", e)
+                    logger.debug("ConnectionClosed while serving: %r", e)
                 except FailedSendingMessageException as e:
                     # Expected error if the connection is closed.
-                    logging.debug("FailedSendingMessageException while serving: %r", e)
+                    logger.debug("FailedSendingMessageException while serving: %r", e)
                 except Exception:
-                    logging.exception("caught exception at message iterator")
+                    logger.exception("caught exception at message iterator")
         except ExceptionGroup as eg:
             _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))
             if unhandled:
@@ -157,7 +159,7 @@ class Session(object):
     async def _handle_messages_from_ws(
         self, tg: Optional[asyncio.TaskGroup] = None
     ) -> None:
-        logging.debug(
+        logger.debug(
             "%s start handling messages from ws %s",
             "server" if self._is_server else "client",
             self._ws_wrapper.id,
@@ -171,7 +173,7 @@ class Session(object):
                         break
                     msg = parse_transport_msg(message, self._transport_options)
 
-                    logging.debug(f"{self._transport_id} got a message %r", msg)
+                    logger.debug(f"{self._transport_id} got a message %r", msg)
 
                     await self._update_book_keeping(msg)
                     if msg.controlFlags & ACK_BIT != 0:
@@ -180,7 +182,7 @@ class Session(object):
                         stream = self._streams.get(msg.streamId, None)
                     if msg.controlFlags & STREAM_OPEN_BIT == 0:
                         if not stream:
-                            logging.warning("no stream for %s", msg.streamId)
+                            logger.warning("no stream for %s", msg.streamId)
                             raise IgnoreMessageException(
                                 "no stream for message, ignoring"
                             )
@@ -196,10 +198,10 @@ class Session(object):
                         async with self._stream_lock:
                             del self._streams[msg.streamId]
                 except IgnoreMessageException as e:
-                    logging.debug("Ignoring transport message : %r", e)
+                    logger.debug("Ignoring transport message : %r", e)
                     continue
                 except InvalidMessageException as e:
-                    logging.error(
+                    logger.error(
                         f"Got invalid transport message, closing session : {e}"
                     )
                     await self.close()
@@ -244,7 +246,7 @@ class Session(object):
             if not self._close_session_after_time_secs:
                 continue
             if current_time > self._close_session_after_time_secs:
-                logging.debug(
+                logger.debug(
                     "Grace period ended for %s, closing session", self._transport_id
                 )
                 await self.close()
@@ -253,11 +255,11 @@ class Session(object):
     async def _heartbeat(
         self,
     ) -> None:
-        logging.debug("Start heartbeat")
+        logger.debug("Start heartbeat")
         while True:
             await asyncio.sleep(self._transport_options.heartbeat_ms / 1000)
             if self._state != SessionState.ACTIVE:
-                logging.debug(
+                logger.debug(
                     "Session is closed, no need to send heartbeat, state : "
                     "%r close_session_after_this: %r",
                     {self._state},
@@ -283,7 +285,7 @@ class Session(object):
                     if self._close_session_after_time_secs is not None:
                         # already in grace period, no need to set again
                         continue
-                    logging.debug(
+                    logger.debug(
                         "%r closing websocket because of heartbeat misses",
                         self.session_id,
                     )
@@ -308,10 +310,10 @@ class Session(object):
                     prefix_bytes=self._transport_options.get_prefix_bytes(),
                 )
             except WebsocketClosedException as e:
-                logging.info(f"Connection closed while sending buffered messages : {e}")
+                logger.info(f"Connection closed while sending buffered messages : {e}")
                 break
             except FailedSendingMessageException as e:
-                logging.error(f"Error while sending buffered messages : {e}")
+                logger.error(f"Error while sending buffered messages : {e}")
                 break
 
     async def _send_transport_message(
@@ -390,16 +392,14 @@ class Session(object):
                     prefix_bytes=self._transport_options.get_prefix_bytes(),
                 )
         except WebsocketClosedException as e:
-            logging.debug(
+            logger.debug(
                 "Connection closed while sending message %r: %r, waiting for "
                 "retry from buffer",
                 type(e),
                 e,
             )
         except FailedSendingMessageException as e:
-            logging.error(
-                f"Failed sending message : {e}, waiting for retry from buffer"
-            )
+            logger.error(f"Failed sending message : {e}, waiting for retry from buffer")
 
     async def _send_responses_from_output_stream(
         self,
@@ -414,14 +414,14 @@ class Session(object):
                     await self.send_message(stream_id, payload, STREAM_CLOSED_BIT)
                     return
                 await self.send_message(stream_id, payload)
-            logging.debug("sent an end of stream %r", stream_id)
+            logger.debug("sent an end of stream %r", stream_id)
             await self.send_message(stream_id, {"type": "CLOSE"}, STREAM_CLOSED_BIT)
         except FailedSendingMessageException as e:
-            logging.error(f"Error while sending responses, {type(e)} : {e}")
+            logger.error(f"Error while sending responses, {type(e)} : {e}")
         except (RuntimeError, ChannelClosed) as e:
-            logging.error(f"Error while sending responses, {type(e)} : {e}")
+            logger.error(f"Error while sending responses, {type(e)} : {e}")
         except Exception as e:
-            logging.error(f"Unknown error while river sending responses back : {e}")
+            logger.error(f"Unknown error while river sending responses back : {e}")
 
     async def close_websocket(
         self, ws_wrapper: WebsocketWrapper, should_retry: bool
@@ -516,7 +516,7 @@ class Session(object):
 
     async def close(self) -> None:
         """Close the session and all associated streams."""
-        logging.info(
+        logger.info(
             f"{self._transport_id} closing session "
             f"to {self._to_id}, ws: {self._ws_wrapper.id}, "
             f"current_state : {self._ws_wrapper.ws_state.name}"

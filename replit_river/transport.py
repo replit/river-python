@@ -12,6 +12,8 @@ from replit_river.rpc import (
 from replit_river.session import Session
 from replit_river.transport_options import TransportOptions
 
+logger = logging.getLogger(__name__)
+
 
 class Transport:
     def __init__(
@@ -36,7 +38,7 @@ class Transport:
 
     async def _close_all_sessions(self) -> None:
         sessions = self._sessions.values()
-        logging.info(
+        logger.info(
             f"start closing sessions {self._transport_id}, number sessions : "
             f"{len(sessions)}"
         )
@@ -47,7 +49,7 @@ class Transport:
         for session in sessions_to_close:
             await session.close()
 
-        logging.info(f"Transport closed {self._transport_id}")
+        logger.info(f"Transport closed {self._transport_id}")
 
     async def _delete_session(self, session: Session) -> None:
         async with self._session_lock:
@@ -71,7 +73,7 @@ class Transport:
             session_to_close: Optional[Session] = None
             new_session: Optional[Session] = None
             if to_id not in self._sessions:
-                logging.debug(
+                logger.debug(
                     'Creating new session with "%s" using ws: %s', to_id, websocket.id
                 )
                 new_session = Session(
@@ -87,7 +89,7 @@ class Transport:
             else:
                 old_session = self._sessions[to_id]
                 if old_session.session_id != session_id:
-                    logging.debug(
+                    logger.debug(
                         'Create new session with "%s" for session id %s'
                         " and close old session %s",
                         to_id,
@@ -108,7 +110,7 @@ class Transport:
                 else:
                     # If the instance id is the same, we reuse the session and assign
                     # a new websocket to it.
-                    logging.debug(
+                    logger.debug(
                         'Reuse old session with "%s" using new ws: %s',
                         to_id,
                         websocket.id,
@@ -120,7 +122,7 @@ class Transport:
                         raise e
 
             if session_to_close:
-                logging.debug("Closing stale session %s", session_to_close.session_id)
+                logger.debug("Closing stale session %s", session_to_close.session_id)
                 await session_to_close.close()
             self._set_session(new_session)
         return new_session

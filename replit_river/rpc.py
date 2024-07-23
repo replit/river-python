@@ -30,6 +30,8 @@ from replit_river.error_schema import (
 from replit_river.task_manager import BackgroundTaskManager
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
 
+logger = logging.getLogger(__name__)
+
 InitType = TypeVar("InitType")
 RequestType = TypeVar("RequestType")
 ResponseType = TypeVar("ResponseType")
@@ -219,7 +221,7 @@ def rpc_method_handler(
                 }
             )
         except Exception as e:
-            logging.exception("Uncaught exception during river rpc")
+            logger.exception("Uncaught exception during river rpc")
             await output.put(
                 {
                     "ok": False,
@@ -268,7 +270,7 @@ def subscription_method_handler(
                 }
             )
         except Exception as e:
-            logging.exception("Uncaught exception in river server subscription")
+            logger.exception("Uncaught exception in river server subscription")
             await output.put(
                 {
                     "ok": False,
@@ -318,7 +320,7 @@ def upload_method_handler(
                 except ChannelClosed:
                     raise RiverException(ERROR_CODE_STREAM_CLOSED, "Channel closed")
                 except Exception as e:
-                    logging.error("Uncaught exception in river server upload")
+                    logger.error("Uncaught exception in river server upload")
                     await output.put(
                         {
                             "ok": False,
@@ -336,7 +338,7 @@ def upload_method_handler(
             await asyncio.wait((convert_inputs_task, convert_outputs_task))
 
         except Exception as e:
-            logging.exception("Uncaught exception in upload")
+            logger.exception("Uncaught exception in upload")
             await output.put(
                 {
                     "ok": False,
@@ -394,7 +396,7 @@ def stream_method_handler(
             convert_outputs_task = task_manager.create_task(_convert_outputs())
             await asyncio.wait((convert_inputs_task, convert_outputs_task))
         except grpc.RpcError:
-            logging.exception("RPC exception in stream")
+            logger.exception("RPC exception in stream")
             code = grpc.StatusCode(context._abort_code).name if context else "UNKNOWN"
             message = (
                 f"{method.__name__} threw an exception: "
@@ -410,7 +412,7 @@ def stream_method_handler(
                 }
             )
         except Exception as e:
-            logging.exception("Uncaught exception in stream")
+            logger.exception("Uncaught exception in stream")
             await output.put(
                 {
                     "ok": False,

@@ -38,6 +38,8 @@ from replit_river.seq_manager import (
 from replit_river.transport import Transport
 from replit_river.transport_options import TransportOptions
 
+logger = logging.getLogger(__name__)
+
 
 class ClientTransport(Transport):
     def __init__(
@@ -98,9 +100,9 @@ class ClientTransport(Transport):
         client_id = self._client_id
         for i in range(max_retry):
             if i > 0:
-                logging.info(f"Retrying build handshake number {i} times")
+                logger.info(f"Retrying build handshake number {i} times")
             if not rate_limit.has_budget(client_id):
-                logging.debug("No retry budget for %s.", client_id)
+                logger.debug("No retry budget for %s.", client_id)
                 break
             rate_limit.consume_budget(client_id)
             try:
@@ -111,15 +113,16 @@ class ClientTransport(Transport):
                     else old_session.session_id
                 )
                 try:
-                    handshake_request, handshake_response = (
-                        await self._establish_handshake(
-                            self._transport_id,
-                            self._server_id,
-                            session_id,
-                            self._handshake_metadata,
-                            ws,
-                            old_session,
-                        )
+                    (
+                        handshake_request,
+                        handshake_response,
+                    ) = await self._establish_handshake(
+                        self._transport_id,
+                        self._server_id,
+                        session_id,
+                        self._handshake_metadata,
+                        ws,
+                        old_session,
                     )
                     rate_limit.start_restoring_budget(client_id)
                     return ws, handshake_request, handshake_response
@@ -128,7 +131,7 @@ class ClientTransport(Transport):
                     raise e
             except Exception as e:
                 backoff_time = rate_limit.get_backoff_ms(client_id)
-                logging.error(
+                logger.error(
                     f"Error connecting: {e}, retrying with {backoff_time}ms backoff"
                 )
                 await asyncio.sleep(backoff_time / 1000)
@@ -208,7 +211,7 @@ class ClientTransport(Transport):
         stream_id = self.generate_nanoid()
 
         async def websocket_closed_callback() -> None:
-            logging.error("websocket closed before handshake response")
+            logger.error("websocket closed before handshake response")
 
         try:
             await send_transport_message(
@@ -239,7 +242,7 @@ class ClientTransport(Transport):
             try:
                 data = await websocket.recv()
             except ConnectionClosed as e:
-                logging.debug(
+                logger.debug(
                     "Connection closed during waiting for handshake response : %r", e
                 )
                 raise RiverException(
@@ -249,7 +252,7 @@ class ClientTransport(Transport):
             try:
                 return parse_transport_msg(data, self._transport_options)
             except IgnoreMessageException as e:
-                logging.debug("Ignoring transport message : %r", e)
+                logger.debug("Ignoring transport message : %r", e)
                 continue
             except InvalidMessageException as e:
                 raise RiverException(
@@ -298,7 +301,7 @@ class ClientTransport(Transport):
                 self._get_handshake_response_msg(websocket), startup_grace_sec
             )
             handshake_response = ControlMessageHandshakeResponse(**response_msg.payload)
-            logging.debug("river client waiting for handshake response")
+            logger.debug("river client waiting for handshake response")
         except ValidationError as e:
             raise RiverException(
                 ERROR_HANDSHAKE, f"Failed to parse handshake response : {e}"
@@ -308,7 +311,7 @@ class ClientTransport(Transport):
                 ERROR_HANDSHAKE, "Handshake response timeout, closing connection"
             )
 
-        logging.debug("river client get handshake response : %r", handshake_response)
+        logger.debug("river client get handshake response : %r", handshake_response)
         if not handshake_response.status.ok:
             if old_session and handshake_response.status.code == SESSION_MISMATCH_CODE:
                 # If the session status is mismatched, we should close the old session

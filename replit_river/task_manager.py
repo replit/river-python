@@ -4,6 +4,8 @@ from typing import Any, Optional, Set
 
 from replit_river.error_schema import ERROR_CODE_STREAM_CLOSED, RiverException
 
+logger = logging.getLogger(__name__)
+
 
 class BackgroundTaskManager:
     """Manages background tasks and logs exceptions."""
@@ -34,14 +36,14 @@ class BackgroundTaskManager:
         except asyncio.CancelledError:
             # If we cancel the task manager we will get called here as well,
             # if we want to handle the cancellation differently we can do it here.
-            logging.debug("Task was cancelled %r", task_to_remove)
+            logger.debug("Task was cancelled %r", task_to_remove)
         except RiverException as e:
             if e.code == ERROR_CODE_STREAM_CLOSED:
                 # Task is cancelled
                 pass
-            logging.error("Exception on cancelling task: %r", e, exc_info=True)
+            logger.error("Exception on cancelling task: %r", e, exc_info=True)
         except Exception as e:
-            logging.error("Exception on cancelling task: %r", e, exc_info=True)
+            logger.error("Exception on cancelling task: %r", e, exc_info=True)
         finally:
             # Remove the task from the set regardless of the outcome
             background_tasks.discard(task_to_remove)
@@ -65,7 +67,7 @@ class BackgroundTaskManager:
         except asyncio.CancelledError:
             return
         except Exception:
-            logging.error("Error retrieving task exception", exc_info=True)
+            logger.error("Error retrieving task exception", exc_info=True)
             return
         if exception:
             if (
@@ -75,7 +77,7 @@ class BackgroundTaskManager:
                 # Task is cancelled
                 pass
             else:
-                logging.error(
+                logger.error(
                     "Exception on cancelling task: %r", exception, exc_info=True
                 )
 
