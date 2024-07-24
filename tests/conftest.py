@@ -1,8 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from typing import Any, AsyncGenerator, Generator
-from unittest.mock import MagicMock, patch
+from typing import Any, AsyncGenerator
 
 import nanoid  # type: ignore
 import pytest
@@ -20,6 +19,10 @@ from replit_river.rpc import (
 )
 from replit_river.server import Server
 from replit_river.transport_options import TransportOptions
+from tests.river_fixtures.logging import NoErrors
+
+# Modular fixtures
+pytest_plugins = ["tests.river_fixtures.logging"]
 
 
 def transport_message(
@@ -129,14 +132,10 @@ def server(transport_options: TransportOptions) -> Server:
 
 
 @pytest.fixture
-def no_logging_error() -> Generator[MagicMock, None, None]:
-    with patch("logging.error") as mock_error:
-        yield mock_error
-
-
-@pytest.fixture
 async def client(
-    server: Server, transport_options: TransportOptions, no_logging_error: MagicMock
+    server: Server,
+    transport_options: TransportOptions,
+    no_logging_error: NoErrors,
 ) -> AsyncGenerator[Client, None]:
     try:
         async with serve(server.serve, "localhost", 8765):
@@ -156,4 +155,4 @@ async def client(
         logging.debug("Start closing test server")
         await server.close()
         # Server should close normally
-        no_logging_error.assert_not_called()
+        no_logging_error()

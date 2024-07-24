@@ -19,6 +19,8 @@ from .rpc import (
     ResponseType,
 )
 
+logger = logging.getLogger(__name__)
+
 
 class ClientSession(Session):
     async def send_rpc(
@@ -176,7 +178,7 @@ class ClientSession(Session):
                     try:
                         yield error_deserializer(item["payload"])
                     except Exception:
-                        logging.exception(
+                        logger.exception(
                             f"Error during subscription error deserialization: {item}"
                         )
                     continue
@@ -269,7 +271,7 @@ class ClientSession(Session):
                     try:
                         yield error_deserializer(item["payload"])
                     except Exception:
-                        logging.exception(
+                        logger.exception(
                             f"Error during subscription error deserialization: {item}"
                         )
                     continue
