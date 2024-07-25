@@ -14,8 +14,17 @@ This includes the necessary machinery to act as a client or server for River:
 
 ## Publishing
 
-Make sure you have pypi token setup, easiest way is to set env var `POETRY_PYPI_TOKEN_PYPI`.
+### Release Drafts
+Pending releases are curated by [release-drafter/release-drafter](https://github.com/release-drafter/release-drafter) on the [Releases](https://github.com/replit/river-python/releases) page.
 
-- update version either manually or via `poetry version`
-- `poetry build`
-- `poetry publish`
+Maintainers can see the next `Draft` release, regenerated every time [release-drafter.yml](https://github.com/replit/river-python/actions/workflows/release-drafter.yml) is triggered.
+
+### PR Labeling
+
+PRs merged since the last release are considered, with the labels on those PRs used for release metadata. `feature`, `bug`, `chore`, and `dependencies` are used for categorization, `major`, `minor`, and `patch` are used to influence the next release's version.
+
+These labels can be altered after merge, re-trigger release-drafter to get it to regenerate the draft once you've curated the next release.
+
+### Triggering release
+
+The tag version is used to set the version during the build, the value in `pyproject.toml` is not expected to be kept up-to-date.
