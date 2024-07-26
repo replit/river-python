@@ -18,6 +18,14 @@ class InvalidMessageException(Exception):
     pass
 
 
+class OutOfOrderMessageException(Exception):
+    """Error when a message is received out of order, we close the connection
+    and wait for the client to resychronize. If the resychronization fails, we close the session.
+    """
+
+    pass
+
+
 class SessionStateMismatchException(Exception):
     """Error when the session state mismatch, we reject handshake and
     close the connection"""
@@ -68,13 +76,14 @@ class SeqManager:
                         f" expected {self.ack}"
                     )
                 else:
-                    logger.error(
+                    logger.warn(
                         f"Out of order message received got {msg.seq} expected "
                         f"{self.ack}"
                     )
-                    raise InvalidMessageException(
-                        f"{msg.from_} received out of order, got {msg.seq}"
-                        f" expected {self.ack}"
+
+                    raise OutOfOrderMessageException(
+                        f"Out of order message received got {msg.seq} expected "
+                        f"{self.ack}"
                     )
             self.receiver_ack = msg.ack
         await self._set_ack(msg.seq + 1)

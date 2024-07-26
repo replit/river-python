@@ -18,6 +18,7 @@ from replit_river.messages import (
 from replit_river.seq_manager import (
     IgnoreMessageException,
     InvalidMessageException,
+    OutOfOrderMessageException,
     SeqManager,
 )
 from replit_river.task_manager import BackgroundTaskManager
@@ -200,6 +201,10 @@ class Session(object):
                 except IgnoreMessageException as e:
                     logger.debug("Ignoring transport message : %r", e)
                     continue
+                except OutOfOrderMessageException as e:
+                    logger.error(f"Out of order message, closing connection : {e}")
+                    await ws_wrapper.close()
+                    return
                 except InvalidMessageException as e:
                     logger.error(
                         f"Got invalid transport message, closing session : {e}"
