@@ -4,7 +4,6 @@ import pytest
 
 from replit_river.seq_manager import (
     IgnoreMessageException,
-    InvalidMessageException,
     OutOfOrderMessageException,
     SeqManager,
 )
