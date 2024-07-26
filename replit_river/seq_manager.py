@@ -20,7 +20,8 @@ class InvalidMessageException(Exception):
 
 class OutOfOrderMessageException(Exception):
     """Error when a message is received out of order, we close the connection
-    and wait for the client to resychronize. If the resychronization fails, we close the session.
+    and wait for the client to resychronize. If the resychronization fails,
+    we close the session.
     """
 
     pass
