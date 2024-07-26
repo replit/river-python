@@ -4,7 +4,7 @@ import pytest
 
 from replit_river.seq_manager import (
     IgnoreMessageException,
-    InvalidMessageException,
+    OutOfOrderMessageException,
     SeqManager,
 )
 from tests.conftest import transport_message
@@ -47,7 +47,7 @@ async def test_message_reception(no_logging_error: NoErrors) -> None:
 
     # Test out of order message
     msg.seq = 2
-    with pytest.raises(InvalidMessageException):
+    with pytest.raises(OutOfOrderMessageException):
         await manager.check_seq_and_update(msg)
 
 
