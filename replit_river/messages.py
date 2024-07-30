@@ -49,20 +49,18 @@ async def send_transport_message(
                 msg.model_dump(by_alias=True, exclude_none=True), datetime=True
             )
         )
-    except websockets.exceptions.ConnectionClosed:
+    except websockets.exceptions.ConnectionClosed as e:
         await websocket_closed_callback()
-        raise WebsocketClosedException("Websocket closed during send message")
-    except RuntimeError:
+        raise WebsocketClosedException("Websocket closed during send message") from e
+    except RuntimeError as e:
         # RuntimeError: Unexpected ASGI message 'websocket.send',
         # after sending 'websocket.close'
         await websocket_closed_callback()
         raise WebsocketClosedException(
             "Websocket closed RuntimeError during send message"
-        )
+        ) from e
     except Exception as e:
-        raise FailedSendingMessageException(
-            f"Exception during send message : {type(e)} {e}"
-        )
+        raise FailedSendingMessageException("Exception during send message") from e
 
 
 def formatted_bytes(message: bytes) -> str:
@@ -74,7 +72,7 @@ def parse_transport_msg(
 ) -> TransportMessage:
     if isinstance(message, str):
         raise IgnoreMessageException(
-            "ignored a message beacuse it was a text frame: %r", message
+            f"ignored a message beacuse it was a text frame: {message}"
         )
     if transport_options.use_prefix_bytes:
         if message.startswith(CROSIS_PREFIX_BYTES):
@@ -94,8 +92,8 @@ def parse_transport_msg(
         #         2 - int  (Nanoseconds from the EPOCH)
         #         3 - datetime.datetime  (UTC).
         unpacked_message = msgpack.unpackb(message, timestamp=3)
-    except (msgpack.UnpackException, msgpack.exceptions.ExtraData):
-        raise InvalidMessageException("received non-msgpack message")
+    except (msgpack.UnpackException, msgpack.exceptions.ExtraData) as e:
+        raise InvalidMessageException("received non-msgpack message") from e
     try:
         msg = TransportMessage(**unpacked_message)
     except (
@@ -103,6 +101,8 @@ def parse_transport_msg(
         ValueError,
         msgpack.UnpackException,
         PydanticCoreValidationError,
-    ):
-        raise InvalidMessageException(f"failed to parse message: {unpacked_message}")
+    ) as e:
+        raise InvalidMessageException(
+            f"failed to parse message: {unpacked_message}"
+        ) from e
     return msg

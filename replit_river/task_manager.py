@@ -41,9 +41,9 @@ class BackgroundTaskManager:
             if e.code == ERROR_CODE_STREAM_CLOSED:
                 # Task is cancelled
                 pass
-            logger.error("Exception on cancelling task: %r", e, exc_info=True)
-        except Exception as e:
-            logger.error("Exception on cancelling task: %r", e, exc_info=True)
+            logger.exception("Exception on cancelling task")
+        except Exception:
+            logger.exception("Exception on cancelling task")
         finally:
             # Remove the task from the set regardless of the outcome
             background_tasks.discard(task_to_remove)
@@ -78,7 +78,8 @@ class BackgroundTaskManager:
                 pass
             else:
                 logger.error(
-                    "Exception on cancelling task: %r", exception, exc_info=True
+                    "Exception on cancelling task",
+                    exc_info=exception,
                 )
 
     def create_task(

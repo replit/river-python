@@ -47,9 +47,9 @@ class ServerTransport(Transport):
                 ) = await self._establish_handshake(msg, websocket)
             except IgnoreMessageException:
                 continue
-            except InvalidMessageException:
+            except InvalidMessageException as e:
                 error_msg = "Got invalid transport message, closing connection"
-                raise InvalidMessageException(error_msg)
+                raise InvalidMessageException(error_msg) from e
             except SessionStateMismatchException as e:
                 raise e
             except FailedSendingMessageException as e:
@@ -70,10 +70,9 @@ class ServerTransport(Transport):
             except Exception as e:
                 error_msg = (
                     "Error building sessions from handshake request : "
-                    f"client_id: {transport_id}, session_id: {session_id},"
-                    f" error: {e}"
+                    f"client_id: {transport_id}, session_id: {session_id}"
                 )
-                raise InvalidMessageException(error_msg)
+                raise InvalidMessageException(error_msg) from e
         raise WebsocketClosedException("No handshake message received")
 
     async def _send_handshake_response(
@@ -107,8 +106,8 @@ class ServerTransport(Transport):
             )
         except (FailedSendingMessageException, ConnectionClosed) as e:
             raise FailedSendingMessageException(
-                f"Failed sending handshake response: {e}"
-            )
+                "Failed sending handshake response"
+            ) from e
         return response
 
     async def _establish_handshake(
@@ -122,13 +121,13 @@ class ServerTransport(Transport):
                 **request_message.payload
             )
             logger.debug('Got handshake request "%r"', handshake_request)
-        except (ValidationError, ValueError):
+        except (ValidationError, ValueError) as e:
             await self._send_handshake_response(
                 request_message,
                 HandShakeStatus(ok=False, reason="failed validate handshake request"),
                 websocket,
             )
-            raise InvalidMessageException("failed validate handshake request")
+            raise InvalidMessageException("failed validate handshake request") from e
 
         if handshake_request.protocolVersion != PROTOCOL_VERSION:
             await self._send_handshake_response(

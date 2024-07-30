@@ -137,12 +137,14 @@ class Session(object):
             async with asyncio.TaskGroup() as tg:
                 try:
                     await self._handle_messages_from_ws(tg)
-                except ConnectionClosed as e:
+                except ConnectionClosed:
                     await self._begin_close_session_countdown()
-                    logger.debug("ConnectionClosed while serving: %r", e)
-                except FailedSendingMessageException as e:
+                    logger.debug("ConnectionClosed while serving", exc_info=True)
+                except FailedSendingMessageException:
                     # Expected error if the connection is closed.
-                    logger.debug("FailedSendingMessageException while serving: %r", e)
+                    logger.debug(
+                        "FailedSendingMessageException while serving", exc_info=True
+                    )
                 except Exception:
                     logger.exception("caught exception at message iterator")
         except ExceptionGroup as eg:
@@ -198,17 +200,15 @@ class Session(object):
                             stream.close()
                         async with self._stream_lock:
                             del self._streams[msg.streamId]
-                except IgnoreMessageException as e:
-                    logger.debug("Ignoring transport message : %r", e)
+                except IgnoreMessageException:
+                    logger.debug("Ignoring transport message", exc_info=True)
                     continue
-                except OutOfOrderMessageException as e:
-                    logger.error(f"Out of order message, closing connection : {e}")
+                except OutOfOrderMessageException:
+                    logger.exception("Out of order message, closing connection")
                     await ws_wrapper.close()
                     return
-                except InvalidMessageException as e:
-                    logger.error(
-                        f"Got invalid transport message, closing session : {e}"
-                    )
+                except InvalidMessageException:
+                    logger.exception("Got invalid transport message, closing session")
                     await self.close()
                     return
         except ConnectionClosed as e:
@@ -314,11 +314,13 @@ class Session(object):
                     websocket,
                     prefix_bytes=self._transport_options.get_prefix_bytes(),
                 )
-            except WebsocketClosedException as e:
-                logger.info(f"Connection closed while sending buffered messages : {e}")
+            except WebsocketClosedException:
+                logger.info(
+                    "Connection closed while sending buffered messages", exc_info=True
+                )
                 break
-            except FailedSendingMessageException as e:
-                logger.error(f"Error while sending buffered messages : {e}")
+            except FailedSendingMessageException:
+                logger.exception("Error while sending buffered messages")
                 break
 
     async def _send_transport_message(
@@ -398,13 +400,15 @@ class Session(object):
                 )
         except WebsocketClosedException as e:
             logger.debug(
-                "Connection closed while sending message %r: %r, waiting for "
+                "Connection closed while sending message %r, waiting for "
                 "retry from buffer",
                 type(e),
-                e,
+                exc_info=e,
             )
-        except FailedSendingMessageException as e:
-            logger.error(f"Failed sending message : {e}, waiting for retry from buffer")
+        except FailedSendingMessageException:
+            logger.error(
+                "Failed sending message, waiting for retry from buffer", exc_info=True
+            )
 
     async def _send_responses_from_output_stream(
         self,
@@ -421,12 +425,12 @@ class Session(object):
                 await self.send_message(stream_id, payload)
             logger.debug("sent an end of stream %r", stream_id)
             await self.send_message(stream_id, {"type": "CLOSE"}, STREAM_CLOSED_BIT)
-        except FailedSendingMessageException as e:
-            logger.error(f"Error while sending responses, {type(e)} : {e}")
-        except (RuntimeError, ChannelClosed) as e:
-            logger.error(f"Error while sending responses, {type(e)} : {e}")
-        except Exception as e:
-            logger.error(f"Unknown error while river sending responses back : {e}")
+        except FailedSendingMessageException:
+            logger.exception("Error while sending responses")
+        except (RuntimeError, ChannelClosed):
+            logger.exception("Error while sending responses")
+        except Exception:
+            logger.exception("Unknown error while river sending responses back")
 
     async def close_websocket(
         self, ws_wrapper: WebsocketWrapper, should_retry: bool
@@ -481,7 +485,7 @@ class Session(object):
             try:
                 await input_stream.put(msg.payload)
             except (RuntimeError, ChannelClosed) as e:
-                raise InvalidMessageException(e)
+                raise InvalidMessageException(e) from e
         if not stream:
             async with self._stream_lock:
                 self._streams[msg.streamId] = input_stream
@@ -511,7 +515,7 @@ class Session(object):
         try:
             await stream.put(msg.payload)
         except (RuntimeError, ChannelClosed) as e:
-            raise InvalidMessageException(e)
+            raise InvalidMessageException(e) from e
 
     async def _remove_acked_messages_in_buffer(self) -> None:
         await self._buffer.remove_old_messages(self._seq_manager.receiver_ack)
