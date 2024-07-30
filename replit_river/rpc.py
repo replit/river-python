@@ -26,6 +26,7 @@ from replit_river.error_schema import (
     ERROR_CODE_STREAM_CLOSED,
     RiverError,
     RiverException,
+    stringify_exception,
 )
 from replit_river.task_manager import BackgroundTaskManager
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
@@ -227,7 +228,10 @@ def rpc_method_handler(
                     "ok": False,
                     "payload": {
                         "code": "UNCAUGHT_EXCEPTION",
-                        "message": f"{method.__name__} threw an exception: {e}",
+                        "message": (
+                            f"{method.__name__} threw an "
+                            f"exception: {stringify_exception(e)}"
+                        ),
                     },
                 }
             )
@@ -276,7 +280,10 @@ def subscription_method_handler(
                     "ok": False,
                     "payload": {
                         "code": "UNCAUGHT_EXCEPTION",
-                        "message": f"{method.__name__} threw an exception: {e}",
+                        "message": (
+                            f"{method.__name__} threw an "
+                            f"exception: {stringify_exception(e)}"
+                        ),
                     },
                 }
             )
@@ -320,13 +327,16 @@ def upload_method_handler(
                 except ChannelClosed:
                     raise RiverException(ERROR_CODE_STREAM_CLOSED, "Channel closed")
                 except Exception as e:
-                    logger.error("Uncaught exception in river server upload")
+                    logger.exception("Uncaught exception in river server upload")
                     await output.put(
                         {
                             "ok": False,
                             "payload": {
                                 "code": "UNCAUGHT_EXCEPTION",
-                                "message": f"{method.__name__} threw an exception: {e}",
+                                "message": (
+                                    f"{method.__name__} threw an "
+                                    f"exception: {stringify_exception(e)}"
+                                ),
                             },
                         }
                     )
@@ -344,7 +354,10 @@ def upload_method_handler(
                     "ok": False,
                     "payload": {
                         "code": "UNCAUGHT_EXCEPTION",
-                        "message": f"{method.__name__} threw an exception: {e}",
+                        "message": (
+                            f"{method.__name__} threw an "
+                            f"exception: {stringify_exception(e)}"
+                        ),
                     },
                 }
             )
@@ -418,7 +431,10 @@ def stream_method_handler(
                     "ok": False,
                     "payload": {
                         "code": "UNCAUGHT_EXCEPTION",
-                        "message": f"{method.__name__} threw an exception: {e}",
+                        "message": (
+                            f"{method.__name__} threw an "
+                            f"exception: {stringify_exception(e)}"
+                        ),
                     },
                 }
             )

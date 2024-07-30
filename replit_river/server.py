@@ -54,15 +54,13 @@ class Server(object):
             # it is fine if the ws is closed during handshake, we just close the ws
             await websocket.close()
             return None
-        except SessionStateMismatchException as e:
-            logger.info(
-                f"Session state mismatch, closing websocket: {e}", exc_info=True
-            )
+        except SessionStateMismatchException:
+            logger.info("Session state mismatch, closing websocket", exc_info=True)
             await websocket.close()
             return None
-        except Exception as e:
+        except Exception:
             logger.error(
-                f"Error establishing handshake, closing websocket: {e}", exc_info=True
+                "Error establishing handshake, closing websocket", exc_info=True
             )
             await websocket.close()
             return None
@@ -95,9 +93,9 @@ class Server(object):
             # session should be kept in order to be reused by the reconnect within the
             # grace period.
             await session.serve()
-        except ConnectionClosed as e:
-            logger.debug("ConnectionClosed while serving %r", e)
+        except ConnectionClosed:
+            logger.debug("ConnectionClosed while serving", exc_info=True)
             # We don't have to close the websocket here, it is already closed.
-        except Exception as e:
-            logger.error(f"River transport error in server {self._server_id}: {e}")
+        except Exception:
+            logger.exception("River transport error in server %s", self._server_id)
             await websocket.close()

@@ -129,10 +129,10 @@ class ClientTransport(Transport):
                 except RiverException as e:
                     await ws.close()
                     raise e
-            except Exception as e:
+            except Exception:
                 backoff_time = rate_limit.get_backoff_ms(client_id)
-                logger.error(
-                    f"Error connecting: {e}, retrying with {backoff_time}ms backoff"
+                logger.exception(
+                    f"Error connecting, retrying with {backoff_time}ms backoff"
                 )
                 await asyncio.sleep(backoff_time / 1000)
         raise RiverException(
@@ -230,10 +230,10 @@ class ClientTransport(Transport):
                 websocket_closed_callback=websocket_closed_callback,
             )
             return handshake_request
-        except (WebsocketClosedException, FailedSendingMessageException):
+        except (WebsocketClosedException, FailedSendingMessageException) as e:
             raise RiverException(
                 ERROR_HANDSHAKE, "Handshake failed, conn closed while sending response"
-            )
+            ) from e
 
     async def _get_handshake_response_msg(
         self, websocket: WebSocketCommonProtocol
@@ -243,22 +243,23 @@ class ClientTransport(Transport):
                 data = await websocket.recv()
             except ConnectionClosed as e:
                 logger.debug(
-                    "Connection closed during waiting for handshake response : %r", e
+                    "Connection closed during waiting for handshake response",
+                    exc_info=True,
                 )
                 raise RiverException(
                     ERROR_HANDSHAKE,
                     "Handshake failed, conn closed while waiting for response",
-                )
+                ) from e
             try:
                 return parse_transport_msg(data, self._transport_options)
-            except IgnoreMessageException as e:
-                logger.debug("Ignoring transport message : %r", e)
+            except IgnoreMessageException:
+                logger.debug("Ignoring transport message", exc_info=True)
                 continue
             except InvalidMessageException as e:
                 raise RiverException(
                     ERROR_HANDSHAKE,
-                    f"Got invalid transport message, closing connection : {e}",
-                )
+                    "Got invalid transport message, closing connection",
+                ) from e
 
     async def _establish_handshake(
         self,
@@ -289,11 +290,11 @@ class ClientTransport(Transport):
                     ),
                 ),
             )
-        except FailedSendingMessageException:
+        except FailedSendingMessageException as e:
             raise RiverException(
                 ERROR_CODE_STREAM_CLOSED,
                 "Stream closed before response, closing connection",
-            )
+            ) from e
 
         startup_grace_sec = 60
         try:
@@ -304,12 +305,12 @@ class ClientTransport(Transport):
             logger.debug("river client waiting for handshake response")
         except ValidationError as e:
             raise RiverException(
-                ERROR_HANDSHAKE, f"Failed to parse handshake response : {e}"
-            )
-        except asyncio.TimeoutError:
+                ERROR_HANDSHAKE, "Failed to parse handshake response"
+            ) from e
+        except asyncio.TimeoutError as e:
             raise RiverException(
                 ERROR_HANDSHAKE, "Handshake response timeout, closing connection"
-            )
+            ) from e
 
         logger.debug("river client get handshake response : %r", handshake_response)
         if not handshake_response.status.ok:
