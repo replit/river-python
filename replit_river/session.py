@@ -138,6 +138,11 @@ class Session(object):
                 try:
                     await self._handle_messages_from_ws(tg)
                 except ConnectionClosed:
+                    if self._retry_connection_callback:
+                        self._task_manager.create_task(
+                            self._retry_connection_callback()
+                        )
+
                     await self._begin_close_session_countdown()
                     logger.debug("ConnectionClosed while serving", exc_info=True)
                 except FailedSendingMessageException:
@@ -251,7 +256,7 @@ class Session(object):
             if not self._close_session_after_time_secs:
                 continue
             if current_time > self._close_session_after_time_secs:
-                logger.debug(
+                logger.info(
                     "Grace period ended for %s, closing session", self._transport_id
                 )
                 await self.close()
@@ -274,7 +279,7 @@ class Session(object):
                 return
             try:
                 await self.send_message(
-                    str(nanoid.generate()),
+                    "heartbeat",
                     # TODO: make this a message class
                     # https://github.com/replit/river/blob/741b1ea6d7600937ad53564e9cf8cd27a92ec36a/transport/message.ts#L42
                     {
@@ -290,7 +295,7 @@ class Session(object):
                     if self._close_session_after_time_secs is not None:
                         # already in grace period, no need to set again
                         continue
-                    logger.debug(
+                    logger.info(
                         "%r closing websocket because of heartbeat misses",
                         self.session_id,
                     )

@@ -73,7 +73,7 @@ class Transport:
             session_to_close: Optional[Session] = None
             new_session: Optional[Session] = None
             if to_id not in self._sessions:
-                logger.debug(
+                logger.info(
                     'Creating new session with "%s" using ws: %s', to_id, websocket.id
                 )
                 new_session = Session(
@@ -89,7 +89,7 @@ class Transport:
             else:
                 old_session = self._sessions[to_id]
                 if old_session.session_id != session_id:
-                    logger.debug(
+                    logger.info(
                         'Create new session with "%s" for session id %s'
                         " and close old session %s",
                         to_id,
@@ -122,7 +122,7 @@ class Transport:
                         raise e
 
             if session_to_close:
-                logger.debug("Closing stale session %s", session_to_close.session_id)
+                logger.info("Closing stale session %s", session_to_close.session_id)
                 await session_to_close.close()
             self._set_session(new_session)
         return new_session
