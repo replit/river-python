@@ -98,6 +98,7 @@ class ClientTransport(Transport):
         rate_limit = self._rate_limiter
         max_retry = self._transport_options.connection_retry_options.max_retry
         client_id = self._client_id
+        logger.info(f"Attempting to establish new ws connection")
         for i in range(max_retry):
             if i > 0:
                 logger.info(f"Retrying build handshake number {i} times")
@@ -143,6 +144,7 @@ class ClientTransport(Transport):
     async def _create_new_session(
         self,
     ) -> ClientSession:
+        logger.info("Creating new session")
         new_ws, hs_request, hs_response = await self._establish_new_connection()
         if not hs_response.status.ok:
             message = hs_response.status.reason
@@ -186,9 +188,14 @@ class ClientTransport(Transport):
                 existing_session
             )
             if hs_response.status.sessionId == existing_session.session_id:
+                logger.info(
+                    "Replacing ws connection in session id %s",
+                    existing_session.session_id,
+                )
                 await existing_session.replace_with_new_websocket(new_ws)
                 return existing_session
             else:
+                logger.info("Closing stale session %s", existing_session.session_id)
                 await existing_session.close()
                 return await self._create_new_session()
 
