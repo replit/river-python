@@ -12,7 +12,7 @@ keywords = ["rpc", "websockets"]
 readme = "README.md"
 
 [tool.poetry.scripts]
-river-codegen-py = "river.codegen:run"
+river-codegen-py = "replit_river.codegen.run:main"
 
 [tool.poetry.dependencies]
 python = "^3.11"
