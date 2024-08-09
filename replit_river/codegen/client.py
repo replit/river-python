@@ -206,7 +206,7 @@ def generate_river_client_module(
         "import datetime",
         "from typing import Any, Dict, List, Literal, Optional, Mapping, Union, Tuple",
         "",
-        "from pydantic import BaseModel, Field, parse_obj_as",
+        "from pydantic import BaseModel, Field, TypeAdapter",
         "from replit_river.error_schema import RiverError",
         "",
         "import replit_river as river",
@@ -243,21 +243,22 @@ def generate_river_client_module(
                 if error_type == "None":
                     error_type = "RiverError"
                     output_or_error_type = f"Union[{output_type}, {error_type}]"
-                    error_encoder = f"parse_obj_as({error_type}, x)"
+                    error_encoder = f"TypeAdapter({error_type}).validate_python(x)"
                 else:
                     output_or_error_type = f"Union[{output_type}, {error_type}]"
-                    error_encoder = f"parse_obj_as({error_type}, x)"
+                    error_encoder = f"TypeAdapter({error_type}).validate_python(x)"
                     chunks.extend(errors_chunks)
             else:
                 error_type = "RiverError"
                 output_or_error_type = f"Union[{output_type}, {error_type}]"
-                error_encoder = f"parse_obj_as({error_type}, x)"
+                error_encoder = f"TypeAdapter({error_type}).validate_python(x)"
 
-            output_encoder = f"parse_obj_as({output_type}, x)"
+            output_encoder = f"TypeAdapter({output_type}).validate_python(x)"
             if output_type == "None":
                 output_encoder = "None"
-            # TODO: mypy ignore is added because parse_obj_as cannot handle Union types,
-            # it should be fixed by making parse_output_method type aware.
+            # TODO: mypy ignore is added because TypeAdapter(...).validate_python
+            # cannot handle Union types, it should be fixed by making
+            # parse_output_method type aware.
             parse_output_method = (
                 f"lambda x: {output_encoder}, # type: ignore[arg-type]"
             )
@@ -308,7 +309,7 @@ def generate_river_client_module(
                 )
             elif procedure.type == "upload":
                 control_flow_keyword = "return "
-                output_encoder = f"parse_obj_as({output_type}, x)"
+                output_encoder = f"TypeAdapter({output_type}).validate_python(x)"
                 if output_type == "None":
                     control_flow_keyword = ""
                     output_encoder = "None"
@@ -325,7 +326,7 @@ def generate_river_client_module(
                             f"      '{name}',",
                             "      init,",
                             "      inputStream,",
-                            f"      lambda x: parse_obj_as({init_type}, x),",
+                            f"      lambda x: TypeAdapter({init_type}).validate_python(x),",
                             "      lambda x: x.model_dump(",
                             "        by_alias=True,",
                             "        exclude_none=True,",
@@ -371,7 +372,7 @@ def generate_river_client_module(
                             f"      '{name}',",
                             "      init,",
                             "      inputStream,",
-                            f"     lambda x: parse_obj_as({init_type}, x),",
+                            f"     lambda x: TypeAdapter({init_type}).validate_python(x),",
                             "      lambda x: x.model_dump(",
                             "        by_alias=True,",
                             "        exclude_none=True,",
