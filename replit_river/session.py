@@ -210,7 +210,7 @@ class Session(object):
                     continue
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
-                    await ws_wrapper.close()
+                    await ws_wrapper.close(self._task_manager)
                     return
                 except InvalidMessageException:
                     logger.exception("Got invalid transport message, closing session")
@@ -227,7 +227,7 @@ class Session(object):
             old_ws_id = old_wrapper.ws.id
             if new_ws.id != old_ws_id:
                 self._reset_session_close_countdown()
-                await old_wrapper.close()
+                await old_wrapper.close(self._task_manager)
             self._ws_wrapper = WebsocketWrapper(new_ws)
         await self._send_buffered_messages(new_ws)
         # Server will call serve itself.
@@ -445,7 +445,7 @@ class Session(object):
             # Already closed.
             if not await ws_wrapper.is_open():
                 return
-            await ws_wrapper.close()
+            await ws_wrapper.close(self._task_manager)
         if should_retry and self._retry_connection_callback:
             self._task_manager.create_task(self._retry_connection_callback())
 
