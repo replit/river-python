@@ -251,18 +251,26 @@ def generate_river_client_module(
             else:
                 error_type = "RiverError"
             output_or_error_type = f"Union[{output_type}, {error_type}]"
-            error_encoder = f"TypeAdapter({error_type}).validate_python(x)"
 
-            output_encoder = f"TypeAdapter({output_type}).validate_python(x)"
+            # NB: These strings must be indented to at least the same level of
+            #     the function strings in the branches below, otherwise `dedent`
+            #     will pick our indentation level for normalization, which will
+            #     break the "def" indentation presuppositions.
+            parse_output_method = f"""\
+                                lambda x: TypeAdapter({output_type})
+                                    .validate_python(
+                                        x # type: ignore[arg-type]
+                                    )
+                """.strip()
+            parse_error_method = f"""\
+                                lambda x: TypeAdapter({error_type})
+                                    .validate_python(
+                                        x # type: ignore[arg-type]
+                                    )
+                """.strip()
+
             if output_type == "None":
-                output_encoder = "None"
-            # TODO: mypy ignore is added because TypeAdapter(...).validate_python
-            # cannot handle Union types, it should be fixed by making
-            # parse_output_method type aware.
-            parse_output_method = (
-                f"lambda x: {output_encoder}, # type: ignore[arg-type]"
-            )
-            parse_error_method = f"lambda x: {error_encoder}, # type: ignore[arg-type]"
+                parse_output_method = "lambda x: None"
 
             if procedure.type == "rpc":
                 control_flow_keyword = "return "
@@ -287,8 +295,8 @@ def generate_river_client_module(
                             by_alias=True,
                             exclude_none=True,
                           ),
-                        {parse_output_method}
-                        {parse_error_method}
+                        {parse_output_method},
+                        {parse_error_method},
                       )
                         """
                             ),
@@ -316,8 +324,8 @@ def generate_river_client_module(
                             by_alias=True,
                             exclude_none=True,
                           ),
-                        {parse_output_method}
-                        {parse_error_method}
+                        {parse_output_method},
+                        {parse_error_method},
                       )
                       """
                             ),
@@ -327,10 +335,8 @@ def generate_river_client_module(
                 )
             elif procedure.type == "upload":
                 control_flow_keyword = "return "
-                output_encoder = f"TypeAdapter({output_type}).validate_python(x)"
                 if output_type == "None":
                     control_flow_keyword = ""
-                    output_encoder = "None"
                 if init_type:
                     current_chunks.extend(
                         [
@@ -354,8 +360,8 @@ def generate_river_client_module(
                                 by_alias=True,
                                 exclude_none=True,
                               ),
-                            {parse_output_method}
-                            {parse_error_method}
+                            {parse_output_method},
+                            {parse_error_method},
                           )
                             """
                                 ),
@@ -385,8 +391,8 @@ def generate_river_client_module(
                                 by_alias=True,
                                 exclude_none=True,
                               ),
-                            {parse_output_method}
-                            {parse_error_method}
+                            {parse_output_method},
+                            {parse_error_method},
                           )
                             """
                                 ),
@@ -418,8 +424,8 @@ def generate_river_client_module(
                                 by_alias=True,
                                 exclude_none=True,
                               ),
-                            {parse_output_method}
-                            {parse_error_method}
+                            {parse_output_method},
+                            {parse_error_method},
                           )
                             """
                                 ),
@@ -449,8 +455,8 @@ def generate_river_client_module(
                                 by_alias=True,
                                 exclude_none=True,
                               ),
-                            {parse_output_method}
-                            {parse_error_method}
+                            {parse_output_method},
+                            {parse_error_method},
                           )
                             """
                                 ),
