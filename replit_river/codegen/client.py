@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, Union
 
 import black
 from pydantic import BaseModel, Field, RootModel
@@ -36,7 +36,9 @@ class RiverProcedure(BaseModel):
     input: RiverType
     output: RiverType
     errors: Optional[RiverType] = Field(default=None)
-    type: str
+    type: (
+        Literal["rpc"] | Literal["stream"] | Literal["subscription"] | Literal["upload"]
+    )
 
 
 class RiverSchema(BaseModel):
