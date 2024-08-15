@@ -246,16 +246,12 @@ def generate_river_client_module(
                 )
                 if error_type == "None":
                     error_type = "RiverError"
-                    output_or_error_type = f"Union[{output_type}, {error_type}]"
-                    error_encoder = f"TypeAdapter({error_type}).validate_python(x)"
                 else:
-                    output_or_error_type = f"Union[{output_type}, {error_type}]"
-                    error_encoder = f"TypeAdapter({error_type}).validate_python(x)"
                     chunks.extend(errors_chunks)
             else:
                 error_type = "RiverError"
-                output_or_error_type = f"Union[{output_type}, {error_type}]"
-                error_encoder = f"TypeAdapter({error_type}).validate_python(x)"
+            output_or_error_type = f"Union[{output_type}, {error_type}]"
+            error_encoder = f"TypeAdapter({error_type}).validate_python(x)"
 
             output_encoder = f"TypeAdapter({output_type}).validate_python(x)"
             if output_type == "None":
