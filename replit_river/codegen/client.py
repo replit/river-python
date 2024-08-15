@@ -39,6 +39,7 @@ class RiverProcedure(BaseModel):
     type: (
         Literal["rpc"] | Literal["stream"] | Literal["subscription"] | Literal["upload"]
     )
+    description: Optional[str] = Field(default=None)
 
 
 class RiverSchema(BaseModel):
