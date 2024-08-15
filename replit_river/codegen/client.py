@@ -489,9 +489,11 @@ def schema_to_river_client_codegen(
     with open(schema_path) as f:
         schemas = RiverSchemaFile(json.load(f))
     with open(target_path, "w") as f:
-        f.write(
-            black.format_str(
-                "\n".join(generate_river_client_module(client_name, schemas.root)),
-                mode=black.FileMode(string_normalization=False),
+        s = "\n".join(generate_river_client_module(client_name, schemas.root))
+        try:
+            f.write(
+                black.format_str(s, mode=black.FileMode(string_normalization=False))
             )
-        )
+        except:
+            f.write(s)
+            raise
