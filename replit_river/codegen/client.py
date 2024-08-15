@@ -1,7 +1,18 @@
 import json
 import re
 from textwrap import dedent, indent
-from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    OrderedDict,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 import black
 from pydantic import BaseModel, Field, RootModel
@@ -92,7 +103,7 @@ def encode_type(
             if len(literal_fields) == 1:
                 # Hooray! we found a discriminated union.
                 discriminator_name = literal_fields.pop()
-                one_of: List[str] = []
+                one_of_pending = OrderedDict[str, list[RiverConcreteType]]()
 
                 for oneof_t in one_of_candidate_types:
                     discriminator_value = [
@@ -102,11 +113,24 @@ def encode_type(
                         and name == discriminator_name
                         and prop.const is not None
                     ].pop()
-                    type_name, type_chunks = encode_type(
-                        oneof_t, f"{prefix}OneOf_{discriminator_value}", base_model
-                    )
-                    chunks.extend(type_chunks)
-                    one_of.append(type_name)
+                    one_of_pending.setdefault(
+                        f"{prefix}OneOf_{discriminator_value}", []
+                    ).append(oneof_t)
+
+                one_of: List[str] = []
+                for pfx, oneof_ts in one_of_pending.items():
+                    if len(oneof_ts) > 1:
+                        for i, oneof_t in enumerate(oneof_ts):
+                            type_name, type_chunks = encode_type(
+                                oneof_ts[i], f"{pfx}{i}", base_model
+                            )
+                            chunks.extend(type_chunks)
+                            one_of.append(type_name)
+                    else:
+                        oneof_t = oneof_ts[0]
+                        type_name, type_chunks = encode_type(oneof_t, pfx, base_model)
+                        chunks.extend(type_chunks)
+                        one_of.append(type_name)
                 if discriminator_name == "$kind":
                     discriminator_name = "kind"
                 chunks.append(f"{prefix} = Union[" + ", ".join(one_of) + "]")
