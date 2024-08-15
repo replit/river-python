@@ -287,7 +287,7 @@ def generate_river_client_module(
                         input,
                         lambda x: TypeAdapter({input_type})
                           .dump_python(
-                            x,
+                            x, # type: ignore[arg-type]
                             by_alias=True,
                             exclude_none=True,
                           ),
@@ -316,7 +316,7 @@ def generate_river_client_module(
                         input,
                         lambda x: TypeAdapter({input_type})
                           .dump_python(
-                            x,
+                            x, # type: ignore[arg-type]
                             by_alias=True,
                             exclude_none=True,
                           ),
@@ -354,7 +354,7 @@ def generate_river_client_module(
                             TypeAdapter({init_type}).validate_python,
                             lambda x: TypeAdapter({input_type})
                               .dump_python(
-                                x,
+                                x, # type: ignore[arg-type]
                                 by_alias=True,
                                 exclude_none=True,
                               ),
@@ -385,7 +385,7 @@ def generate_river_client_module(
                             None,
                             lambda x: TypeAdapter({input_type})
                               .dump_python(
-                                x,
+                                x, # type: ignore[arg-type]
                                 by_alias=True,
                                 exclude_none=True,
                               ),
@@ -418,7 +418,7 @@ def generate_river_client_module(
                             TypeAdapter({init_type}).validate_python,
                             lambda x: TypeAdapter({input_type})
                               .dump_python(
-                                x,
+                                x, # type: ignore[arg-type]
                                 by_alias=True,
                                 exclude_none=True,
                               ),
@@ -449,7 +449,7 @@ def generate_river_client_module(
                             None,
                             lambda x: TypeAdapter({input_type})
                               .dump_python(
-                                x,
+                                x, # type: ignore[arg-type]
                                 by_alias=True,
                                 exclude_none=True,
                               ),
