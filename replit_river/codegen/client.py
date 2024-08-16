@@ -86,6 +86,8 @@ def encode_type(
     if isinstance(type, RiverNotType):
         return ("None", ())
     if isinstance(type, RiverUnionType):
+        typeddict_encoder = list[str]()
+
         # First check if it's a discriminated union. Typebox currently doesn't have
         # a way of expressing the intention of having a discriminated union. So we
         # do a bit of detection if that is structurally true by checking that all the
@@ -132,7 +134,7 @@ def encode_type(
             if len(literal_fields) == 1:
                 # Hooray! we found a discriminated union.
                 discriminator_name = literal_fields.pop()
-                one_of_pending = OrderedDict[str, list[RiverConcreteType]]()
+                one_of_pending = OrderedDict[str, tuple[str, list[RiverConcreteType]]]()
 
                 for oneof_t in one_of_candidate_types:
                     discriminator_value = [
@@ -143,11 +145,14 @@ def encode_type(
                         and prop.const is not None
                     ].pop()
                     one_of_pending.setdefault(
-                        f"{prefix}OneOf_{discriminator_value}", []
-                    ).append(oneof_t)
+                        f"{prefix}OneOf_{discriminator_value}",
+                        (discriminator_value, []),
+                    )[1].append(oneof_t)
 
                 one_of: List[str] = []
-                for pfx, oneof_ts in one_of_pending.items():
+                if discriminator_name == "$kind":
+                    discriminator_name = "kind"
+                for pfx, (discriminator_value, oneof_ts) in one_of_pending.items():
                     if len(oneof_ts) > 1:
                         for i, oneof_t in enumerate(oneof_ts):
                             type_name, type_chunks = encode_type(
@@ -155,13 +160,29 @@ def encode_type(
                             )
                             chunks.extend(type_chunks)
                             one_of.append(type_name)
+                            typeddict_encoder.append("'not implemented'")
                     else:
                         oneof_t = oneof_ts[0]
                         type_name, type_chunks = encode_type(oneof_t, pfx, base_model)
                         chunks.extend(type_chunks)
                         one_of.append(type_name)
+                        typeddict_encoder.append(f"encode_{type_name}(x)")
+                    typeddict_encoder.append(
+                        f"""
+                            if x['{discriminator_name}']
+                            == '{discriminator_value}'
+                            else
+                        """,
+                    )
                 chunks.append(f"{prefix} = Union[" + ", ".join(one_of) + "]")
                 chunks.append("")
+
+                if base_model == "TypedDict":
+                    chunks.extend(
+                        [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
+                        + typeddict_encoder[:-1]
+                        + [")"]
+                    )
                 return (prefix, chunks)
             # End of stable union detection
         # Restore the non-flattened union type
@@ -270,9 +291,7 @@ def encode_type(
                         if prop.type == "object" and not prop.patternProperties:
                             typeddict_encoder.append(f"encode_{type_name}(x['{name}'])")
                         else:
-                            typeddict_encoder.append(
-                                f"x['{discriminator_name}']"
-                            )
+                            typeddict_encoder.append(f"x['{discriminator_name}']")
 
                 if name == "$kind":
                     # If the field is a literal, the Python type-checker will complain
