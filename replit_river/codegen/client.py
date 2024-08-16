@@ -154,13 +154,42 @@ def encode_type(
                     discriminator_name = "kind"
                 for pfx, (discriminator_value, oneof_ts) in one_of_pending.items():
                     if len(oneof_ts) > 1:
+                        typeddict_encoder.append("(")
+                        # Tricky bit. We need to derive our own discriminator based
+                        # on known members. Be careful.
+
+                        common_members = set[str]()
+                        for i, oneof_t in enumerate(oneof_ts):
+                            if i == 0:
+                                common_members = set(oneof_t.properties.keys())
+                            else:
+                                common_members.intersection_update(
+                                    oneof_t.properties.keys()
+                                )
+
                         for i, oneof_t in enumerate(oneof_ts):
                             type_name, type_chunks = encode_type(
                                 oneof_ts[i], f"{pfx}{i}", base_model
                             )
                             chunks.extend(type_chunks)
                             one_of.append(type_name)
-                            typeddict_encoder.append("'not implemented'")
+                            local_discriminators = set(
+                                oneof_t.properties.keys()
+                            ).difference(common_members)
+                            typeddict_encoder.append(
+                                f"""
+                                encode_{type_name}(x) # type: ignore[arg-type]
+                            """.strip()
+                            )
+                            if local_discriminators:
+                                local_discriminator = local_discriminators.pop()
+                            else:
+                                local_discriminator = "FIXME: Ambiguous discriminators"
+                            typeddict_encoder.append(
+                                f" if '{local_discriminator}' in x else "
+                            )
+                        typeddict_encoder.pop()  # Drop the last ternary
+                        typeddict_encoder.append(")")
                     else:
                         oneof_t = oneof_ts[0]
                         type_name, type_chunks = encode_type(oneof_t, pfx, base_model)
@@ -180,7 +209,7 @@ def encode_type(
                 if base_model == "TypedDict":
                     chunks.extend(
                         [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
-                        + typeddict_encoder[:-1]
+                        + typeddict_encoder[:-1]  # Drop the last ternary
                         + [")"]
                     )
                 return (prefix, chunks)
