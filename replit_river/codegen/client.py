@@ -290,6 +290,8 @@ def encode_type(
                     elif isinstance(prop, RiverConcreteType):
                         if prop.type == "object" and not prop.patternProperties:
                             typeddict_encoder.append(f"encode_{type_name}(x['{name}'])")
+                            if name not in prop.required:
+                                typeddict_encoder.append(f"if x['{name}'] else None")
                         else:
                             typeddict_encoder.append(f"x['{discriminator_name}']")
 
