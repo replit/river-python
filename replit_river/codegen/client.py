@@ -226,18 +226,23 @@ def encode_type(
                     if groups:
                         field_value = groups.group(1)
                     if name not in type.required:
-                        current_chunks.append(
-                            f"  kind: Optional[{type_name}] = "
-                            f"Field({field_value}, alias='{name}', default=None)"
-                        )
+                        value = ""
+                        if base_model != "TypedDict":
+                            value = (
+                                f" = Field({field_value}, alias='{name}', default=None)"
+                            )
+                        current_chunks.append(f"  kind: Optional[{type_name}]{value}")
                     else:
-                        current_chunks.append(
-                            f"  kind: {type_name} = "
-                            f"Field({field_value}, alias='{name}')"
-                        )
+                        value = ""
+                        if base_model != "TypedDict":
+                            value = f" = Field({field_value}, alias='{name}')"
+                        current_chunks.append(f"  kind: {type_name}{value}")
                 else:
                     if name not in type.required:
-                        current_chunks.append(f"  {name}: Optional[{type_name}] = None")
+                        value = ""
+                        if base_model != "TypedDict":
+                            value = " = None"
+                        current_chunks.append(f"  {name}: Optional[{type_name}]{value}")
                     else:
                         current_chunks.append(f"  {name}: {type_name}")
         else:
@@ -275,11 +280,15 @@ def generate_river_client_module(
             init_type: Optional[str] = None
             if procedure.init:
                 init_type, input_chunks = encode_type(
-                    procedure.init, f"{schema_name.title()}{name.title()}Init"
+                    procedure.init,
+                    f"{schema_name.title()}{name.title()}Init",
+                    base_model="TypedDict",
                 )
                 chunks.extend(input_chunks)
             input_type, input_chunks = encode_type(
-                procedure.input, f"{schema_name.title()}{name.title()}Input"
+                procedure.input,
+                f"{schema_name.title()}{name.title()}Input",
+                base_model="TypedDict",
             )
             chunks.extend(input_chunks)
             output_type, output_chunks = encode_type(
