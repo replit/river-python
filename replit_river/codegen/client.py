@@ -34,13 +34,19 @@ class RiverUnionType(BaseModel):
     anyOf: List["RiverType"]
 
 
+class RiverIntersectionType(BaseModel):
+    allOf: List["RiverType"]
+
+
 class RiverNotType(BaseModel):
     """This is used to represent void / never."""
 
     not_: Any = Field(..., alias="not")
 
 
-RiverType = Union[RiverConcreteType, RiverUnionType, RiverNotType]
+RiverType = Union[
+    RiverConcreteType, RiverUnionType, RiverNotType, RiverIntersectionType
+]
 
 
 class RiverProcedure(BaseModel):
@@ -167,6 +173,26 @@ def encode_type(
             any_of.append(type_name)
         chunks.append(f"{prefix} = Union[" + ", ".join(any_of) + "]")
         return (prefix, chunks)
+    if isinstance(type, RiverIntersectionType):
+
+        def extract_props(tpe: RiverType) -> list[dict[str, RiverType]]:
+            if isinstance(tpe, RiverUnionType):
+                return [t for p in tpe.anyOf for t in extract_props(p)]
+            elif isinstance(tpe, RiverConcreteType):
+                return [tpe.properties]
+            elif isinstance(tpe, RiverIntersectionType):
+                return [t for p in tpe.allOf for t in extract_props(p)]
+            else:
+                return []
+
+        combined = {}
+        for x in extract_props(type):
+            combined.update(x)
+        return encode_type(
+            RiverConcreteType(type="object", properties=combined),
+            prefix=prefix,
+            base_model=base_model,
+        )
     if isinstance(type, RiverConcreteType):
         if type.type is None:
             # Handle the case where type is not specified
