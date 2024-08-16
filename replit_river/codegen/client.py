@@ -73,9 +73,20 @@ def encode_type(
         # do a bit of detection if that is structurally true by checking that all the
         # types in the anyOf are objects, have properties, and have one property common
         # to all the alternatives that has a literal value.
+        def flatten_union(tpe: RiverType) -> list[RiverType]:
+            if isinstance(tpe, RiverUnionType):
+                return [u for t in tpe.anyOf for u in flatten_union(t)]
+            else:
+                return [tpe]
+
+        original_type = type
+
+        type = RiverUnionType(anyOf=flatten_union(type))
+
         one_of_candidate_types: List[RiverConcreteType] = [
             t
-            for t in type.anyOf
+            for _t in type.anyOf
+            for t in (_t.anyOf if isinstance(_t, RiverUnionType) else [_t])
             if isinstance(t, RiverConcreteType)
             and t.type == "object"
             and t.properties
@@ -136,6 +147,9 @@ def encode_type(
                 chunks.append(f"{prefix} = Union[" + ", ".join(one_of) + "]")
                 chunks.append("")
                 return (prefix, chunks)
+            # End of stable union detection
+        # Restore the non-flattened union type
+        type = original_type
         any_of: List[str] = []
         for i, t in enumerate(type.anyOf):
             type_name, type_chunks = encode_type(t, f"{prefix}AnyOf_{i}", base_model)
