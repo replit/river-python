@@ -217,11 +217,34 @@ def encode_type(
         # Restore the non-flattened union type
         type = original_type
         any_of: List[str] = []
+
+        def is_literal(tpe: RiverType) -> bool:
+            if isinstance(tpe, RiverUnionType):
+                return all(is_literal(t) for t in tpe.anyOf)
+            elif isinstance(tpe, RiverConcreteType):
+                return tpe.type in set(["string", "number", "boolean"])
+            else:
+                return False
+
+        typeddict_encoder = []
         for i, t in enumerate(type.anyOf):
             type_name, type_chunks = encode_type(t, f"{prefix}AnyOf_{i}", base_model)
             chunks.extend(type_chunks)
             any_of.append(type_name)
+            if isinstance(t, RiverConcreteType):
+                if t.type == "string":
+                    typeddict_encoder.extend(["x", " if isinstance(x, str) else "])
+                else:
+                    typeddict_encoder.append(f"encode_{type_name}(x)")
+        if is_literal(type):
+            typeddict_encoder = ["x"]
         chunks.append(f"{prefix} = Union[" + ", ".join(any_of) + "]")
+        if base_model == "TypedDict":
+            chunks.extend(
+                [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
+                + typeddict_encoder
+                + [")"]
+            )
         return (prefix, chunks)
     if isinstance(type, RiverIntersectionType):
 
@@ -310,10 +333,12 @@ def encode_type(
                 chunks.extend(type_chunks)
 
                 if base_model == "TypedDict":
-                    if isinstance(prop, RiverUnionType) or isinstance(
-                        prop, RiverNotType
-                    ):
+                    if isinstance(prop, RiverNotType):
                         typeddict_encoder.append("'not implemented'")
+                    elif isinstance(prop, RiverUnionType):
+                        typeddict_encoder.append(f"encode_{type_name}(x['{name}'])")
+                        if name not in type.required:
+                            typeddict_encoder.append(f"if x['{name}'] else None")
                     elif isinstance(prop, RiverIntersectionType):
                         typeddict_encoder.append(f"encode_{type_name}(x['{name}'])")
                     elif isinstance(prop, RiverConcreteType):
