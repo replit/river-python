@@ -342,12 +342,20 @@ def encode_type(
                     elif isinstance(prop, RiverIntersectionType):
                         typeddict_encoder.append(f"encode_{type_name}(x['{name}'])")
                     elif isinstance(prop, RiverConcreteType):
-                        if prop.type == "object" and not prop.patternProperties:
-                            typeddict_encoder.append(f"encode_{type_name}(x['{name}'])")
-                            if name not in prop.required:
-                                typeddict_encoder.append(f"if x['{name}'] else None")
+                        if name == "$kind":
+                            safe_name = "kind"
                         else:
-                            typeddict_encoder.append(f"x['{discriminator_name}']")
+                            safe_name = name
+                        if prop.type == "object" and not prop.patternProperties:
+                            typeddict_encoder.append(
+                                f"encode_{type_name}(x['{safe_name}'])"
+                            )
+                            if name not in prop.required:
+                                typeddict_encoder.append(
+                                    f"if x['{safe_name}'] else None"
+                                )
+                        else:
+                            typeddict_encoder.append(f"x['{safe_name}']")
 
                 if name == "$kind":
                     # If the field is a literal, the Python type-checker will complain
