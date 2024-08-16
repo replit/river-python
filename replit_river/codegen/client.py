@@ -326,6 +326,8 @@ def generate_river_client_module(
                                     )
                 """.strip()
 
+            render_input_method = "lambda x: x"
+
             if output_type == "None":
                 parse_output_method = "lambda x: None"
 
@@ -333,6 +335,7 @@ def generate_river_client_module(
                 control_flow_keyword = "return "
                 if output_type == "None":
                     control_flow_keyword = ""
+
                 current_chunks.extend(
                     [
                         reindent(
@@ -346,12 +349,7 @@ def generate_river_client_module(
                         '{schema_name}',
                         '{name}',
                         input,
-                        lambda x: TypeAdapter({input_type})
-                          .dump_python(
-                            x, # type: ignore[arg-type]
-                            by_alias=True,
-                            exclude_none=True,
-                          ),
+                        {render_input_method},
                         {parse_output_method},
                         {parse_error_method},
                       )
@@ -373,12 +371,7 @@ def generate_river_client_module(
                         '{schema_name}',
                         '{name}',
                         input,
-                        lambda x: TypeAdapter({input_type})
-                          .dump_python(
-                            x, # type: ignore[arg-type]
-                            by_alias=True,
-                            exclude_none=True,
-                          ),
+                        {render_input_method},
                         {parse_output_method},
                         {parse_error_method},
                       )
@@ -407,12 +400,7 @@ def generate_river_client_module(
                             init,
                             inputStream,
                             TypeAdapter({init_type}).validate_python,
-                            lambda x: TypeAdapter({input_type})
-                              .dump_python(
-                                x, # type: ignore[arg-type]
-                                by_alias=True,
-                                exclude_none=True,
-                              ),
+                            {render_input_method},
                             {parse_output_method},
                             {parse_error_method},
                           )
@@ -436,12 +424,7 @@ def generate_river_client_module(
                             None,
                             inputStream,
                             None,
-                            lambda x: TypeAdapter({input_type})
-                              .dump_python(
-                                x, # type: ignore[arg-type]
-                                by_alias=True,
-                                exclude_none=True,
-                              ),
+                            {render_input_method},
                             {parse_output_method},
                             {parse_error_method},
                           )
@@ -467,12 +450,7 @@ def generate_river_client_module(
                             init,
                             inputStream,
                             TypeAdapter({init_type}).validate_python,
-                            lambda x: TypeAdapter({input_type})
-                              .dump_python(
-                                x, # type: ignore[arg-type]
-                                by_alias=True,
-                                exclude_none=True,
-                              ),
+                            {render_input_method},
                             {parse_output_method},
                             {parse_error_method},
                           )
@@ -496,12 +474,7 @@ def generate_river_client_module(
                             None,
                             inputStream,
                             None,
-                            lambda x: TypeAdapter({input_type})
-                              .dump_python(
-                                x, # type: ignore[arg-type]
-                                by_alias=True,
-                                exclude_none=True,
-                              ),
+                            {render_input_method},
                             {parse_output_method},
                             {parse_error_method},
                           )
