@@ -142,8 +142,6 @@ def encode_type(
                         type_name, type_chunks = encode_type(oneof_t, pfx, base_model)
                         chunks.extend(type_chunks)
                         one_of.append(type_name)
-                if discriminator_name == "$kind":
-                    discriminator_name = "kind"
                 chunks.append(f"{prefix} = Union[" + ", ".join(one_of) + "]")
                 chunks.append("")
                 return (prefix, chunks)
