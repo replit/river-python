@@ -434,6 +434,11 @@ def generate_river_client_module(
                 """.strip()
 
             render_input_method = f"encode_{input_type}"
+            if (
+                isinstance(procedure.input, RiverConcreteType)
+                and procedure.input.type != "object"
+            ):
+                render_input_method = "lambda x: x"
 
             if output_type == "None":
                 parse_output_method = "lambda x: None"
