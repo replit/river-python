@@ -1,6 +1,7 @@
 import json
 import re
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
+from textwrap import dedent, indent
+from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, Union
 
 import black
 from pydantic import BaseModel, Field, RootModel
@@ -36,7 +37,10 @@ class RiverProcedure(BaseModel):
     input: RiverType
     output: RiverType
     errors: Optional[RiverType] = Field(default=None)
-    type: str
+    type: (
+        Literal["rpc"] | Literal["stream"] | Literal["subscription"] | Literal["upload"]
+    )
+    description: Optional[str] = Field(default=None)
 
 
 class RiverService(BaseModel):
@@ -48,6 +52,14 @@ class RiverSchema(BaseModel):
 
 
 RiverSchemaFile = RootModel[RiverSchema]
+
+
+def reindent(prefix: str, code: str) -> str:
+    """
+    Take an arbitrarily indented code block, dedent to the lowest common
+    indent level and then reindent based on the supplied prefix
+    """
+    return indent(dedent(code), prefix)
 
 
 def encode_type(
@@ -246,27 +258,31 @@ def generate_river_client_module(
                 )
                 if error_type == "None":
                     error_type = "RiverError"
-                    output_or_error_type = f"Union[{output_type}, {error_type}]"
-                    error_encoder = f"TypeAdapter({error_type}).validate_python(x)"
                 else:
-                    output_or_error_type = f"Union[{output_type}, {error_type}]"
-                    error_encoder = f"TypeAdapter({error_type}).validate_python(x)"
                     chunks.extend(errors_chunks)
             else:
                 error_type = "RiverError"
-                output_or_error_type = f"Union[{output_type}, {error_type}]"
-                error_encoder = f"TypeAdapter({error_type}).validate_python(x)"
+            output_or_error_type = f"Union[{output_type}, {error_type}]"
 
-            output_encoder = f"TypeAdapter({output_type}).validate_python(x)"
+            # NB: These strings must be indented to at least the same level of
+            #     the function strings in the branches below, otherwise `dedent`
+            #     will pick our indentation level for normalization, which will
+            #     break the "def" indentation presuppositions.
+            parse_output_method = f"""\
+                                lambda x: TypeAdapter({output_type})
+                                    .validate_python(
+                                        x # type: ignore[arg-type]
+                                    )
+                """.strip()
+            parse_error_method = f"""\
+                                lambda x: TypeAdapter({error_type})
+                                    .validate_python(
+                                        x # type: ignore[arg-type]
+                                    )
+                """.strip()
+
             if output_type == "None":
-                output_encoder = "None"
-            # TODO: mypy ignore is added because TypeAdapter(...).validate_python
-            # cannot handle Union types, it should be fixed by making
-            # parse_output_method type aware.
-            parse_output_method = (
-                f"lambda x: {output_encoder}, # type: ignore[arg-type]"
-            )
-            parse_error_method = f"lambda x: {error_encoder}, # type: ignore[arg-type]"
+                parse_output_method = "lambda x: None"
 
             if procedure.type == "rpc":
                 control_flow_keyword = "return "
@@ -274,138 +290,178 @@ def generate_river_client_module(
                     control_flow_keyword = ""
                 current_chunks.extend(
                     [
-                        f"  async def {name}(",
-                        "    self,",
-                        f"    input: {input_type},",
-                        f"  ) -> {output_type}:"
-                        f"    {control_flow_keyword}await self.client.send_rpc(",
-                        f"      '{schema_name}',",
-                        f"      '{name}',",
-                        "      input,",
-                        f"      lambda x: TypeAdapter({input_type}).dump_python(x, ",
-                        "        by_alias=True,",
-                        "        exclude_none=True,",
-                        "      ),",
-                        f"     {parse_output_method}",
-                        f"     {parse_error_method}",
-                        "    )",
+                        reindent(
+                            "  ",
+                            f"""\
+                    async def {name}(
+                      self,
+                      input: {input_type},
+                    ) -> {output_type}:
+                      {control_flow_keyword}await self.client.send_rpc(
+                        '{schema_name}',
+                        '{name}',
+                        input,
+                        lambda x: TypeAdapter({input_type})
+                          .dump_python(
+                            x, # type: ignore[arg-type]
+                            by_alias=True,
+                            exclude_none=True,
+                          ),
+                        {parse_output_method},
+                        {parse_error_method},
+                      )
+                        """,
+                        )
                     ]
                 )
             elif procedure.type == "subscription":
                 current_chunks.extend(
                     [
-                        f"  async def {name}(",
-                        "    self,",
-                        f"    input: {input_type},",
-                        f") -> AsyncIterator[{output_or_error_type}]:",
-                        "    return await self.client.send_subscription(",
-                        f"      '{schema_name}',",
-                        f"      '{name}',",
-                        "      input,",
-                        f"      lambda x: TypeAdapter({input_type}).dump_python(x,",
-                        "        by_alias=True,",
-                        "        exclude_none=True,",
-                        "      ),",
-                        f"     {parse_output_method}",
-                        f"     {parse_error_method}",
-                        "    )",
+                        reindent(
+                            "  ",
+                            f"""\
+                    async def {name}(
+                      self,
+                      input: {input_type},
+                    ) -> AsyncIterator[{output_or_error_type}]:
+                      return await self.client.send_subscription(
+                        '{schema_name}',
+                        '{name}',
+                        input,
+                        lambda x: TypeAdapter({input_type})
+                          .dump_python(
+                            x, # type: ignore[arg-type]
+                            by_alias=True,
+                            exclude_none=True,
+                          ),
+                        {parse_output_method},
+                        {parse_error_method},
+                      )
+                      """,
+                        )
                     ]
                 )
             elif procedure.type == "upload":
                 control_flow_keyword = "return "
-                output_encoder = f"TypeAdapter({output_type}).validate_python(x)"
                 if output_type == "None":
                     control_flow_keyword = ""
-                    output_encoder = "None"
                 if init_type:
                     current_chunks.extend(
                         [
-                            f"  async def {name}(",
-                            "    self,",
-                            f"    init: {init_type},",
-                            f"    inputStream: AsyncIterable[{input_type}],",
-                            f"  ) -> {output_type}:",
-                            f"    {control_flow_keyword}await self.client.send_upload(",
-                            f"      '{schema_name}',",
-                            f"      '{name}',",
-                            "      init,",
-                            "      inputStream,",
-                            f"      TypeAdapter({init_type}).validate_python,",
-                            f"      lambda x: TypeAdapter({input_type}).dump_python(x,",
-                            "        by_alias=True,",
-                            "        exclude_none=True,",
-                            "      ),",
-                            f"     {parse_output_method}",
-                            f"     {parse_error_method}",
-                            "    )",
+                            reindent(
+                                "  ",
+                                f"""\
+                        async def {name}(
+                          self,
+                          init: {init_type},
+                          inputStream: AsyncIterable[{input_type}],
+                        ) -> {output_type}:
+                          {control_flow_keyword}await self.client.send_upload(
+                            '{schema_name}',
+                            '{name}',
+                            init,
+                            inputStream,
+                            TypeAdapter({init_type}).validate_python,
+                            lambda x: TypeAdapter({input_type})
+                              .dump_python(
+                                x, # type: ignore[arg-type]
+                                by_alias=True,
+                                exclude_none=True,
+                              ),
+                            {parse_output_method},
+                            {parse_error_method},
+                          )
+                            """,
+                            )
                         ]
                     )
                 else:
                     current_chunks.extend(
                         [
-                            f"  async def {name}(",
-                            "    self,",
-                            f"    inputStream: AsyncIterable[{input_type}],"
-                            f"  ) -> {output_or_error_type}:",
-                            f"    {control_flow_keyword}await self.client.send_upload(",
-                            f"      '{schema_name}',",
-                            f"      '{name}',",
-                            "     None,",
-                            "     inputStream,",
-                            "     None,",
-                            f"      lambda x: TypeAdapter({input_type}).dump_python(x,",
-                            "        by_alias=True,",
-                            "        exclude_none=True,",
-                            "      ),",
-                            f"     {parse_output_method}",
-                            f"     {parse_error_method}",
-                            "    )",
+                            reindent(
+                                "  ",
+                                f"""\
+                        async def {name}(
+                          self,
+                          inputStream: AsyncIterable[{input_type}],
+                        ) -> {output_or_error_type}:
+                          {control_flow_keyword}await self.client.send_upload(
+                            '{schema_name}',
+                            '{name}',
+                            None,
+                            inputStream,
+                            None,
+                            lambda x: TypeAdapter({input_type})
+                              .dump_python(
+                                x, # type: ignore[arg-type]
+                                by_alias=True,
+                                exclude_none=True,
+                              ),
+                            {parse_output_method},
+                            {parse_error_method},
+                          )
+                            """,
+                            )
                         ]
                     )
             elif procedure.type == "stream":
                 if init_type:
                     current_chunks.extend(
                         [
-                            f"  async def {name}(",
-                            "    self,",
-                            f"    init: {init_type},",
-                            f"    inputStream: AsyncIterable[{input_type}],",
-                            f"  ) -> AsyncIterator[{output_or_error_type}]:",
-                            "    return await self.client.send_stream(",
-                            f"      '{schema_name}',",
-                            f"      '{name}',",
-                            "      init,",
-                            "      inputStream,",
-                            f"     TypeAdapter({init_type}).validate_python,",
-                            f"      lambda x: TypeAdapter({input_type}).dump_python(x,",
-                            "        by_alias=True,",
-                            "        exclude_none=True,",
-                            "      ),",
-                            f"     {parse_output_method}",
-                            f"     {parse_error_method}",
-                            "    )",
+                            reindent(
+                                "  ",
+                                f"""\
+                        async def {name}(
+                          self,
+                          init: {init_type},
+                          inputStream: AsyncIterable[{input_type}],
+                        ) -> AsyncIterator[{output_or_error_type}]:
+                          return await self.client.send_stream(
+                            '{schema_name}',
+                            '{name}',
+                            init,
+                            inputStream,
+                            TypeAdapter({init_type}).validate_python,
+                            lambda x: TypeAdapter({input_type})
+                              .dump_python(
+                                x, # type: ignore[arg-type]
+                                by_alias=True,
+                                exclude_none=True,
+                              ),
+                            {parse_output_method},
+                            {parse_error_method},
+                          )
+                            """,
+                            )
                         ]
                     )
                 else:
                     current_chunks.extend(
                         [
-                            f"  async def {name}(",
-                            "    self,",
-                            f"    inputStream: AsyncIterable[{input_type}],",
-                            f") -> AsyncIterator[{output_or_error_type}]:",
-                            "    return await self.client.send_stream(",
-                            f"      '{schema_name}',",
-                            f"      '{name}',",
-                            "      None,",
-                            "      inputStream,",
-                            "      None,",
-                            f"      lambda x: TypeAdapter({input_type}).dump_python(x,",
-                            "        by_alias=True,",
-                            "        exclude_none=True,",
-                            "      ),",
-                            f"     {parse_output_method}",
-                            f"     {parse_error_method}",
-                            "    )",
+                            reindent(
+                                "  ",
+                                f"""\
+                        async def {name}(
+                          self,
+                          inputStream: AsyncIterable[{input_type}],
+                        ) -> AsyncIterator[{output_or_error_type}]:
+                          return await self.client.send_stream(
+                            '{schema_name}',
+                            '{name}',
+                            None,
+                            inputStream,
+                            None,
+                            lambda x: TypeAdapter({input_type})
+                              .dump_python(
+                                x, # type: ignore[arg-type]
+                                by_alias=True,
+                                exclude_none=True,
+                              ),
+                            {parse_output_method},
+                            {parse_error_method},
+                          )
+                            """,
+                            )
                         ]
                     )
 
@@ -433,9 +489,11 @@ def schema_to_river_client_codegen(
     with open(schema_path) as f:
         schemas = RiverSchemaFile(json.load(f))
     with open(target_path, "w") as f:
-        f.write(
-            black.format_str(
-                "\n".join(generate_river_client_module(client_name, schemas.root)),
-                mode=black.FileMode(string_normalization=False),
+        s = "\n".join(generate_river_client_module(client_name, schemas.root))
+        try:
+            f.write(
+                black.format_str(s, mode=black.FileMode(string_normalization=False))
             )
-        )
+        except:
+            f.write(s)
+            raise
