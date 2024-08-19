@@ -1,7 +1,18 @@
 import json
 import re
 from textwrap import dedent, indent
-from typing import Any, Dict, List, Literal, Optional, Sequence, Set, Tuple, Union
+from typing import (
+    Any,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    OrderedDict,
+    Sequence,
+    Set,
+    Tuple,
+    Union,
+)
 
 import black
 from pydantic import BaseModel, Field, RootModel
@@ -74,9 +85,20 @@ def encode_type(
         # do a bit of detection if that is structurally true by checking that all the
         # types in the anyOf are objects, have properties, and have one property common
         # to all the alternatives that has a literal value.
+        def flatten_union(tpe: RiverType) -> list[RiverType]:
+            if isinstance(tpe, RiverUnionType):
+                return [u for t in tpe.anyOf for u in flatten_union(t)]
+            else:
+                return [tpe]
+
+        original_type = type
+
+        type = RiverUnionType(anyOf=flatten_union(type))
+
         one_of_candidate_types: List[RiverConcreteType] = [
             t
-            for t in type.anyOf
+            for _t in type.anyOf
+            for t in (_t.anyOf if isinstance(_t, RiverUnionType) else [_t])
             if isinstance(t, RiverConcreteType)
             and t.type == "object"
             and t.properties
@@ -104,7 +126,7 @@ def encode_type(
             if len(literal_fields) == 1:
                 # Hooray! we found a discriminated union.
                 discriminator_name = literal_fields.pop()
-                one_of: List[str] = []
+                one_of_pending = OrderedDict[str, list[RiverConcreteType]]()
 
                 for oneof_t in one_of_candidate_types:
                     discriminator_value = [
@@ -114,16 +136,30 @@ def encode_type(
                         and name == discriminator_name
                         and prop.const is not None
                     ].pop()
-                    type_name, type_chunks = encode_type(
-                        oneof_t, f"{prefix}OneOf_{discriminator_value}", base_model
-                    )
-                    chunks.extend(type_chunks)
-                    one_of.append(type_name)
-                if discriminator_name == "$kind":
-                    discriminator_name = "kind"
+                    one_of_pending.setdefault(
+                        f"{prefix}OneOf_{discriminator_value}", []
+                    ).append(oneof_t)
+
+                one_of: List[str] = []
+                for pfx, oneof_ts in one_of_pending.items():
+                    if len(oneof_ts) > 1:
+                        for i, oneof_t in enumerate(oneof_ts):
+                            type_name, type_chunks = encode_type(
+                                oneof_ts[i], f"{pfx}{i}", base_model
+                            )
+                            chunks.extend(type_chunks)
+                            one_of.append(type_name)
+                    else:
+                        oneof_t = oneof_ts[0]
+                        type_name, type_chunks = encode_type(oneof_t, pfx, base_model)
+                        chunks.extend(type_chunks)
+                        one_of.append(type_name)
                 chunks.append(f"{prefix} = Union[" + ", ".join(one_of) + "]")
                 chunks.append("")
                 return (prefix, chunks)
+            # End of stable union detection
+        # Restore the non-flattened union type
+        type = original_type
         any_of: List[str] = []
         for i, t in enumerate(type.anyOf):
             type_name, type_chunks = encode_type(t, f"{prefix}AnyOf_{i}", base_model)
