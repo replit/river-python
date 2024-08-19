@@ -50,6 +50,14 @@ class RiverSchema(BaseModel):
 RiverSchemaFile = RootModel[Dict[str, RiverSchema]]
 
 
+def reindent(prefix: str, code: str) -> str:
+    """
+    Take an arbitrarily indented code block, dedent to the lowest common
+    indent level and then reindent based on the supplied prefix
+    """
+    return indent(dedent(code), prefix)
+
+
 def encode_type(
     type: RiverType, prefix: str, base_model: str = "BaseModel"
 ) -> Tuple[str, Sequence[str]]:
@@ -278,9 +286,9 @@ def generate_river_client_module(
                     control_flow_keyword = ""
                 current_chunks.extend(
                     [
-                        indent(
-                            dedent(
-                                f"""\
+                        reindent(
+                            "  ",
+                            f"""\
                     async def {name}(
                       self,
                       input: {input_type},
@@ -298,18 +306,16 @@ def generate_river_client_module(
                         {parse_output_method},
                         {parse_error_method},
                       )
-                        """
-                            ),
-                            "  ",
+                        """,
                         )
                     ]
                 )
             elif procedure.type == "subscription":
                 current_chunks.extend(
                     [
-                        indent(
-                            dedent(
-                                f"""\
+                        reindent(
+                            "  ",
+                            f"""\
                     async def {name}(
                       self,
                       input: {input_type},
@@ -327,9 +333,7 @@ def generate_river_client_module(
                         {parse_output_method},
                         {parse_error_method},
                       )
-                      """
-                            ),
-                            "  ",
+                      """,
                         )
                     ]
                 )
@@ -340,9 +344,9 @@ def generate_river_client_module(
                 if init_type:
                     current_chunks.extend(
                         [
-                            indent(
-                                dedent(
-                                    f"""\
+                            reindent(
+                                "  ",
+                                f"""\
                         async def {name}(
                           self,
                           init: {init_type},
@@ -363,18 +367,16 @@ def generate_river_client_module(
                             {parse_output_method},
                             {parse_error_method},
                           )
-                            """
-                                ),
-                                "  ",
+                            """,
                             )
                         ]
                     )
                 else:
                     current_chunks.extend(
                         [
-                            indent(
-                                dedent(
-                                    f"""\
+                            reindent(
+                                "  ",
+                                f"""\
                         async def {name}(
                           self,
                           inputStream: AsyncIterable[{input_type}],
@@ -394,9 +396,7 @@ def generate_river_client_module(
                             {parse_output_method},
                             {parse_error_method},
                           )
-                            """
-                                ),
-                                "  ",
+                            """,
                             )
                         ]
                     )
@@ -404,9 +404,9 @@ def generate_river_client_module(
                 if init_type:
                     current_chunks.extend(
                         [
-                            indent(
-                                dedent(
-                                    f"""\
+                            reindent(
+                                "  ",
+                                f"""\
                         async def {name}(
                           self,
                           init: {init_type},
@@ -427,18 +427,16 @@ def generate_river_client_module(
                             {parse_output_method},
                             {parse_error_method},
                           )
-                            """
-                                ),
-                                "  ",
+                            """,
                             )
                         ]
                     )
                 else:
                     current_chunks.extend(
                         [
-                            indent(
-                                dedent(
-                                    f"""\
+                            reindent(
+                                "  ",
+                                f"""\
                         async def {name}(
                           self,
                           inputStream: AsyncIterable[{input_type}],
@@ -458,9 +456,7 @@ def generate_river_client_module(
                             {parse_output_method},
                             {parse_error_method},
                           )
-                            """
-                                ),
-                                "  ",
+                            """,
                             )
                         ]
                     )
