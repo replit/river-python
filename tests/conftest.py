@@ -36,7 +36,7 @@ def transport_message(
 ) -> TransportMessage:
     return TransportMessage(
         id=str(nanoid.generate()),
-        from_=from_,
+        from_=from_,  # type: ignore
         to=to,
         streamId=streamId,
         seq=seq,
