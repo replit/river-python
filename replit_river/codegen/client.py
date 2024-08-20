@@ -60,6 +60,7 @@ class RiverService(BaseModel):
 
 class RiverSchema(BaseModel):
     services: Dict[str, RiverService]
+    handshakeSchema: RiverConcreteType
 
 
 RiverSchemaFile = RootModel[RiverSchema]
@@ -264,12 +265,18 @@ def generate_river_client_module(
         "import replit_river as river",
         "",
     ]
+
+    (handshake_type, handshake_chunks) = encode_type(
+        schema_root.handshakeSchema, "HandshakeSchema"
+    )
+    chunks.extend(handshake_chunks)
+
     for schema_name, schema in schema_root.services.items():
         current_chunks: List[str] = [
             dedent(
                 f"""\
                   class {schema_name.title()}Service:
-                    def __init__(self, client: river.Client[Any]):
+                    def __init__(self, client: river.Client[{handshake_type}]):
                       self.client = client
                 """
             ),
@@ -512,7 +519,7 @@ def generate_river_client_module(
             dedent(
                 f"""\
                 class {client_name}:
-                  def __init__(self, client: river.Client[Any]):
+                  def __init__(self, client: river.Client[{handshake_type}]):
                 """.rstrip()
             )
         ]
