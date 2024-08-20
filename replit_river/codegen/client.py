@@ -269,7 +269,7 @@ def generate_river_client_module(
             dedent(
                 f"""\
                   class {schema_name.title()}Service:
-                    def __init__(self, client: river.Client):
+                    def __init__(self, client: river.Client[Any]):
                       self.client = client
                 """
             ),
@@ -512,7 +512,7 @@ def generate_river_client_module(
             dedent(
                 f"""\
                 class {client_name}:
-                  def __init__(self, client: river.Client):
+                  def __init__(self, client: river.Client[Any]):
                 """.rstrip()
             )
         ]

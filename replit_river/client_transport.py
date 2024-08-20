@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Optional, Tuple
+from typing import Generic, Optional, Tuple, TypeVar
 
 import websockets
 from pydantic import ValidationError
@@ -41,14 +41,17 @@ from replit_river.transport_options import TransportOptions
 logger = logging.getLogger(__name__)
 
 
-class ClientTransport(Transport):
+A = TypeVar("A")
+
+
+class ClientTransport(Transport, Generic[A]):
     def __init__(
         self,
         websocket_uri: str,
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
-        handshake_metadata: Optional[Any] = None,
+        handshake_metadata: Optional[A] = None,
     ):
         super().__init__(
             transport_id=client_id,
@@ -204,7 +207,7 @@ class ClientTransport(Transport):
         transport_id: str,
         to_id: str,
         session_id: str,
-        handshake_metadata: Optional[Any],
+        handshake_metadata: Optional[A],
         websocket: WebSocketCommonProtocol,
         expected_session_state: ExpectedSessionState,
     ) -> ControlMessageHandshakeRequest:
@@ -273,7 +276,7 @@ class ClientTransport(Transport):
         transport_id: str,
         to_id: str,
         session_id: str,
-        handshake_metadata: Optional[Any],
+        handshake_metadata: Optional[A],
         websocket: WebSocketCommonProtocol,
         old_session: Optional[ClientSession],
     ) -> Tuple[ControlMessageHandshakeRequest, ControlMessageHandshakeResponse]:
