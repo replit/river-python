@@ -7,6 +7,7 @@ from typing import (
     Callable,
     Coroutine,
     Dict,
+    Generic,
     Iterable,
     Literal,
     Mapping,
@@ -61,12 +62,15 @@ class ExpectedSessionState(BaseModel):
     nextSentSeq: Optional[int] = None
 
 
-class ControlMessageHandshakeRequest(BaseModel):
+HandshakeType = TypeVar("HandshakeType")
+
+
+class ControlMessageHandshakeRequest(BaseModel, Generic[HandshakeType]):
     type: Literal["HANDSHAKE_REQ"] = "HANDSHAKE_REQ"
     protocolVersion: str
     sessionId: str
     expectedSessionState: ExpectedSessionState
-    metadata: Optional[Any] = None
+    metadata: Optional[HandshakeType] = None
 
 
 class HandShakeStatus(BaseModel):

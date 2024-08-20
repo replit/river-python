@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from typing import Any, AsyncGenerator
+from typing import Any, AsyncGenerator, NoReturn
 
 import nanoid  # type: ignore
 import pytest
@@ -139,7 +139,7 @@ async def client(
 ) -> AsyncGenerator[Client, None]:
     try:
         async with serve(server.serve, "localhost", 8765):
-            client = Client(
+            client: Client[NoReturn] = Client(
                 "ws://localhost:8765",
                 client_id="test_client",
                 server_id="test_server",

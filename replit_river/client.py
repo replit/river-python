@@ -1,6 +1,6 @@
 import logging
 from collections.abc import AsyncIterable, AsyncIterator
-from typing import Any, Callable, Optional, Union
+from typing import Any, Callable, Generic, Optional, TypeVar, Union
 
 from replit_river.client_transport import ClientTransport
 from replit_river.transport_options import TransportOptions
@@ -15,18 +15,21 @@ from .rpc import (
 logger = logging.getLogger(__name__)
 
 
-class Client:
+HandshakeType = TypeVar("HandshakeType")
+
+
+class Client(Generic[HandshakeType]):
     def __init__(
         self,
         websocket_uri: str,
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
-        handshake_metadata: Optional[Any] = None,
+        handshake_metadata: Optional[HandshakeType] = None,
     ) -> None:
         self._client_id = client_id
         self._server_id = server_id
-        self._transport = ClientTransport(
+        self._transport = ClientTransport[HandshakeType](
             websocket_uri=websocket_uri,
             client_id=client_id,
             server_id=server_id,

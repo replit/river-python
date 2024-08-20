@@ -60,6 +60,7 @@ class RiverService(BaseModel):
 
 class RiverSchema(BaseModel):
     services: Dict[str, RiverService]
+    handshakeSchema: RiverConcreteType
 
 
 RiverSchemaFile = RootModel[RiverSchema]
@@ -264,12 +265,21 @@ def generate_river_client_module(
         "import replit_river as river",
         "",
     ]
+
+    (handshake_type, handshake_chunks) = encode_type(
+        schema_root.handshakeSchema, "HandshakeSchema"
+    )
+    chunks.extend(handshake_chunks)
+
     for schema_name, schema in schema_root.services.items():
         current_chunks: List[str] = [
-            f"class {schema_name.title()}Service:",
-            "  def __init__(self, client: river.Client):",
-            "    self.client = client",
-            "",
+            dedent(
+                f"""\
+                  class {schema_name.title()}Service:
+                    def __init__(self, client: river.Client[{handshake_type}]):
+                      self.client = client
+                """
+            ),
         ]
         for name, procedure in schema.procedures.items():
             init_type: Optional[str] = None
@@ -309,13 +319,13 @@ def generate_river_client_module(
                                     .validate_python(
                                         x # type: ignore[arg-type]
                                     )
-                """.strip()
+                """.rstrip()
             parse_error_method = f"""\
                                 lambda x: TypeAdapter({error_type})
                                     .validate_python(
                                         x # type: ignore[arg-type]
                                     )
-                """.strip()
+                """.rstrip()
 
             if output_type == "None":
                 parse_output_method = "lambda x: None"
@@ -506,8 +516,12 @@ def generate_river_client_module(
 
     chunks.extend(
         [
-            f"class {client_name}:",
-            "  def __init__(self, client: river.Client):",
+            dedent(
+                f"""\
+                class {client_name}:
+                  def __init__(self, client: river.Client[{handshake_type}]):
+                """.rstrip()
+            )
         ]
     )
     for schema_name, schema in schema_root.services.items():
