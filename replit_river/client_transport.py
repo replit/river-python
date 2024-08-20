@@ -94,7 +94,7 @@ class ClientTransport(Transport, Generic[A]):
         old_session: Optional[ClientSession] = None,
     ) -> Tuple[
         WebSocketCommonProtocol,
-        ControlMessageHandshakeRequest,
+        ControlMessageHandshakeRequest[A],
         ControlMessageHandshakeResponse,
     ]:
         """Build a new websocket connection with retry logic."""
@@ -210,8 +210,8 @@ class ClientTransport(Transport, Generic[A]):
         handshake_metadata: Optional[A],
         websocket: WebSocketCommonProtocol,
         expected_session_state: ExpectedSessionState,
-    ) -> ControlMessageHandshakeRequest:
-        handshake_request = ControlMessageHandshakeRequest(
+    ) -> ControlMessageHandshakeRequest[A]:
+        handshake_request = ControlMessageHandshakeRequest[A](
             type="HANDSHAKE_REQ",
             protocolVersion=PROTOCOL_VERSION,
             sessionId=session_id,
@@ -279,7 +279,7 @@ class ClientTransport(Transport, Generic[A]):
         handshake_metadata: Optional[A],
         websocket: WebSocketCommonProtocol,
         old_session: Optional[ClientSession],
-    ) -> Tuple[ControlMessageHandshakeRequest, ControlMessageHandshakeResponse]:
+    ) -> Tuple[ControlMessageHandshakeRequest[A], ControlMessageHandshakeResponse]:
         try:
             handshake_request = await self._send_handshake_request(
                 transport_id=transport_id,
