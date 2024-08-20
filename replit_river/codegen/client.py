@@ -60,7 +60,7 @@ class RiverService(BaseModel):
 
 class RiverSchema(BaseModel):
     services: Dict[str, RiverService]
-    handshakeSchema: RiverConcreteType
+    handshakeSchema: Optional[RiverConcreteType]
 
 
 RiverSchemaFile = RootModel[RiverSchema]
@@ -266,10 +266,13 @@ def generate_river_client_module(
         "",
     ]
 
-    (handshake_type, handshake_chunks) = encode_type(
-        schema_root.handshakeSchema, "HandshakeSchema"
-    )
-    chunks.extend(handshake_chunks)
+    if schema_root.handshakeSchema is not None:
+        (handshake_type, handshake_chunks) = encode_type(
+            schema_root.handshakeSchema, "HandshakeSchema"
+        )
+        chunks.extend(handshake_chunks)
+    else:
+        handshake_type = "Literal[None]"
 
     for schema_name, schema in schema_root.services.items():
         current_chunks: List[str] = [
