@@ -1,6 +1,6 @@
 import logging
-from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
-from typing import Any, Optional, Union
+from collections.abc import AsyncIterable, AsyncIterator
+from typing import Any, Callable, Optional, Union
 
 from replit_river.client_transport import ClientTransport
 from replit_river.transport_options import TransportOptions
@@ -16,23 +16,22 @@ logger = logging.getLogger(__name__)
 
 
 class Client:
-
     def __init__(
         self,
-        websocket_uri_factory: Callable[[], Awaitable[str]],
+        websocket_uri: str,
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
-        handshake_metadata_factory: Optional[Callable[[], Awaitable[Any]]] = None,
+        handshake_metadata: Optional[Any] = None,
     ) -> None:
         self._client_id = client_id
         self._server_id = server_id
         self._transport = ClientTransport(
-            websocket_uri_factory=websocket_uri_factory,
+            websocket_uri=websocket_uri,
             client_id=client_id,
             server_id=server_id,
             transport_options=transport_options,
-            handshake_metadata_factory=handshake_metadata_factory,
+            handshake_metadata=handshake_metadata,
         )
 
     async def close(self) -> None:
