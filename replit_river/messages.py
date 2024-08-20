@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Callable, Coroutine
 
-import msgpack  # type: ignore
+import msgpack
 import websockets
 from pydantic import ValidationError
 from pydantic_core import ValidationError as PydanticCoreValidationError
