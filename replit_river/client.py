@@ -15,21 +15,21 @@ from .rpc import (
 logger = logging.getLogger(__name__)
 
 
-A = TypeVar("A")
+HandshakeType = TypeVar("HandshakeType")
 
 
-class Client(Generic[A]):
+class Client(Generic[HandshakeType]):
     def __init__(
         self,
         websocket_uri: str,
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
-        handshake_metadata: Optional[A] = None,
+        handshake_metadata: Optional[HandshakeType] = None,
     ) -> None:
         self._client_id = client_id
         self._server_id = server_id
-        self._transport = ClientTransport[A](
+        self._transport = ClientTransport[HandshakeType](
             websocket_uri=websocket_uri,
             client_id=client_id,
             server_id=server_id,

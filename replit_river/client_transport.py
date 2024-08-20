@@ -41,17 +41,17 @@ from replit_river.transport_options import TransportOptions
 logger = logging.getLogger(__name__)
 
 
-A = TypeVar("A")
+HandshakeType = TypeVar("HandshakeType")
 
 
-class ClientTransport(Transport, Generic[A]):
+class ClientTransport(Transport, Generic[HandshakeType]):
     def __init__(
         self,
         websocket_uri: str,
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
-        handshake_metadata: Optional[A] = None,
+        handshake_metadata: Optional[HandshakeType] = None,
     ):
         super().__init__(
             transport_id=client_id,
@@ -94,7 +94,7 @@ class ClientTransport(Transport, Generic[A]):
         old_session: Optional[ClientSession] = None,
     ) -> Tuple[
         WebSocketCommonProtocol,
-        ControlMessageHandshakeRequest[A],
+        ControlMessageHandshakeRequest[HandshakeType],
         ControlMessageHandshakeResponse,
     ]:
         """Build a new websocket connection with retry logic."""
@@ -207,11 +207,11 @@ class ClientTransport(Transport, Generic[A]):
         transport_id: str,
         to_id: str,
         session_id: str,
-        handshake_metadata: Optional[A],
+        handshake_metadata: Optional[HandshakeType],
         websocket: WebSocketCommonProtocol,
         expected_session_state: ExpectedSessionState,
-    ) -> ControlMessageHandshakeRequest[A]:
-        handshake_request = ControlMessageHandshakeRequest[A](
+    ) -> ControlMessageHandshakeRequest[HandshakeType]:
+        handshake_request = ControlMessageHandshakeRequest[HandshakeType](
             type="HANDSHAKE_REQ",
             protocolVersion=PROTOCOL_VERSION,
             sessionId=session_id,
@@ -276,10 +276,12 @@ class ClientTransport(Transport, Generic[A]):
         transport_id: str,
         to_id: str,
         session_id: str,
-        handshake_metadata: Optional[A],
+        handshake_metadata: Optional[HandshakeType],
         websocket: WebSocketCommonProtocol,
         old_session: Optional[ClientSession],
-    ) -> Tuple[ControlMessageHandshakeRequest[A], ControlMessageHandshakeResponse]:
+    ) -> Tuple[
+        ControlMessageHandshakeRequest[HandshakeType], ControlMessageHandshakeResponse
+    ]:
         try:
             handshake_request = await self._send_handshake_request(
                 transport_id=transport_id,

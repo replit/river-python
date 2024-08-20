@@ -62,15 +62,15 @@ class ExpectedSessionState(BaseModel):
     nextSentSeq: Optional[int] = None
 
 
-A = TypeVar("A")
+HandshakeType = TypeVar("HandshakeType")
 
 
-class ControlMessageHandshakeRequest(BaseModel, Generic[A]):
+class ControlMessageHandshakeRequest(BaseModel, Generic[HandshakeType]):
     type: Literal["HANDSHAKE_REQ"] = "HANDSHAKE_REQ"
     protocolVersion: str
     sessionId: str
     expectedSessionState: ExpectedSessionState
-    metadata: Optional[A] = None
+    metadata: Optional[HandshakeType] = None
 
 
 class HandShakeStatus(BaseModel):
