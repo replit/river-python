@@ -34,13 +34,19 @@ class RiverUnionType(BaseModel):
     anyOf: List["RiverType"]
 
 
+class RiverIntersectionType(BaseModel):
+    allOf: List["RiverType"]
+
+
 class RiverNotType(BaseModel):
     """This is used to represent void / never."""
 
     not_: Any = Field(..., alias="not")
 
 
-RiverType = Union[RiverConcreteType, RiverUnionType, RiverNotType]
+RiverType = Union[
+    RiverConcreteType, RiverUnionType, RiverNotType, RiverIntersectionType
+]
 
 
 class RiverProcedure(BaseModel):
@@ -81,6 +87,8 @@ def encode_type(
     if isinstance(type, RiverNotType):
         return ("None", ())
     if isinstance(type, RiverUnionType):
+        typeddict_encoder = list[str]()
+
         # First check if it's a discriminated union. Typebox currently doesn't have
         # a way of expressing the intention of having a discriminated union. So we
         # do a bit of detection if that is structurally true by checking that all the
@@ -127,7 +135,7 @@ def encode_type(
             if len(literal_fields) == 1:
                 # Hooray! we found a discriminated union.
                 discriminator_name = literal_fields.pop()
-                one_of_pending = OrderedDict[str, list[RiverConcreteType]]()
+                one_of_pending = OrderedDict[str, tuple[str, list[RiverConcreteType]]]()
 
                 for oneof_t in one_of_candidate_types:
                     discriminator_value = [
@@ -138,65 +146,169 @@ def encode_type(
                         and prop.const is not None
                     ].pop()
                     one_of_pending.setdefault(
-                        f"{prefix}OneOf_{discriminator_value}", []
-                    ).append(oneof_t)
+                        f"{prefix}OneOf_{discriminator_value}",
+                        (discriminator_value, []),
+                    )[1].append(oneof_t)
 
                 one_of: List[str] = []
-                for pfx, oneof_ts in one_of_pending.items():
+                if discriminator_name == "$kind":
+                    discriminator_name = "kind"
+                for pfx, (discriminator_value, oneof_ts) in one_of_pending.items():
                     if len(oneof_ts) > 1:
+                        typeddict_encoder.append("(")
+                        # Tricky bit. We need to derive our own discriminator based
+                        # on known members. Be careful.
+
+                        common_members = set[str]()
+                        for i, oneof_t in enumerate(oneof_ts):
+                            if i == 0:
+                                common_members = set(oneof_t.properties.keys())
+                            else:
+                                common_members.intersection_update(
+                                    oneof_t.properties.keys()
+                                )
+
                         for i, oneof_t in enumerate(oneof_ts):
                             type_name, type_chunks = encode_type(
                                 oneof_ts[i], f"{pfx}{i}", base_model
                             )
                             chunks.extend(type_chunks)
                             one_of.append(type_name)
+                            local_discriminators = set(
+                                oneof_t.properties.keys()
+                            ).difference(common_members)
+                            typeddict_encoder.append(
+                                f"""
+                                encode_{type_name}(x) # type: ignore[arg-type]
+                            """.strip()
+                            )
+                            if local_discriminators:
+                                local_discriminator = local_discriminators.pop()
+                            else:
+                                local_discriminator = "FIXME: Ambiguous discriminators"
+                            typeddict_encoder.append(
+                                f" if '{local_discriminator}' in x else "
+                            )
+                        typeddict_encoder.pop()  # Drop the last ternary
+                        typeddict_encoder.append(")")
                     else:
                         oneof_t = oneof_ts[0]
                         type_name, type_chunks = encode_type(oneof_t, pfx, base_model)
                         chunks.extend(type_chunks)
                         one_of.append(type_name)
+                        typeddict_encoder.append(f"encode_{type_name}(x)")
+                    typeddict_encoder.append(
+                        f"""
+                            if x['{discriminator_name}']
+                            == '{discriminator_value}'
+                            else
+                        """,
+                    )
                 chunks.append(f"{prefix} = Union[" + ", ".join(one_of) + "]")
                 chunks.append("")
+
+                if base_model == "TypedDict":
+                    chunks.extend(
+                        [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
+                        + typeddict_encoder[:-1]  # Drop the last ternary
+                        + [")"]
+                    )
                 return (prefix, chunks)
             # End of stable union detection
         # Restore the non-flattened union type
         type = original_type
         any_of: List[str] = []
+
+        def is_literal(tpe: RiverType) -> bool:
+            if isinstance(tpe, RiverUnionType):
+                return all(is_literal(t) for t in tpe.anyOf)
+            elif isinstance(tpe, RiverConcreteType):
+                return tpe.type in set(["string", "number", "boolean"])
+            else:
+                return False
+
+        typeddict_encoder = []
         for i, t in enumerate(type.anyOf):
             type_name, type_chunks = encode_type(t, f"{prefix}AnyOf_{i}", base_model)
             chunks.extend(type_chunks)
             any_of.append(type_name)
+            if isinstance(t, RiverConcreteType):
+                if t.type == "string":
+                    typeddict_encoder.extend(["x", " if isinstance(x, str) else "])
+                else:
+                    typeddict_encoder.append(f"encode_{type_name}(x)")
+        if is_literal(type):
+            typeddict_encoder = ["x"]
         chunks.append(f"{prefix} = Union[" + ", ".join(any_of) + "]")
+        if base_model == "TypedDict":
+            chunks.extend(
+                [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
+                + typeddict_encoder
+                + [")"]
+            )
         return (prefix, chunks)
+    if isinstance(type, RiverIntersectionType):
+
+        def extract_props(tpe: RiverType) -> list[dict[str, RiverType]]:
+            if isinstance(tpe, RiverUnionType):
+                return [t for p in tpe.anyOf for t in extract_props(p)]
+            elif isinstance(tpe, RiverConcreteType):
+                return [tpe.properties]
+            elif isinstance(tpe, RiverIntersectionType):
+                return [t for p in tpe.allOf for t in extract_props(p)]
+            else:
+                return []
+
+        combined = {}
+        for x in extract_props(type):
+            combined.update(x)
+        return encode_type(
+            RiverConcreteType(type="object", properties=combined),
+            prefix=prefix,
+            base_model=base_model,
+        )
     if isinstance(type, RiverConcreteType):
+        typeddict_encoder = list[str]()
         if type.type is None:
             # Handle the case where type is not specified
+            typeddict_encoder.append("x")
             return ("Any", ())
         if type.type == "string":
             if type.const:
+                typeddict_encoder.append(f"'{type.const}'")
                 return (f"Literal['{type.const}']", ())
             else:
+                typeddict_encoder.append("x")
                 return ("str", ())
         if type.type == "Uint8Array":
+            typeddict_encoder.append("x.decode()")
             return ("bytes", ())
         if type.type == "number":
             if type.const is not None:
                 # enums are represented as const number in the schema
+                typeddict_encoder.append(f"{type.const}")
                 return (f"Literal[{type.const}]", ())
+            typeddict_encoder.append("x")
             return ("float", ())
         if type.type == "integer":
             if type.const is not None:
                 # enums are represented as const number in the schema
+                typeddict_encoder.append(f"{type.const}")
                 return (f"Literal[{type.const}]", ())
+            typeddict_encoder.append("x")
             return ("int", ())
         if type.type == "boolean":
+            typeddict_encoder.append("x")
             return ("bool", ())
         if type.type == "null":
+            typeddict_encoder.append("None")
             return ("None", ())
         if type.type == "Date":
+            # typeddict_encoder.append("TODO")
             return ("datetime.datetime", ())
         if type.type == "array" and type.items:
             type_name, type_chunks = encode_type(type.items, prefix, base_model)
+            # typeddict_encoder.append("TODO")
             return (f"List[{type_name}]", type_chunks)
         if (
             type.type == "object"
@@ -206,15 +318,46 @@ def encode_type(
             type_name, type_chunks = encode_type(
                 type.patternProperties["^(.*)$"], prefix, base_model
             )
+            typeddict_encoder.append(f"encode_{type_name}(x)")
             return (f"Dict[str, {type_name}]", type_chunks)
         assert type.type == "object", type.type
+
         current_chunks: List[str] = [f"class {prefix}({base_model}):"]
         if type.properties:
+            typeddict_encoder.append("{")
             for name, prop in type.properties.items():
+                typeddict_encoder.append(f"'{name}':")
+
                 type_name, type_chunks = encode_type(
                     prop, prefix + name.title(), base_model
                 )
                 chunks.extend(type_chunks)
+
+                if base_model == "TypedDict":
+                    if isinstance(prop, RiverNotType):
+                        typeddict_encoder.append("'not implemented'")
+                    elif isinstance(prop, RiverUnionType):
+                        typeddict_encoder.append(f"encode_{type_name}(x['{name}'])")
+                        if name not in type.required:
+                            typeddict_encoder.append(f"if x['{name}'] else None")
+                    elif isinstance(prop, RiverIntersectionType):
+                        typeddict_encoder.append(f"encode_{type_name}(x['{name}'])")
+                    elif isinstance(prop, RiverConcreteType):
+                        if name == "$kind":
+                            safe_name = "kind"
+                        else:
+                            safe_name = name
+                        if prop.type == "object" and not prop.patternProperties:
+                            typeddict_encoder.append(
+                                f"encode_{type_name}(x['{safe_name}'])"
+                            )
+                            if name not in prop.required:
+                                typeddict_encoder.append(
+                                    f"if x['{safe_name}'] else None"
+                                )
+                        else:
+                            typeddict_encoder.append(f"x['{safe_name}']")
+
                 if name == "$kind":
                     # If the field is a literal, the Python type-checker will complain
                     # about the constructor not being able to specify a value for it:
@@ -227,23 +370,39 @@ def encode_type(
                     if groups:
                         field_value = groups.group(1)
                     if name not in type.required:
-                        current_chunks.append(
-                            f"  kind: Optional[{type_name}] = "
-                            f"Field({field_value}, alias='{name}', default=None)"
-                        )
+                        value = ""
+                        if base_model != "TypedDict":
+                            value = (
+                                f" = Field({field_value}, alias='{name}', default=None)"
+                            )
+                        current_chunks.append(f"  kind: Optional[{type_name}]{value}")
                     else:
-                        current_chunks.append(
-                            f"  kind: {type_name} = "
-                            f"Field({field_value}, alias='{name}')"
-                        )
+                        value = ""
+                        if base_model != "TypedDict":
+                            value = f" = Field({field_value}, alias='{name}')"
+                        current_chunks.append(f"  kind: {type_name}{value}")
                 else:
                     if name not in type.required:
-                        current_chunks.append(f"  {name}: Optional[{type_name}] = None")
+                        value = ""
+                        if base_model != "TypedDict":
+                            value = " = None"
+                        current_chunks.append(f"  {name}: Optional[{type_name}]{value}")
                     else:
                         current_chunks.append(f"  {name}: {type_name}")
+                typeddict_encoder.append(",")
+            typeddict_encoder.append("}")
         else:
+            typeddict_encoder.append("{}")
             current_chunks.append("  pass")
         current_chunks.append("")
+
+        if base_model == "TypedDict":
+            current_chunks = (
+                [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
+                + typeddict_encoder
+                + [")"]
+                + current_chunks
+            )
         chunks.extend(current_chunks)
 
     return (prefix, chunks)
@@ -254,16 +413,31 @@ def generate_river_client_module(
     schema_root: RiverSchema,
 ) -> Sequence[str]:
     chunks: List[str] = [
-        "# Code generated by river.codegen. DO NOT EDIT.",
-        "from collections.abc import AsyncIterable, AsyncIterator",
-        "import datetime",
-        "from typing import Any, Dict, List, Literal, Optional, Mapping, Union, Tuple",
-        "",
-        "from pydantic import BaseModel, Field, TypeAdapter",
-        "from replit_river.error_schema import RiverError",
-        "",
-        "import replit_river as river",
-        "",
+        dedent(
+            """\
+        # Code generated by river.codegen. DO NOT EDIT.
+        from collections.abc import AsyncIterable, AsyncIterator
+        import datetime
+        from typing import (
+            Any,
+            Callable,
+            Dict,
+            List,
+            Literal,
+            Optional,
+            Mapping,
+            Union,
+            Tuple,
+            TypedDict,
+        )
+
+        from pydantic import BaseModel, Field, TypeAdapter
+        from replit_river.error_schema import RiverError
+
+        import replit_river as river
+
+        """
+        )
     ]
 
     if schema_root.handshakeSchema is not None:
@@ -288,11 +462,15 @@ def generate_river_client_module(
             init_type: Optional[str] = None
             if procedure.init:
                 init_type, input_chunks = encode_type(
-                    procedure.init, f"{schema_name.title()}{name.title()}Init"
+                    procedure.init,
+                    f"{schema_name.title()}{name.title()}Init",
+                    base_model="TypedDict",
                 )
                 chunks.extend(input_chunks)
             input_type, input_chunks = encode_type(
-                procedure.input, f"{schema_name.title()}{name.title()}Input"
+                procedure.input,
+                f"{schema_name.title()}{name.title()}Input",
+                base_model="TypedDict",
             )
             chunks.extend(input_chunks)
             output_type, output_chunks = encode_type(
@@ -330,6 +508,13 @@ def generate_river_client_module(
                                     )
                 """.rstrip()
 
+            render_input_method = f"encode_{input_type}"
+            if (
+                isinstance(procedure.input, RiverConcreteType)
+                and procedure.input.type != "object"
+            ):
+                render_input_method = "lambda x: x"
+
             if output_type == "None":
                 parse_output_method = "lambda x: None"
 
@@ -337,6 +522,7 @@ def generate_river_client_module(
                 control_flow_keyword = "return "
                 if output_type == "None":
                     control_flow_keyword = ""
+
                 current_chunks.extend(
                     [
                         reindent(
@@ -350,12 +536,7 @@ def generate_river_client_module(
                         '{schema_name}',
                         '{name}',
                         input,
-                        lambda x: TypeAdapter({input_type})
-                          .dump_python(
-                            x, # type: ignore[arg-type]
-                            by_alias=True,
-                            exclude_none=True,
-                          ),
+                        {render_input_method},
                         {parse_output_method},
                         {parse_error_method},
                       )
@@ -377,12 +558,7 @@ def generate_river_client_module(
                         '{schema_name}',
                         '{name}',
                         input,
-                        lambda x: TypeAdapter({input_type})
-                          .dump_python(
-                            x, # type: ignore[arg-type]
-                            by_alias=True,
-                            exclude_none=True,
-                          ),
+                        {render_input_method},
                         {parse_output_method},
                         {parse_error_method},
                       )
@@ -411,12 +587,7 @@ def generate_river_client_module(
                             init,
                             inputStream,
                             TypeAdapter({init_type}).validate_python,
-                            lambda x: TypeAdapter({input_type})
-                              .dump_python(
-                                x, # type: ignore[arg-type]
-                                by_alias=True,
-                                exclude_none=True,
-                              ),
+                            {render_input_method},
                             {parse_output_method},
                             {parse_error_method},
                           )
@@ -440,12 +611,7 @@ def generate_river_client_module(
                             None,
                             inputStream,
                             None,
-                            lambda x: TypeAdapter({input_type})
-                              .dump_python(
-                                x, # type: ignore[arg-type]
-                                by_alias=True,
-                                exclude_none=True,
-                              ),
+                            {render_input_method},
                             {parse_output_method},
                             {parse_error_method},
                           )
@@ -471,12 +637,7 @@ def generate_river_client_module(
                             init,
                             inputStream,
                             TypeAdapter({init_type}).validate_python,
-                            lambda x: TypeAdapter({input_type})
-                              .dump_python(
-                                x, # type: ignore[arg-type]
-                                by_alias=True,
-                                exclude_none=True,
-                              ),
+                            {render_input_method},
                             {parse_output_method},
                             {parse_error_method},
                           )
@@ -500,12 +661,7 @@ def generate_river_client_module(
                             None,
                             inputStream,
                             None,
-                            lambda x: TypeAdapter({input_type})
-                              .dump_python(
-                                x, # type: ignore[arg-type]
-                                by_alias=True,
-                                exclude_none=True,
-                              ),
+                            {render_input_method},
                             {parse_output_method},
                             {parse_error_method},
                           )
