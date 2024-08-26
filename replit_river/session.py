@@ -373,7 +373,7 @@ class Session(object):
         msg = TransportMessage(
             streamId=stream_id,
             id=nanoid.generate(),
-            from_=self._transport_id,
+            from_=self._transport_id,  # type: ignore
             to=self._to_id,
             seq=await self._seq_manager.get_seq_and_increment(),
             ack=await self._seq_manager.get_ack(),

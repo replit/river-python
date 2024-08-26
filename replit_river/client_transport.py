@@ -51,7 +51,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
-        handshake_metadata: Optional[HandshakeType] = None,
+        handshake_metadata: HandshakeType,
     ):
         super().__init__(
             transport_id=client_id,
@@ -226,7 +226,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
         try:
             await send_transport_message(
                 TransportMessage(
-                    from_=transport_id,
+                    from_=transport_id,  # type: ignore
                     to=to_id,
                     streamId=stream_id,
                     controlFlags=0,
@@ -276,7 +276,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
         transport_id: str,
         to_id: str,
         session_id: str,
-        handshake_metadata: Optional[HandshakeType],
+        handshake_metadata: HandshakeType,
         websocket: WebSocketCommonProtocol,
         old_session: Optional[ClientSession],
     ) -> Tuple[

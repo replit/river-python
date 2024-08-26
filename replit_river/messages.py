@@ -1,7 +1,7 @@
 import logging
 from typing import Any, Callable, Coroutine
 
-import msgpack  # type: ignore
+import msgpack
 import websockets
 from pydantic import ValidationError
 from pydantic_core import ValidationError as PydanticCoreValidationError
@@ -43,12 +43,11 @@ async def send_transport_message(
 ) -> None:
     logger.debug("sending a message %r to ws %s", msg, ws)
     try:
-        await ws.send(
-            prefix_bytes
-            + msgpack.packb(
-                msg.model_dump(by_alias=True, exclude_none=True), datetime=True
-            )
+        packed = msgpack.packb(
+            msg.model_dump(by_alias=True, exclude_none=True), datetime=True
         )
+        assert isinstance(packed, bytes)
+        await ws.send(prefix_bytes + packed)
     except websockets.exceptions.ConnectionClosed as e:
         await websocket_closed_callback()
         raise WebsocketClosedException("Websocket closed during send message") from e
