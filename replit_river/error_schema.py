@@ -7,6 +7,16 @@ ERROR_HANDSHAKE = "handshake_failed"
 ERROR_SESSION = "session_error"
 
 
+# UNCAUGHT_ERROR_ERROR_CODE is the code that is used when an error is thrown
+# inside a procedure handler that's not required.
+UNCAUGHT_ERROR_ERROR_CODE = 'UNCAUGHT_ERROR'
+
+# INVALID_REQUEST_ERROR_CODE is the code used when a client's request is invalid.
+INVALID_REQUEST_ERROR_CODE = 'INVALID_REQUEST'
+
+# CANCEL_ERROR_CODE is the code used when either server or client cancels the stream.
+CANCEL_ERROR_CODE = 'CANCEL'
+
 class RiverError(BaseModel):
     """Error message from the server."""
 
@@ -43,6 +53,23 @@ class RiverServiceException(RiverException):
             f"code: {code}, message: {message}"
         )
         super().__init__(msg)
+
+class StreamClosedRiverServiceException(RiverException):
+    pass
+class HandshakeErrorRiverServiceException(RiverException):
+    pass
+class SessionErrorRiverServiceException(RiverException):
+    pass
+
+def exception_from_message(code: str) -> type[RiverServiceException]:
+    """Return the error class for a given error code."""
+    if code == ERROR_CODE_STREAM_CLOSED:
+        return StreamClosedRiverServiceException
+    if code == ERROR_HANDSHAKE:
+        return HandshakeErrorRiverServiceException
+    if code == ERROR_SESSION:
+        return SessionErrorRiverServiceException
+    return RiverServiceException
 
 def stringify_exception(e: BaseException, limit: int = 10) -> str:
     """Return a string representation of an Exception.
