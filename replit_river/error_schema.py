@@ -7,15 +7,16 @@ ERROR_HANDSHAKE = "handshake_failed"
 ERROR_SESSION = "session_error"
 
 
-# UNCAUGHT_ERROR_ERROR_CODE is the code that is used when an error is thrown
+# ERROR_CODE_UNCAUGHT_ERROR is the code that is used when an error is thrown
 # inside a procedure handler that's not required.
-UNCAUGHT_ERROR_ERROR_CODE = 'UNCAUGHT_ERROR'
+ERROR_CODE_UNCAUGHT_ERROR = "UNCAUGHT_ERROR"
 
-# INVALID_REQUEST_ERROR_CODE is the code used when a client's request is invalid.
-INVALID_REQUEST_ERROR_CODE = 'INVALID_REQUEST'
+# ERROR_CODE_INVALID_REQUEST is the code used when a client's request is invalid.
+ERROR_CODE_INVALID_REQUEST = "INVALID_REQUEST"
 
-# CANCEL_ERROR_CODE is the code used when either server or client cancels the stream.
-CANCEL_ERROR_CODE = 'CANCEL'
+# ERROR_CODE_CANCEL is the code used when either server or client cancels the stream.
+ERROR_CODE_CANCEL = "CANCEL"
+
 
 class RiverError(BaseModel):
     """Error message from the server."""
@@ -32,16 +33,13 @@ class RiverException(Exception):
         self.message = message
         super().__init__(f"Error in river, code: {code}, message: {message}")
 
+
 class RiverServiceException(RiverException):
     """Exception raised by river as a result of a fault in the service running river."""
 
     def __init__(
-            self,
-            code: str,
-            message: str,
-            service: Optional[str],
-            procedure: Optional[str]
-        ) -> None:
+        self, code: str, message: str, service: Optional[str], procedure: Optional[str]
+    ) -> None:
         self.code = code
         self.message = message
         self.service = service
@@ -52,24 +50,37 @@ class RiverServiceException(RiverException):
             f"Error in river service ({service} - {procedure}), "
             f"code: {code}, message: {message}"
         )
-        super().__init__(msg)
+        super().__init__(code, msg)
 
-class StreamClosedRiverServiceException(RiverException):
+
+class UncaughtErrorRiverServiceException(RiverServiceException):
     pass
-class HandshakeErrorRiverServiceException(RiverException):
+
+
+class InvalidRequestRiverServiceException(RiverServiceException):
     pass
-class SessionErrorRiverServiceException(RiverException):
+
+
+class CancelRiverServiceException(RiverServiceException):
     pass
+
+
+class StreamClosedRiverServiceException(RiverServiceException):
+    pass
+
 
 def exception_from_message(code: str) -> type[RiverServiceException]:
     """Return the error class for a given error code."""
     if code == ERROR_CODE_STREAM_CLOSED:
         return StreamClosedRiverServiceException
-    if code == ERROR_HANDSHAKE:
-        return HandshakeErrorRiverServiceException
-    if code == ERROR_SESSION:
-        return SessionErrorRiverServiceException
+    elif code == ERROR_CODE_UNCAUGHT_ERROR:
+        return UncaughtErrorRiverServiceException
+    elif code == ERROR_CODE_INVALID_REQUEST:
+        return InvalidRequestRiverServiceException
+    elif code == ERROR_CODE_CANCEL:
+        return CancelRiverServiceException
     return RiverServiceException
+
 
 def stringify_exception(e: BaseException, limit: int = 10) -> str:
     """Return a string representation of an Exception.
