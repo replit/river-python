@@ -6,7 +6,13 @@ import nanoid  # type: ignore
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
 
-from replit_river.error_schema import ERROR_CODE_STREAM_CLOSED, RiverException
+from replit_river.error_schema import (
+    ERROR_CODE_STREAM_CLOSED,
+    RiverException,
+    RiverServiceException,
+    StreamClosedRiverServiceException,
+    exception_from_message,
+)
 from replit_river.session import Session
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
 
@@ -51,8 +57,11 @@ class ClientSession(Session):
             try:
                 response = await output.get()
             except ChannelClosed as e:
-                raise RiverException(
-                    ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+                raise RiverServiceException(
+                    ERROR_CODE_STREAM_CLOSED,
+                    "Stream closed before response",
+                    service_name,
+                    procedure_name,
                 ) from e
             except RuntimeError as e:
                 raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
@@ -61,7 +70,9 @@ class ClientSession(Session):
                     error = error_deserializer(response["payload"])
                 except Exception as e:
                     raise RiverException("error_deserializer", str(e)) from e
-                raise RiverException(error.code, error.message)
+                raise exception_from_message(error.code)(
+                    error.code, error.message, service_name, procedure_name
+                )
             return response_deserializer(response["payload"])
         except RiverException as e:
             raise e
@@ -113,7 +124,9 @@ class ClientSession(Session):
                     payload=request_serializer(item),
                 )
         except Exception as e:
-            raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
+            raise RiverServiceException(
+                ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
+            ) from e
         await self.send_close_stream(
             service_name,
             procedure_name,
@@ -127,8 +140,11 @@ class ClientSession(Session):
             try:
                 response = await output.get()
             except ChannelClosed as e:
-                raise RiverException(
-                    ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+                raise RiverServiceException(
+                    ERROR_CODE_STREAM_CLOSED,
+                    "Stream closed before response",
+                    service_name,
+                    procedure_name,
                 ) from e
             except RuntimeError as e:
                 raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
@@ -137,7 +153,9 @@ class ClientSession(Session):
                     error = error_deserializer(response["payload"])
                 except Exception as e:
                     raise RiverException("error_deserializer", str(e)) from e
-                raise RiverException(error.code, error.message)
+                raise exception_from_message(error.code)(
+                    error.code, error.message, service_name, procedure_name
+                )
 
             return response_deserializer(response["payload"])
         except RiverException as e:
@@ -184,8 +202,11 @@ class ClientSession(Session):
                     continue
                 yield response_deserializer(item["payload"])
         except (RuntimeError, ChannelClosed) as e:
-            raise RiverException(
-                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+            raise RiverServiceException(
+                ERROR_CODE_STREAM_CLOSED,
+                "Stream closed before response",
+                service_name,
+                procedure_name,
             ) from e
         except Exception as e:
             raise e
@@ -235,7 +256,9 @@ class ClientSession(Session):
             empty_stream = True
 
         except Exception as e:
-            raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
+            raise StreamClosedRiverServiceException(
+                ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
+            ) from e
 
         # Create the encoder task
         async def _encode_stream() -> None:
@@ -277,8 +300,11 @@ class ClientSession(Session):
                     continue
                 yield response_deserializer(item["payload"])
         except (RuntimeError, ChannelClosed) as e:
-            raise RiverException(
-                ERROR_CODE_STREAM_CLOSED, "Stream closed before response"
+            raise RiverServiceException(
+                ERROR_CODE_STREAM_CLOSED,
+                "Stream closed before response",
+                service_name,
+                procedure_name,
             ) from e
         except Exception as e:
             raise e
