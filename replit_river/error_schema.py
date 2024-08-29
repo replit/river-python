@@ -22,6 +22,27 @@ class RiverException(Exception):
         self.message = message
         super().__init__(f"Error in river, code: {code}, message: {message}")
 
+class RiverServiceException(RiverException):
+    """Exception raised by river as a result of a fault in the service running river."""
+
+    def __init__(
+            self,
+            code: str,
+            message: str,
+            service: Optional[str],
+            procedure: Optional[str]
+        ) -> None:
+        self.code = code
+        self.message = message
+        self.service = service
+        self.procedure = procedure
+        service = service or "N/A"
+        procedure = procedure or "N/A"
+        msg = (
+            f"Error in river service ({service} - {procedure}), "
+            f"code: {code}, message: {message}"
+        )
+        super().__init__(msg)
 
 def stringify_exception(e: BaseException, limit: int = 10) -> str:
     """Return a string representation of an Exception.
