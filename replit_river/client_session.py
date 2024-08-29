@@ -9,9 +9,9 @@ from aiochannel.errors import ChannelClosed
 from replit_river.error_schema import (
     ERROR_CODE_STREAM_CLOSED,
     RiverException,
-    exception_from_message,
     RiverServiceException,
     StreamClosedRiverServiceException,
+    exception_from_message,
 )
 from replit_river.session import Session
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
