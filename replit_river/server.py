@@ -69,10 +69,11 @@ class Server(object):
         logger.debug(
             "River server started establishing session with ws: %s", websocket.id
         )
-        grace_ms = self._transport_options.session_disconnect_grace_ms / 1000
+        grace_ms = self._transport_options.handshake_timeout_ms
         try:
             session = await asyncio.wait_for(
-                self._handshake_to_get_session(websocket), grace_ms
+                self._handshake_to_get_session(websocket),
+                grace_ms / 1000,  # wait_for unit is seconds
             )
             if not session:
                 return
