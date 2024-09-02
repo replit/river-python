@@ -355,6 +355,14 @@ def encode_type(
                                 typeddict_encoder.append(
                                     f"if x['{safe_name}'] else None"
                                 )
+                        elif prop.type == "array":
+                            assert type_name.startswith(
+                                "List["
+                            )  # in case we change to list[...]
+                            _inner_type_name = type_name[len("List[") : -len("]")]
+                            typeddict_encoder.append(
+                                f"[encode_{_inner_type_name}(y) for y in x['{name}']]"
+                            )
                         else:
                             typeddict_encoder.append(f"x['{safe_name}']")
 
