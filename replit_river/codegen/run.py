@@ -27,6 +27,12 @@ def main() -> None:
     )
     client.add_argument("--output", help="output file", required=True)
     client.add_argument("--client-name", help="name of the class", required=True)
+    client.add_argument(
+        "--typed-dict-inputs",
+        help="Enable typed dicts",
+        action="store_true",
+        default=False,
+    )
     client.add_argument("schema", help="schema file")
     args = parser.parse_args()
 
@@ -41,6 +47,8 @@ def main() -> None:
     elif args.command == "client":
         schema_path = os.path.abspath(args.schema)
         target_path = os.path.abspath(args.output)
-        schema_to_river_client_codegen(schema_path, target_path, args.client_name)
+        schema_to_river_client_codegen(
+            schema_path, target_path, args.client_name, args.typed_dict_inputs
+        )
     else:
         raise NotImplementedError(f"Unknown command {args.command}")
