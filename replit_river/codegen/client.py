@@ -520,7 +520,17 @@ def generate_river_client_module(
                                     )
                 """.rstrip()
 
-            render_input_method = f"encode_{input_type}"
+            if typed_dict_inputs:
+                render_input_method = f"encode_{input_type}"
+            else:
+                render_input_method = f"""\
+                                lambda x: TypeAdapter({input_type})
+                                  .dump_python(
+                                    x, # type: ignore[arg-type]
+                                    by_alias=True,
+                                    exclude_none=True,
+                                  )
+                """.rstrip()
             if (
                 isinstance(procedure.input, RiverConcreteType)
                 and procedure.input.type != "object"
