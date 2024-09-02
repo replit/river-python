@@ -66,7 +66,7 @@ class RiverService(BaseModel):
 
 class RiverSchema(BaseModel):
     services: Dict[str, RiverService]
-    handshakeSchema: Optional[RiverConcreteType]
+    handshakeSchema: Optional[RiverConcreteType] = Field(default=None)
 
 
 RiverSchemaFile = RootModel[RiverSchema]
