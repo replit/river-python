@@ -531,10 +531,9 @@ def generate_river_client_module(
                                     exclude_none=True,
                                   )
                 """.rstrip()
-            if (
-                isinstance(procedure.input, RiverConcreteType)
-                and procedure.input.type != "object"
-            ):
+            if isinstance(
+                procedure.input, RiverConcreteType
+            ) and procedure.input.type not in ["object", "array"]:
                 render_input_method = "lambda x: x"
 
             if output_type == "None":
