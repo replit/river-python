@@ -304,11 +304,11 @@ def encode_type(
             typeddict_encoder.append("None")
             return ("None", ())
         if type.type == "Date":
-            # typeddict_encoder.append("TODO")
+            typeddict_encoder.append("TODO: dstewart")
             return ("datetime.datetime", ())
         if type.type == "array" and type.items:
             type_name, type_chunks = encode_type(type.items, prefix, base_model)
-            # typeddict_encoder.append("TODO")
+            typeddict_encoder.append("TODO: dstewart")
             return (f"List[{type_name}]", type_chunks)
         if (
             type.type == "object"
