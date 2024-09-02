@@ -421,6 +421,7 @@ def encode_type(
 def generate_river_client_module(
     client_name: str,
     schema_root: RiverSchema,
+    typed_dict_inputs: bool,
 ) -> Sequence[str]:
     chunks: List[str] = [
         dedent(
@@ -458,6 +459,7 @@ def generate_river_client_module(
     else:
         handshake_type = "Literal[None]"
 
+    input_base_class = "TypedDict" if typed_dict_inputs else "BaseModel"
     for schema_name, schema in schema_root.services.items():
         current_chunks: List[str] = [
             dedent(
@@ -474,13 +476,13 @@ def generate_river_client_module(
                 init_type, input_chunks = encode_type(
                     procedure.init,
                     f"{schema_name.title()}{name.title()}Init",
-                    base_model="TypedDict",
+                    base_model=input_base_class,
                 )
                 chunks.extend(input_chunks)
             input_type, input_chunks = encode_type(
                 procedure.input,
                 f"{schema_name.title()}{name.title()}Input",
-                base_model="TypedDict",
+                base_model=input_base_class,
             )
             chunks.extend(input_chunks)
             output_type, output_chunks = encode_type(
@@ -702,13 +704,18 @@ def generate_river_client_module(
 
 
 def schema_to_river_client_codegen(
-    schema_path: str, target_path: str, client_name: str
+    schema_path: str,
+    target_path: str,
+    client_name: str,
+    typed_dict_inputs: bool,
 ) -> None:
     """Generates the lines of a River module."""
     with open(schema_path) as f:
         schemas = RiverSchemaFile(json.load(f))
     with open(target_path, "w") as f:
-        s = "\n".join(generate_river_client_module(client_name, schemas.root))
+        s = "\n".join(
+            generate_river_client_module(client_name, schemas.root, typed_dict_inputs)
+        )
         try:
             f.write(
                 black.format_str(s, mode=black.FileMode(string_normalization=False))
