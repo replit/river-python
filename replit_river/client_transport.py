@@ -112,7 +112,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
             rate_limit.consume_budget(client_id)
 
             # if the session is closed, we shouldn't use it
-            if not old_session or not await old_session.is_session_open():
+            if old_session and not await old_session.is_session_open():
                 old_session = None
 
             try:
@@ -340,6 +340,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
 
             raise RiverException(
                 ERROR_HANDSHAKE,
-                f"Handshake failed with code ${handshake_response.status.code}: {handshake_response.status.reason}",
+                f"Handshake failed with code ${handshake_response.status.code}: "
+                + f"{handshake_response.status.reason}",
             )
         return handshake_request, handshake_response
