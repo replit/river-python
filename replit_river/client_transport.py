@@ -52,7 +52,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
-        handshake_metadata_factory: Optional[Callable[[], Awaitable[HandshakeType]]],
+        handshake_metadata_factory: Callable[[], Awaitable[HandshakeType]],
     ):
         super().__init__(
             transport_id=client_id,
@@ -125,9 +125,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                     else old_session.session_id
                 )
 
-                handshake_metadata = None
-                if self._handshake_metadata_factory is not None:
-                    handshake_metadata = await self._handshake_metadata_factory()
+                handshake_metadata = await self._handshake_metadata_factory()
 
                 try:
                     (

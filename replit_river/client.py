@@ -25,7 +25,7 @@ class Client(Generic[HandshakeType]):
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
-        handshake_metadata_factory: Optional[Callable[[], Awaitable[Any]]] = None,
+        handshake_metadata_factory: Callable[[], Awaitable[HandshakeType]],
     ) -> None:
         self._client_id = client_id
         self._server_id = server_id
