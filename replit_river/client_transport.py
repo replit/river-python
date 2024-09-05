@@ -102,6 +102,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
         max_retry = self._transport_options.connection_retry_options.max_retry
         client_id = self._client_id
         logger.info("Attempting to establish new ws connection")
+
         for i in range(max_retry):
             if i > 0:
                 logger.info(f"Retrying build handshake number {i} times")
@@ -109,6 +110,11 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                 logger.debug("No retry budget for %s.", client_id)
                 break
             rate_limit.consume_budget(client_id)
+
+            # if the session is closed, we shouldn't use it
+            if not old_session or not await old_session.is_session_open():
+                old_session = None
+
             try:
                 ws = await websockets.connect(self._websocket_uri)
                 session_id = (
@@ -333,6 +339,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                 await self._delete_session(old_session)
 
             raise RiverException(
-                ERROR_HANDSHAKE, f"Handshake failed: {handshake_response.status.reason}"
+                ERROR_HANDSHAKE,
+                f"Handshake failed with code ${handshake_response.status.code}: {handshake_response.status.reason}",
             )
         return handshake_request, handshake_response

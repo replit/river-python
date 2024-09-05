@@ -124,7 +124,7 @@ class Session(object):
         if self._close_session_after_time_secs is not None:
             # already in grace period, no need to set again
             return
-        logger.debug(
+        logger.info(
             "websocket closed from %s to %s begin grace period",
             self._transport_id,
             self._to_id,
@@ -133,6 +133,7 @@ class Session(object):
 
     async def serve(self) -> None:
         """Serve messages from the websocket."""
+        self._reset_session_close_countdown()
         try:
             async with asyncio.TaskGroup() as tg:
                 try:
@@ -226,7 +227,6 @@ class Session(object):
             old_wrapper = self._ws_wrapper
             old_ws_id = old_wrapper.ws.id
             if new_ws.id != old_ws_id:
-                self._reset_session_close_countdown()
                 await old_wrapper.close()
             self._ws_wrapper = WebsocketWrapper(new_ws)
         await self._send_buffered_messages(new_ws)
