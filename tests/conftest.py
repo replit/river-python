@@ -151,7 +151,7 @@ async def client(
                 client_id="test_client",
                 server_id="test_server",
                 transport_options=transport_options,
-                handshake_metadata_factory=handshake_metadata_factory
+                handshake_metadata_factory=handshake_metadata_factory,
             )
             try:
                 yield client
