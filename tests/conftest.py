@@ -137,14 +137,21 @@ async def client(
     transport_options: TransportOptions,
     no_logging_error: NoErrors,
 ) -> AsyncGenerator[Client, None]:
+
+    async def websocket_uri_factory() -> str:
+        return "ws://localhost:8765"
+
+    async def handshake_metadata_factory() -> None:
+        return None
+
     try:
         async with serve(server.serve, "localhost", 8765):
             client: Client[Literal[None]] = Client(
-                "ws://localhost:8765",
+                websocket_uri_factory,
                 client_id="test_client",
                 server_id="test_server",
                 transport_options=transport_options,
-                handshake_metadata=None,
+                handshake_metadata_factory=handshake_metadata_factory,
             )
             try:
                 yield client

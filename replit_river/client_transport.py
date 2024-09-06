@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from typing import Generic, Optional, Tuple, TypeVar
 
 import websockets
@@ -47,24 +48,24 @@ HandshakeType = TypeVar("HandshakeType")
 class ClientTransport(Transport, Generic[HandshakeType]):
     def __init__(
         self,
-        websocket_uri: str,
+        websocket_uri_factory: Callable[[], Awaitable[str]],
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
-        handshake_metadata: HandshakeType,
+        handshake_metadata_factory: Callable[[], Awaitable[HandshakeType]],
     ):
         super().__init__(
             transport_id=client_id,
             transport_options=transport_options,
             is_server=False,
         )
-        self._websocket_uri = websocket_uri
+        self._websocket_uri_factory = websocket_uri_factory
         self._client_id = client_id
         self._server_id = server_id
         self._rate_limiter = LeakyBucketRateLimit(
             transport_options.connection_retry_options
         )
-        self._handshake_metadata = handshake_metadata
+        self._handshake_metadata_factory = handshake_metadata_factory
         # We want to make sure there's only one session creation at a time
         self._create_session_lock = asyncio.Lock()
 
@@ -116,12 +117,16 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                 old_session = None
 
             try:
-                ws = await websockets.connect(self._websocket_uri)
+                websocket_uri = await self._websocket_uri_factory()
+                ws = await websockets.connect(websocket_uri)
                 session_id = (
                     self.generate_session_id()
                     if not old_session
                     else old_session.session_id
                 )
+
+                handshake_metadata = await self._handshake_metadata_factory()
+
                 try:
                     (
                         handshake_request,
@@ -130,7 +135,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                         self._transport_id,
                         self._server_id,
                         session_id,
-                        self._handshake_metadata,
+                        handshake_metadata,
                         ws,
                         old_session,
                     )
