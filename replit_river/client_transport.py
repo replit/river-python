@@ -110,15 +110,9 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                 logger.info(f"Retrying build handshake number {i} times")
             if not rate_limit.has_budget(client_id):
                 logger.debug("No retry budget for %s.", client_id)
-                if last_error:
-                    raise RiverException(
-                        ERROR_HANDSHAKE,
-                        f"No retry budget for {client_id}"
-                    ) from last_error
-                else:
-                    raise RiverException(
-                        ERROR_HANDSHAKE, f"No retry budget for {client_id}"
-                    )
+                raise RiverException(
+                    ERROR_HANDSHAKE, f"No retry budget for {client_id}"
+                ) from last_error
 
             rate_limit.consume_budget(client_id)
 
@@ -157,20 +151,14 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                 last_error = e
                 backoff_time = rate_limit.get_backoff_ms(client_id)
                 logger.exception(
-                    (
-                        f"Error connecting: {str(e)}, "
-                        f"retrying with {backoff_time}ms backoff"
-                    )
+                    f"Error connecting, retrying with {backoff_time}ms backoff"
                 )
                 await asyncio.sleep(backoff_time / 1000)
 
         raise RiverException(
             ERROR_HANDSHAKE,
-            (
-                f"Failed to create ws after retrying {max_retry} number of times: "
-                f"{str(last_error)}"
-            ),
-        )
+            f"Failed to create ws after retrying {max_retry} number of times",
+        ) from last_error
 
     async def _create_new_session(
         self,
