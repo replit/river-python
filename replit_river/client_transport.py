@@ -110,9 +110,18 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                 logger.info(f"Retrying build handshake number {i} times")
             if not rate_limit.has_budget(client_id):
                 logger.debug("No retry budget for %s.", client_id)
-                raise RiverException(
-                    ERROR_HANDSHAKE, f"No retry budget for {client_id}"
-                )
+                if last_error:
+                    raise RiverException(
+                        ERROR_HANDSHAKE,
+                        (
+                            f"No retry budget for {client_id} after "
+                            f"last failure: {str(last_error)}"
+                        ),
+                    )
+                else:
+                    raise RiverException(
+                        ERROR_HANDSHAKE, f"No retry budget for {client_id}"
+                    )
 
             rate_limit.consume_budget(client_id)
 
