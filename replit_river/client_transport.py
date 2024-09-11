@@ -151,13 +151,19 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                 last_error = e
                 backoff_time = rate_limit.get_backoff_ms(client_id)
                 logger.exception(
-                    f"Error connecting: {str(e)}, retrying with {backoff_time}ms backoff"
+                    (
+                        f"Error connecting: {str(e)}, "
+                        f"retrying with {backoff_time}ms backoff"
+                    )
                 )
                 await asyncio.sleep(backoff_time / 1000)
 
         raise RiverException(
             ERROR_HANDSHAKE,
-            f"Failed to create ws after retrying max number of times: {str(last_error)}",
+            (
+                f"Failed to create ws after retrying {max_retry} number of times: "
+                f"{str(last_error)}"
+            ),
         )
 
     async def _create_new_session(
