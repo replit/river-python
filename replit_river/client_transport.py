@@ -104,7 +104,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
         client_id = self._client_id
         logger.info("Attempting to establish new ws connection")
 
-        last_error = None
+        last_error: Optional[Exception] = None
         for i in range(max_retry):
             if i > 0:
                 logger.info(f"Retrying build handshake number {i} times")
