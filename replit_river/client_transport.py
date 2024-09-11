@@ -113,11 +113,8 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                 if last_error:
                     raise RiverException(
                         ERROR_HANDSHAKE,
-                        (
-                            f"No retry budget for {client_id} after "
-                            f"last failure: {str(last_error)}"
-                        ),
-                    )
+                        f"No retry budget for {client_id}"
+                    ) from last_error
                 else:
                     raise RiverException(
                         ERROR_HANDSHAKE, f"No retry budget for {client_id}"
