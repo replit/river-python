@@ -1,0 +1,4 @@
+[virtualenvs]
+# Ensure everyone uses the same venv location to ease debugging.
+# Makes each project more hermetic within the mono-repo.
+in-project = true
