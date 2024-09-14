@@ -30,7 +30,10 @@ from replit_river.error_schema import (
     stringify_exception,
 )
 from replit_river.task_manager import BackgroundTaskManager
-from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
+from replit_river.transport_options import (
+    MAX_MESSAGE_BUFFER_SIZE,
+    HandshakeMetadataType,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -62,15 +65,12 @@ class ExpectedSessionState(BaseModel):
     nextSentSeq: Optional[int] = None
 
 
-HandshakeType = TypeVar("HandshakeType")
-
-
-class ControlMessageHandshakeRequest(BaseModel, Generic[HandshakeType]):
+class ControlMessageHandshakeRequest(BaseModel, Generic[HandshakeMetadataType]):
     type: Literal["HANDSHAKE_REQ"] = "HANDSHAKE_REQ"
     protocolVersion: str
     sessionId: str
     expectedSessionState: ExpectedSessionState
-    metadata: Optional[HandshakeType] = None
+    metadata: Optional[HandshakeMetadataType] = None
 
 
 class HandShakeStatus(BaseModel):

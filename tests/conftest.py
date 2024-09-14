@@ -8,6 +8,7 @@ import pytest
 from websockets.server import serve
 
 from replit_river.client import Client
+from replit_river.client_transport import UriAndMetadata
 from replit_river.error_schema import RiverError
 from replit_river.rpc import (
     GrpcContext,
@@ -138,20 +139,19 @@ async def client(
     no_logging_error: NoErrors,
 ) -> AsyncGenerator[Client, None]:
 
-    async def websocket_uri_factory() -> str:
-        return "ws://localhost:8765"
-
-    async def handshake_metadata_factory() -> None:
-        return None
+    async def websocket_uri_factory() -> UriAndMetadata[None]:
+        return {
+            "uri": "ws://localhost:8765",
+            "metadata": None,
+        }
 
     try:
         async with serve(server.serve, "localhost", 8765):
-            client: Client[Literal[None]] = Client(
-                websocket_uri_factory,
+            client: Client[Literal[None]] = Client[None](
+                uri_and_metadata_factory=websocket_uri_factory,
                 client_id="test_client",
                 server_id="test_server",
                 transport_options=transport_options,
-                handshake_metadata_factory=handshake_metadata_factory,
             )
             try:
                 yield client

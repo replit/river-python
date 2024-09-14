@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Generic, Optional, Tuple, TypeVar
+from typing import Generic, Optional, Tuple
 
 import websockets
 from pydantic import ValidationError
@@ -37,35 +37,34 @@ from replit_river.seq_manager import (
     InvalidMessageException,
 )
 from replit_river.transport import Transport
-from replit_river.transport_options import TransportOptions
+from replit_river.transport_options import (
+    HandshakeMetadataType,
+    TransportOptions,
+    UriAndMetadata,
+)
 
 logger = logging.getLogger(__name__)
 
 
-HandshakeType = TypeVar("HandshakeType")
-
-
-class ClientTransport(Transport, Generic[HandshakeType]):
+class ClientTransport(Transport, Generic[HandshakeMetadataType]):
     def __init__(
         self,
-        websocket_uri_factory: Callable[[], Awaitable[str]],
+        uri_and_metadata_factory: Callable[[], Awaitable[UriAndMetadata]],
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
-        handshake_metadata_factory: Callable[[], Awaitable[HandshakeType]],
     ):
         super().__init__(
             transport_id=client_id,
             transport_options=transport_options,
             is_server=False,
         )
-        self._websocket_uri_factory = websocket_uri_factory
+        self._uri_and_metadata_factory = uri_and_metadata_factory
         self._client_id = client_id
         self._server_id = server_id
         self._rate_limiter = LeakyBucketRateLimit(
             transport_options.connection_retry_options
         )
-        self._handshake_metadata_factory = handshake_metadata_factory
         # We want to make sure there's only one session creation at a time
         self._create_session_lock = asyncio.Lock()
 
@@ -121,7 +120,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
         old_session: Optional[ClientSession] = None,
     ) -> Tuple[
         WebSocketCommonProtocol,
-        ControlMessageHandshakeRequest[HandshakeType],
+        ControlMessageHandshakeRequest[HandshakeMetadataType],
         ControlMessageHandshakeResponse,
     ]:
         """Build a new websocket connection with retry logic."""
@@ -147,9 +146,8 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                 old_session = None
 
             try:
-                websocket_uri = await self._websocket_uri_factory()
-                handshake_metadata = await self._handshake_metadata_factory()
-                ws = await websockets.connect(websocket_uri)
+                uri_and_metadata = await self._uri_and_metadata_factory()
+                ws = await websockets.connect(uri_and_metadata["uri"])
                 session_id = (
                     self.generate_nanoid()
                     if not old_session
@@ -164,7 +162,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                         self._transport_id,
                         self._server_id,
                         session_id,
-                        handshake_metadata,
+                        uri_and_metadata["metadata"],
                         ws,
                         old_session,
                     )
@@ -223,11 +221,11 @@ class ClientTransport(Transport, Generic[HandshakeType]):
         transport_id: str,
         to_id: str,
         session_id: str,
-        handshake_metadata: Optional[HandshakeType],
+        handshake_metadata: Optional[HandshakeMetadataType],
         websocket: WebSocketCommonProtocol,
         expected_session_state: ExpectedSessionState,
-    ) -> ControlMessageHandshakeRequest[HandshakeType]:
-        handshake_request = ControlMessageHandshakeRequest[HandshakeType](
+    ) -> ControlMessageHandshakeRequest[HandshakeMetadataType]:
+        handshake_request = ControlMessageHandshakeRequest[HandshakeMetadataType](
             type="HANDSHAKE_REQ",
             protocolVersion=PROTOCOL_VERSION,
             sessionId=session_id,
@@ -292,11 +290,12 @@ class ClientTransport(Transport, Generic[HandshakeType]):
         transport_id: str,
         to_id: str,
         session_id: str,
-        handshake_metadata: HandshakeType,
+        handshake_metadata: HandshakeMetadataType,
         websocket: WebSocketCommonProtocol,
         old_session: Optional[ClientSession],
     ) -> Tuple[
-        ControlMessageHandshakeRequest[HandshakeType], ControlMessageHandshakeResponse
+        ControlMessageHandshakeRequest[HandshakeMetadataType],
+        ControlMessageHandshakeResponse,
     ]:
         try:
             handshake_request = await self._send_handshake_request(

@@ -1,4 +1,5 @@
 import os
+from typing import Generic, TypedDict, TypeVar
 
 from pydantic import BaseModel
 
@@ -50,3 +51,11 @@ class TransportOptions(BaseModel):
             heartbeat_ms=heartbeat_ms,
             heartbeats_until_dead=heartbeats_to_dead,
         )
+
+
+HandshakeMetadataType = TypeVar("HandshakeMetadataType")
+
+
+class UriAndMetadata(TypedDict, Generic[HandshakeMetadataType]):
+    uri: str
+    metadata: HandshakeMetadataType
