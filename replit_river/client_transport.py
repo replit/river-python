@@ -73,6 +73,32 @@ class ClientTransport(Transport, Generic[HandshakeType]):
         self._rate_limiter.close()
         await self._close_all_sessions()
 
+    async def get_or_create_session(self) -> ClientSession:
+        async with self._create_session_lock:
+            existing_session = await self._get_existing_session()
+            if not existing_session:
+                return await self._create_new_session()
+            is_session_open = await existing_session.is_session_open()
+            if not is_session_open:
+                return await self._create_new_session()
+            is_ws_open = await existing_session.is_websocket_open()
+            if is_ws_open:
+                return existing_session
+            new_ws, _, hs_response = await self._establish_new_connection(
+                existing_session
+            )
+            if hs_response.status.sessionId == existing_session.session_id:
+                logger.info(
+                    "Replacing ws connection in session id %s",
+                    existing_session.session_id,
+                )
+                await existing_session.replace_with_new_websocket(new_ws)
+                return existing_session
+            else:
+                logger.info("Closing stale session %s", existing_session.session_id)
+                await existing_session.close()
+                return await self._create_new_session()
+
     async def _get_existing_session(self) -> Optional[ClientSession]:
         async with self._session_lock:
             if not self._sessions:
@@ -190,33 +216,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
     async def _retry_connection(self) -> ClientSession:
         if not self._transport_options.transparent_reconnect:
             await self._close_all_sessions()
-        return await self._get_or_create_session()
-
-    async def _get_or_create_session(self) -> ClientSession:
-        async with self._create_session_lock:
-            existing_session = await self._get_existing_session()
-            if not existing_session:
-                return await self._create_new_session()
-            is_session_open = await existing_session.is_session_open()
-            if not is_session_open:
-                return await self._create_new_session()
-            is_ws_open = await existing_session.is_websocket_open()
-            if is_ws_open:
-                return existing_session
-            new_ws, _, hs_response = await self._establish_new_connection(
-                existing_session
-            )
-            if hs_response.status.sessionId == existing_session.session_id:
-                logger.info(
-                    "Replacing ws connection in session id %s",
-                    existing_session.session_id,
-                )
-                await existing_session.replace_with_new_websocket(new_ws)
-                return existing_session
-            else:
-                logger.info("Closing stale session %s", existing_session.session_id)
-                await existing_session.close()
-                return await self._create_new_session()
+        return await self.get_or_create_session()
 
     async def _send_handshake_request(
         self,
