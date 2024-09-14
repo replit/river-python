@@ -26,7 +26,6 @@ class Server(object):
         self._transport = ServerTransport(
             transport_id=self._server_id,
             transport_options=transport_options,
-            is_server=True,
         )
 
     async def close(self) -> None:

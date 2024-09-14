@@ -125,7 +125,7 @@ class ClientTransport(Transport, Generic[HandshakeType]):
                 handshake_metadata = await self._handshake_metadata_factory()
                 ws = await websockets.connect(websocket_uri)
                 session_id = (
-                    self.generate_session_id()
+                    self.generate_nanoid()
                     if not old_session
                     else old_session.session_id
                 )
@@ -178,9 +178,9 @@ class ClientTransport(Transport, Generic[HandshakeType]):
             websocket=new_ws,
             transport_options=self._transport_options,
             is_server=False,
-            handlers={},
             close_session_callback=self._delete_session,
             retry_connection_callback=self._retry_connection,
+            handlers={},
         )
 
         self._set_session(new_session)

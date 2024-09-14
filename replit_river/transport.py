@@ -1,11 +1,9 @@
 import asyncio
 import logging
-from typing import Dict, Optional, Tuple
+from typing import Dict, Tuple
 
 import nanoid  # type: ignore
-from websockets import WebSocketCommonProtocol
 
-from replit_river.messages import FailedSendingMessageException
 from replit_river.rpc import (
     GenericRpcHandler,
 )
@@ -21,20 +19,13 @@ class Transport:
         transport_id: str,
         transport_options: TransportOptions,
         is_server: bool,
-        handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]] = {},
     ) -> None:
         self._transport_id = transport_id
         self._transport_options = transport_options
         self._is_server = is_server
         self._sessions: Dict[str, Session] = {}
-        self._handlers = handlers
+        self._handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]] = {}
         self._session_lock = asyncio.Lock()
-
-    def generate_session_id(self) -> str:
-        return self.generate_nanoid()
-
-    async def close(self) -> None:
-        await self._close_all_sessions()
 
     async def _close_all_sessions(self) -> None:
         sessions = self._sessions.values()
@@ -61,68 +52,3 @@ class Transport:
 
     def generate_nanoid(self) -> str:
         return str(nanoid.generate())
-
-    async def get_or_create_session(
-        self,
-        transport_id: str,
-        to_id: str,
-        session_id: str,
-        websocket: WebSocketCommonProtocol,
-    ) -> Session:
-        async with self._session_lock:
-            session_to_close: Optional[Session] = None
-            new_session: Optional[Session] = None
-            if to_id not in self._sessions:
-                logger.info(
-                    'Creating new session with "%s" using ws: %s', to_id, websocket.id
-                )
-                new_session = Session(
-                    transport_id,
-                    to_id,
-                    session_id,
-                    websocket,
-                    self._transport_options,
-                    self._is_server,
-                    self._handlers,
-                    close_session_callback=self._delete_session,
-                )
-            else:
-                old_session = self._sessions[to_id]
-                if old_session.session_id != session_id:
-                    logger.info(
-                        'Create new session with "%s" for session id %s'
-                        " and close old session %s",
-                        to_id,
-                        session_id,
-                        old_session.session_id,
-                    )
-                    session_to_close = old_session
-                    new_session = Session(
-                        transport_id,
-                        to_id,
-                        session_id,
-                        websocket,
-                        self._transport_options,
-                        self._is_server,
-                        self._handlers,
-                        close_session_callback=self._delete_session,
-                    )
-                else:
-                    # If the instance id is the same, we reuse the session and assign
-                    # a new websocket to it.
-                    logger.debug(
-                        'Reuse old session with "%s" using new ws: %s',
-                        to_id,
-                        websocket.id,
-                    )
-                    try:
-                        await old_session.replace_with_new_websocket(websocket)
-                        new_session = old_session
-                    except FailedSendingMessageException as e:
-                        raise e
-
-            if session_to_close:
-                logger.info("Closing stale session %s", session_to_close.session_id)
-                await session_to_close.close()
-            self._set_session(new_session)
-        return new_session
