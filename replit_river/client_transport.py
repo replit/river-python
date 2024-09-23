@@ -250,7 +250,6 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
                     payload=handshake_request.model_dump(),
                 ),
                 ws=websocket,
-                prefix_bytes=self._transport_options.get_prefix_bytes(),
                 websocket_closed_callback=websocket_closed_callback,
             )
             return handshake_request

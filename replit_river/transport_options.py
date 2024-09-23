@@ -3,8 +3,6 @@ from typing import Generic, TypedDict, TypeVar
 
 from pydantic import BaseModel
 
-CROSIS_PREFIX_BYTES = b"\x00\x00"
-PID2_PREFIX_BYTES = b"\xff\xff"
 MAX_MESSAGE_BUFFER_SIZE = 1024
 
 
@@ -25,14 +23,10 @@ class TransportOptions(BaseModel):
     heartbeat_ms: float = 2_500
     # TODO: This should have a better name like max_failed_heartbeats
     heartbeats_until_dead: int = 4
-    use_prefix_bytes: bool = False
     close_session_check_interval_ms: float = 100
     connection_retry_options: ConnectionRetryOptions = ConnectionRetryOptions()
     buffer_size: int = 1_000
     transparent_reconnect: bool = True
-
-    def get_prefix_bytes(self) -> bytes:
-        return PID2_PREFIX_BYTES if self.use_prefix_bytes else b""
 
     def websocket_disconnect_grace_ms(self) -> float:
         return self.heartbeat_ms * self.heartbeats_until_dead

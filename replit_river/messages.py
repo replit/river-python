@@ -31,15 +31,11 @@ class FailedSendingMessageException(Exception):
 
 PROTOCOL_VERSION = "v1.1"
 
-CROSIS_PREFIX_BYTES = b"\x00\x00"
-PID2_PREFIX_BYTES = b"\xff\xff"
-
 
 async def send_transport_message(
     msg: TransportMessage,
     ws: WebSocketCommonProtocol,
     websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
-    prefix_bytes: bytes = b"",
 ) -> None:
     logger.debug("sending a message %r to ws %s", msg, ws)
     try:
@@ -47,7 +43,7 @@ async def send_transport_message(
             msg.model_dump(by_alias=True, exclude_none=True), datetime=True
         )
         assert isinstance(packed, bytes)
-        await ws.send(prefix_bytes + packed)
+        await ws.send(packed)
     except websockets.exceptions.ConnectionClosed as e:
         await websocket_closed_callback()
         raise WebsocketClosedException("Websocket closed during send message") from e
@@ -73,15 +69,6 @@ def parse_transport_msg(
         raise IgnoreMessageException(
             f"ignored a message beacuse it was a text frame: {message}"
         )
-    if transport_options.use_prefix_bytes:
-        if message.startswith(CROSIS_PREFIX_BYTES):
-            raise IgnoreMessageException("Skip crosis message")
-        elif message.startswith(PID2_PREFIX_BYTES):
-            message = message[len(PID2_PREFIX_BYTES) :]
-        else:
-            raise InvalidMessageException(
-                f"Got message without prefix bytes: {formatted_bytes(message)[:5]}"
-            )
     try:
         # :param int timestamp:
         #     Control how timestamp type is unpacked:
