@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 
 import nanoid  # type: ignore  # type: ignore
 from pydantic import ValidationError
@@ -29,11 +29,23 @@ from replit_river.seq_manager import (
 )
 from replit_river.session import Session
 from replit_river.transport import Transport
+from replit_river.transport_options import TransportOptions
 
 logger = logging.getLogger(__name__)
 
 
 class ServerTransport(Transport):
+    def __init__(
+        self,
+        transport_id: str,
+        transport_options: TransportOptions,
+    ) -> None:
+        super().__init__(
+            transport_id=transport_id,
+            transport_options=transport_options,
+            is_server=True,
+        )
+
     async def handshake_to_get_session(
         self,
         websocket: WebSocketServerProtocol,
@@ -61,7 +73,7 @@ class ServerTransport(Transport):
             if not session_id:
                 raise InvalidMessageException("No session id in handshake request")
             try:
-                return await self.get_or_create_session(
+                return await self._get_or_create_session(
                     transport_id,
                     to_id,
                     session_id,
@@ -74,6 +86,74 @@ class ServerTransport(Transport):
                 )
                 raise InvalidMessageException(error_msg) from e
         raise WebsocketClosedException("No handshake message received")
+
+    async def close(self) -> None:
+        await self._close_all_sessions()
+
+    async def _get_or_create_session(
+        self,
+        transport_id: str,
+        to_id: str,
+        session_id: str,
+        websocket: WebSocketCommonProtocol,
+    ) -> Session:
+        async with self._session_lock:
+            session_to_close: Optional[Session] = None
+            new_session: Optional[Session] = None
+            if to_id not in self._sessions:
+                logger.info(
+                    'Creating new session with "%s" using ws: %s', to_id, websocket.id
+                )
+                new_session = Session(
+                    transport_id,
+                    to_id,
+                    session_id,
+                    websocket,
+                    self._transport_options,
+                    self._is_server,
+                    self._handlers,
+                    close_session_callback=self._delete_session,
+                )
+            else:
+                old_session = self._sessions[to_id]
+                if old_session.session_id != session_id:
+                    logger.info(
+                        'Create new session with "%s" for session id %s'
+                        " and close old session %s",
+                        to_id,
+                        session_id,
+                        old_session.session_id,
+                    )
+                    session_to_close = old_session
+                    new_session = Session(
+                        transport_id,
+                        to_id,
+                        session_id,
+                        websocket,
+                        self._transport_options,
+                        self._is_server,
+                        self._handlers,
+                        close_session_callback=self._delete_session,
+                    )
+                else:
+                    # If the instance id is the same, we reuse the session and assign
+                    # a new websocket to it.
+                    logger.debug(
+                        'Reuse old session with "%s" using new ws: %s',
+                        to_id,
+                        websocket.id,
+                    )
+                    try:
+                        await old_session.replace_with_new_websocket(websocket)
+                        new_session = old_session
+                    except FailedSendingMessageException as e:
+                        raise e
+
+            if session_to_close:
+                logger.info("Closing stale session %s", session_to_close.session_id)
+                await session_to_close.close()
+            self._set_session(new_session)
+        return new_session
 
     async def _send_handshake_response(
         self,
