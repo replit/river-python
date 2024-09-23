@@ -42,6 +42,9 @@ class Client(Generic[HandshakeType]):
         await self._transport.close()
         logger.info(f"river client {self._client_id} closed")
 
+    async def ensure_connected(self) -> None:
+        await self._transport.get_or_create_session()
+
     async def send_rpc(
         self,
         service_name: str,
@@ -51,7 +54,7 @@ class Client(Generic[HandshakeType]):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> ResponseType:
-        session = await self._transport._get_or_create_session()
+        session = await self._transport.get_or_create_session()
         return await session.send_rpc(
             service_name,
             procedure_name,
@@ -72,7 +75,7 @@ class Client(Generic[HandshakeType]):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> ResponseType:
-        session = await self._transport._get_or_create_session()
+        session = await self._transport.get_or_create_session()
         return await session.send_upload(
             service_name,
             procedure_name,
@@ -93,7 +96,7 @@ class Client(Generic[HandshakeType]):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> AsyncIterator[Union[ResponseType, ErrorType]]:
-        session = await self._transport._get_or_create_session()
+        session = await self._transport.get_or_create_session()
         return session.send_subscription(
             service_name,
             procedure_name,
@@ -114,7 +117,7 @@ class Client(Generic[HandshakeType]):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> AsyncIterator[Union[ResponseType, ErrorType]]:
-        session = await self._transport._get_or_create_session()
+        session = await self._transport.get_or_create_session()
         return session.send_stream(
             service_name,
             procedure_name,
