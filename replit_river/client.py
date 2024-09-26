@@ -2,6 +2,8 @@ import logging
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from typing import Any, Generic, Optional, TypeVar, Union
 
+from ddtrace import tracer
+
 from replit_river.client_transport import ClientTransport
 from replit_river.transport_options import TransportOptions
 
@@ -54,15 +56,16 @@ class Client(Generic[HandshakeType]):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> ResponseType:
-        session = await self._transport.get_or_create_session()
-        return await session.send_rpc(
-            service_name,
-            procedure_name,
-            request,
-            request_serializer,
-            response_deserializer,
-            error_deserializer,
-        )
+        with tracer.trace("pid2.client", resource=f"{service_name}.{procedure_name}"):
+            session = await self._transport.get_or_create_session()
+            return await session.send_rpc(
+                service_name,
+                procedure_name,
+                request,
+                request_serializer,
+                response_deserializer,
+                error_deserializer,
+            )
 
     async def send_upload(
         self,
@@ -75,17 +78,18 @@ class Client(Generic[HandshakeType]):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> ResponseType:
-        session = await self._transport.get_or_create_session()
-        return await session.send_upload(
-            service_name,
-            procedure_name,
-            init,
-            request,
-            init_serializer,
-            request_serializer,
-            response_deserializer,
-            error_deserializer,
-        )
+        with tracer.trace("pid2.client", resource=f"{service_name}.{procedure_name}"):
+            session = await self._transport.get_or_create_session()
+            return await session.send_upload(
+                service_name,
+                procedure_name,
+                init,
+                request,
+                init_serializer,
+                request_serializer,
+                response_deserializer,
+                error_deserializer,
+            )
 
     async def send_subscription(
         self,
@@ -96,15 +100,16 @@ class Client(Generic[HandshakeType]):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> AsyncIterator[Union[ResponseType, ErrorType]]:
-        session = await self._transport.get_or_create_session()
-        return session.send_subscription(
-            service_name,
-            procedure_name,
-            request,
-            request_serializer,
-            response_deserializer,
-            error_deserializer,
-        )
+        with tracer.trace("pid2.client", resource=f"{service_name}.{procedure_name}"):
+            session = await self._transport.get_or_create_session()
+            return session.send_subscription(
+                service_name,
+                procedure_name,
+                request,
+                request_serializer,
+                response_deserializer,
+                error_deserializer,
+            )
 
     async def send_stream(
         self,
@@ -117,14 +122,15 @@ class Client(Generic[HandshakeType]):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> AsyncIterator[Union[ResponseType, ErrorType]]:
-        session = await self._transport.get_or_create_session()
-        return session.send_stream(
-            service_name,
-            procedure_name,
-            init,
-            request,
-            init_serializer,
-            request_serializer,
-            response_deserializer,
-            error_deserializer,
-        )
+        with tracer.trace("pid2.client", resource=f"{service_name}.{procedure_name}"):
+            session = await self._transport.get_or_create_session()
+            return session.send_stream(
+                service_name,
+                procedure_name,
+                init,
+                request,
+                init_serializer,
+                request_serializer,
+                response_deserializer,
+                error_deserializer,
+            )
