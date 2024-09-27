@@ -273,44 +273,44 @@ def encode_type(
             # Handle the case where type is not specified
             typeddict_encoder.append("x")
             return ("Any", ())
-        if type.type == "string":
+        elif type.type == "string":
             if type.const:
                 typeddict_encoder.append(f"'{type.const}'")
                 return (f"Literal['{type.const}']", ())
             else:
                 typeddict_encoder.append("x")
                 return ("str", ())
-        if type.type == "Uint8Array":
+        elif type.type == "Uint8Array":
             typeddict_encoder.append("x.decode()")
             return ("bytes", ())
-        if type.type == "number":
+        elif type.type == "number":
             if type.const is not None:
                 # enums are represented as const number in the schema
                 typeddict_encoder.append(f"{type.const}")
                 return (f"Literal[{type.const}]", ())
             typeddict_encoder.append("x")
             return ("float", ())
-        if type.type == "integer":
+        elif type.type == "integer":
             if type.const is not None:
                 # enums are represented as const number in the schema
                 typeddict_encoder.append(f"{type.const}")
                 return (f"Literal[{type.const}]", ())
             typeddict_encoder.append("x")
             return ("int", ())
-        if type.type == "boolean":
+        elif type.type == "boolean":
             typeddict_encoder.append("x")
             return ("bool", ())
-        if type.type == "null":
+        elif type.type == "null":
             typeddict_encoder.append("None")
             return ("None", ())
-        if type.type == "Date":
+        elif type.type == "Date":
             typeddict_encoder.append("TODO: dstewart")
             return ("datetime.datetime", ())
-        if type.type == "array" and type.items:
+        elif type.type == "array" and type.items:
             type_name, type_chunks = encode_type(type.items, prefix, base_model)
             typeddict_encoder.append("TODO: dstewart")
             return (f"List[{type_name}]", type_chunks)
-        if (
+        elif (
             type.type == "object"
             and type.patternProperties
             and "^(.*)$" in type.patternProperties
