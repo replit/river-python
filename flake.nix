@@ -17,7 +17,10 @@
         # Needed for Python/gRPC to be able to interact with libstdc++.
         LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib";
       };
-      packages = replitNixDeps;
+      packages = replitNixDeps ++ [
+        pkgs.python311
+        pkgs.poetry
+      ];
     };
   in
   {
