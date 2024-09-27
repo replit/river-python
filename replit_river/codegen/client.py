@@ -81,7 +81,7 @@ def reindent(prefix: str, code: str) -> str:
 
 
 def encode_type(
-    type: RiverType, prefix: str, base_model: str = "BaseModel"
+    type: RiverType, prefix: str, base_model: str
 ) -> Tuple[str, Sequence[str]]:
     chunks: List[str] = []
     if isinstance(type, RiverNotType):
@@ -449,7 +449,7 @@ def generate_river_client_module(
 
     if schema_root.handshakeSchema is not None:
         (handshake_type, handshake_chunks) = encode_type(
-            schema_root.handshakeSchema, "HandshakeSchema"
+            schema_root.handshakeSchema, "HandshakeSchema", "BaseModel"
         )
         chunks.extend(handshake_chunks)
     else:
@@ -482,7 +482,9 @@ def generate_river_client_module(
             )
             chunks.extend(input_chunks)
             output_type, output_chunks = encode_type(
-                procedure.output, f"{schema_name.title()}{name.title()}Output"
+                procedure.output,
+                f"{schema_name.title()}{name.title()}Output",
+                "BaseModel",
             )
             chunks.extend(output_chunks)
             if procedure.errors:
