@@ -12,6 +12,7 @@ from typing import (
     Set,
     Tuple,
     Union,
+    cast,
 )
 
 import black
@@ -78,6 +79,15 @@ def reindent(prefix: str, code: str) -> str:
     indent level and then reindent based on the supplied prefix
     """
     return indent(dedent(code), prefix)
+
+
+def is_literal(tpe: RiverType) -> bool:
+    if isinstance(tpe, RiverUnionType):
+        return all(is_literal(t) for t in tpe.anyOf)
+    elif isinstance(tpe, RiverConcreteType):
+        return tpe.type in set(["string", "number", "boolean"])
+    else:
+        return False
 
 
 def encode_type(
@@ -219,14 +229,6 @@ def encode_type(
         type = original_type
         any_of: List[str] = []
 
-        def is_literal(tpe: RiverType) -> bool:
-            if isinstance(tpe, RiverUnionType):
-                return all(is_literal(t) for t in tpe.anyOf)
-            elif isinstance(tpe, RiverConcreteType):
-                return tpe.type in set(["string", "number", "boolean"])
-            else:
-                return False
-
         typeddict_encoder = []
         for i, t in enumerate(type.anyOf):
             type_name, type_chunks = encode_type(t, f"{prefix}AnyOf_{i}", base_model)
@@ -323,7 +325,11 @@ def encode_type(
         assert type.type == "object", type.type
 
         current_chunks: List[str] = [f"class {prefix}({base_model}):"]
+        # For the encoder path, do we need "x" to be bound?
+        # lambda x: ... vs lambda _: {}
+        needs_binding = False
         if type.properties:
+            needs_binding = True
             typeddict_encoder.append("{")
             for name, prop in type.properties.items():
                 typeddict_encoder.append(f"'{name}':")
@@ -353,18 +359,35 @@ def encode_type(
                             )
                             if name not in prop.required:
                                 typeddict_encoder.append(
-                                    f"if x['{safe_name}'] else None"
+                                    dedent(
+                                        f"""
+                                        if '{safe_name}' in x
+                                        and x['{safe_name}'] is not None
+                                        else None
+                                    """
+                                    )
                                 )
                         elif prop.type == "array":
-                            assert type_name.startswith(
-                                "List["
-                            )  # in case we change to list[...]
-                            _inner_type_name = type_name[len("List[") : -len("]")]
-                            typeddict_encoder.append(
-                                f"[encode_{_inner_type_name}(y) for y in x['{name}']]"
-                            )
+                            items = cast(RiverConcreteType, prop).items
+                            assert items, "Somehow items was none"
+                            if is_literal(cast(RiverType, items)):
+                                typeddict_encoder.append(f"x['{name}']")
+                            else:
+                                assert type_name.startswith(
+                                    "List["
+                                )  # in case we change to list[...]
+                                _inner_type_name = type_name[len("List[") : -len("]")]
+                                typeddict_encoder.append(
+                                    f"""[
+                                        encode_{_inner_type_name}(y)
+                                        for y in x['{name}']
+                                        ]"""
+                                )
                         else:
-                            typeddict_encoder.append(f"x['{safe_name}']")
+                            if name in prop.required:
+                                typeddict_encoder.append(f"x['{safe_name}']")
+                            else:
+                                typeddict_encoder.append(f"x.get('{safe_name}')")
 
                 if name == "$kind":
                     # If the field is a literal, the Python type-checker will complain
@@ -403,8 +426,9 @@ def encode_type(
         current_chunks.append("")
 
         if base_model == "TypedDict":
+            binding = "x" if needs_binding else "_"
             current_chunks = (
-                [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
+                [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda {binding}: "]
                 + typeddict_encoder
                 + [")"]
                 + current_chunks
@@ -519,7 +543,20 @@ def generate_river_client_module(
                 """.rstrip()
 
             if typed_dict_inputs:
-                render_input_method = f"encode_{input_type}"
+                if is_literal(procedure.input):
+                    render_input_method = "lambda x: x"
+                elif isinstance(
+                    procedure.input, RiverConcreteType
+                ) and procedure.input.type in ["array"]:
+                    assert input_type.startswith(
+                        "List["
+                    )  # in case we change to list[...]
+                    _input_type_name = input_type[len("List[") : -len("]")]
+                    render_input_method = (
+                        f"lambda xs: [encode_{_input_type_name}(x) for x in xs]"
+                    )
+                else:
+                    render_input_method = f"encode_{input_type}"
             else:
                 render_input_method = f"""\
                                 lambda x: TypeAdapter({input_type})
