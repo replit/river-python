@@ -317,7 +317,6 @@ class Session(object):
                 await self._send_transport_message(
                     msg,
                     websocket,
-                    prefix_bytes=self._transport_options.get_prefix_bytes(),
                 )
             except WebsocketClosedException:
                 logger.info(
@@ -332,11 +331,10 @@ class Session(object):
         self,
         msg: TransportMessage,
         websocket: websockets.WebSocketCommonProtocol,
-        prefix_bytes: bytes = b"",
     ) -> None:
         try:
             await send_transport_message(
-                msg, websocket, self._begin_close_session_countdown, prefix_bytes
+                msg, websocket, self._begin_close_session_countdown
             )
         except WebsocketClosedException as e:
             raise e
@@ -401,7 +399,6 @@ class Session(object):
                 await self._send_transport_message(
                     msg,
                     self._ws_wrapper.ws,
-                    prefix_bytes=self._transport_options.get_prefix_bytes(),
                 )
         except WebsocketClosedException as e:
             logger.debug(
