@@ -380,11 +380,7 @@ def encode_type(
                     if name not in type.required:
                         value = ""
                         if base_model != "TypedDict":
-                            args = f"alias='{name}', default=None"
-                            if field_value != "...":
-                                value = f" = Field({field_value}, {args})"
-                            else:
-                                value = f" = Field({args})"
+                            value = f"Field(default=None, alias='{name}')"
                         current_chunks.append(f"  kind: Optional[{type_name}]{value}")
                     else:
                         value = ""
