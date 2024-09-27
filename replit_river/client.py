@@ -1,9 +1,13 @@
 import logging
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
-from typing import Any, Generic, Optional, TypeVar, Union
+from typing import Any, Generic, Optional, Union
 
 from replit_river.client_transport import ClientTransport
-from replit_river.transport_options import TransportOptions
+from replit_river.transport_options import (
+    HandshakeMetadataType,
+    TransportOptions,
+    UriAndMetadata,
+)
 
 from .rpc import (
     ErrorType,
@@ -15,26 +19,23 @@ from .rpc import (
 logger = logging.getLogger(__name__)
 
 
-HandshakeType = TypeVar("HandshakeType")
-
-
-class Client(Generic[HandshakeType]):
+class Client(Generic[HandshakeMetadataType]):
     def __init__(
         self,
-        websocket_uri_factory: Callable[[], Awaitable[str]],
+        uri_and_metadata_factory: Callable[
+            [], Awaitable[UriAndMetadata[HandshakeMetadataType]]
+        ],
         client_id: str,
         server_id: str,
         transport_options: TransportOptions,
-        handshake_metadata_factory: Callable[[], Awaitable[HandshakeType]],
     ) -> None:
         self._client_id = client_id
         self._server_id = server_id
-        self._transport = ClientTransport[HandshakeType](
-            websocket_uri_factory=websocket_uri_factory,
+        self._transport = ClientTransport[HandshakeMetadataType](
+            uri_and_metadata_factory=uri_and_metadata_factory,
             client_id=client_id,
             server_id=server_id,
             transport_options=transport_options,
-            handshake_metadata_factory=handshake_metadata_factory,
         )
 
     async def close(self) -> None:
