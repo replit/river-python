@@ -16,15 +16,45 @@ from pydantic import TypeAdapter
 
 A = TypeVar("A")
 
+PrimitiveType = (
+    bool | str | int | float | dict[str, "PrimitiveType"] | list["PrimitiveType"]
+)
+
+
+def deep_equal(a: PrimitiveType, b: PrimitiveType) -> Literal[True]:
+    if a == b:
+        return True
+    elif isinstance(a, dict) and isinstance(b, dict):
+        a_keys: PrimitiveType = list(a.keys())
+        b_keys: PrimitiveType = list(b.keys())
+        assert deep_equal(a_keys, b_keys)
+
+        # We do this dance again because Python variance is hard. Feel free to fix it.
+        keys = set(a.keys())
+        keys.update(b.keys())
+        for k in keys:
+            aa: PrimitiveType = a[k]
+            bb: PrimitiveType = b[k]
+            assert deep_equal(aa, bb)
+        return True
+    elif isinstance(a, list) and isinstance(b, list):
+        assert len(a) == len(b)
+        for i in range(len(a)):
+            assert deep_equal(a[i], b[i])
+        return True
+    else:
+        assert a == b, f"{a} != {b}"
+        return True
+
 
 def baseTestPattern(
     x: A, encode: Callable[[A], Any], adapter: TypeAdapter[Any]
 ) -> None:
     a = encode(x)
     m = adapter.validate_python(a)
-    z = adapter.dump_python(m)
+    z = adapter.dump_python(m, by_alias=True)
 
-    assert a == z
+    assert deep_equal(a, z)
 
 
 def testAiexecExecInit() -> None:
