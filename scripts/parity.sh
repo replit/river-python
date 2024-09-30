@@ -25,4 +25,6 @@ gen() {
 gen tyd.py Pid2TypedDict --typed-dict-inputs
 gen pyd.py Pid2Pydantic
 
-poetry run bash -c "PYTHONPATH='${root}/src:${scripts}' python -m parity.check_parity"
+PYTHONPATH="${root}/src:${scripts}"
+poetry run bash -c "MYPYPATH='$PYTHONPATH' mypy -m parity.check_parity"
+poetry run bash -c "PYTHONPATH='$PYTHONPATH' python -m parity.check_parity"

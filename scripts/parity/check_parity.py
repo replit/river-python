@@ -1,4 +1,4 @@
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Literal, TypedDict, TypeVar, Union, cast
 
 import pyd
 import tyd
@@ -55,6 +55,37 @@ def testAgenttoollanguageserverOpendocumentInput() -> None:
     )
 
 
+kind_type = Union[
+    Literal[1],
+    Literal[2],
+    Literal[3],
+    Literal[4],
+    Literal[5],
+    Literal[6],
+    Literal[7],
+    Literal[8],
+    Literal[9],
+    Literal[10],
+    Literal[11],
+    Literal[12],
+    Literal[13],
+    Literal[14],
+    Literal[15],
+    Literal[16],
+    Literal[17],
+    Literal[18],
+    Literal[19],
+    Literal[20],
+    Literal[21],
+    Literal[22],
+    Literal[23],
+    Literal[24],
+    Literal[25],
+    Literal[26],
+    None,
+]
+
+
 def testAgenttoollanguageserverGetcodesymbolInput() -> None:
     x: tyd.AgenttoollanguageserverGetcodesymbolInput = {
         "uri": gen_str(),
@@ -62,7 +93,7 @@ def testAgenttoollanguageserverGetcodesymbolInput() -> None:
             "line": gen_float(),
             "character": gen_float(),
         },
-        "kind": gen_opt(gen_choice(list(range(1, 27))))(),
+        "kind": cast(kind_type, gen_opt(gen_choice(list(range(1, 27))))()),
     }
 
     baseTestPattern(
@@ -70,6 +101,11 @@ def testAgenttoollanguageserverGetcodesymbolInput() -> None:
         tyd.encode_AgenttoollanguageserverGetcodesymbolInput,
         TypeAdapter(pyd.AgenttoollanguageserverGetcodesymbolInput),
     )
+
+
+class size_type(TypedDict):
+    rows: int
+    cols: int
 
 
 def testShellexecSpawnInput() -> None:
@@ -80,10 +116,13 @@ def testShellexecSpawnInput() -> None:
         "env": gen_opt(gen_dict(gen_str))(),
         "cwd": gen_opt(gen_str)(),
         "size": gen_opt(
-            lambda: {
-                "rows": gen_int(),
-                "cols": gen_int(),
-            }
+            lambda: cast(
+                size_type,
+                {
+                    "rows": gen_int(),
+                    "cols": gen_int(),
+                },
+            )
         )(),
         "useReplitRunEnv": gen_opt(gen_bool)(),
         "useCgroupMagic": gen_opt(gen_bool)(),
@@ -98,22 +137,7 @@ def testShellexecSpawnInput() -> None:
 
 
 def testConmanfilesystemPersistInput() -> None:
-    x: tyd.ConmanfilesystemPersistInput = {
-        "cmd": gen_str(),
-        "args": gen_opt(gen_list(gen_str))(),
-        "initialCmd": gen_opt(gen_str)(),
-        "env": gen_opt(gen_dict(gen_str))(),
-        "cwd": gen_opt(gen_str)(),
-        "size": gen_opt(
-            lambda: {
-                "rows": gen_int(),
-                "cols": gen_int(),
-            }
-        )(),
-        "useReplitRunEnv": gen_opt(gen_bool)(),
-        "useCgroupMagic": gen_opt(gen_bool)(),
-        "interactive": gen_opt(gen_bool)(),
-    }
+    x: tyd.ConmanfilesystemPersistInput = {}
 
     baseTestPattern(
         x,
