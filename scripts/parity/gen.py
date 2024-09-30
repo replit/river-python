@@ -5,7 +5,7 @@ A = TypeVar("A")
 
 
 def gen_char() -> str:
-    pos = random.randint(0, 26 * 2)
+    pos = random.randint(0, 26 * 2 - 1)
     if pos < 26:
         return chr(ord("A") + pos)
     else:
