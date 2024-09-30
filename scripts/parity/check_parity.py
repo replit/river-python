@@ -52,7 +52,7 @@ def baseTestPattern(
 ) -> None:
     a = encode(x)
     m = adapter.validate_python(a)
-    z = adapter.dump_python(m, by_alias=True)
+    z = adapter.dump_python(m, by_alias=True, exclude_none=True)
 
     assert deep_equal(a, z)
 

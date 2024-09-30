@@ -420,6 +420,12 @@ def encode_type(
                         current_chunks.append(f"  {name}: {type_name}")
                 typeddict_encoder.append(",")
             typeddict_encoder.append("}")
+            # exclude_none
+            typeddict_encoder = (
+                ["{k: v for (k, v) in ("]
+                + typeddict_encoder
+                + [").items() if v is not None}"]
+            )
         else:
             typeddict_encoder.append("{}")
             current_chunks.append("  pass")
