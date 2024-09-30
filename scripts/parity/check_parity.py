@@ -1,4 +1,4 @@
-from typing import Any, Callable, Literal, TypedDict, TypeVar, Union, cast
+from typing import Any, Callable, Literal, TypedDict, TypeVar, Union
 
 import pyd
 import tyd
@@ -123,7 +123,39 @@ def testAgenttoollanguageserverGetcodesymbolInput() -> None:
             "line": gen_float(),
             "character": gen_float(),
         },
-        "kind": cast(kind_type, gen_opt(gen_choice(list(range(1, 27))))()),
+        "kind": gen_choice(
+            list[kind_type](
+                [
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7,
+                    8,
+                    9,
+                    10,
+                    11,
+                    12,
+                    13,
+                    14,
+                    15,
+                    16,
+                    17,
+                    18,
+                    19,
+                    20,
+                    21,
+                    22,
+                    23,
+                    24,
+                    25,
+                    26,
+                    None,
+                ]
+            )
+        )(),
     }
 
     baseTestPattern(
