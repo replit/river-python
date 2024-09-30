@@ -1,15 +1,15 @@
 import random
+import string
 from typing import Callable, Optional, TypeVar
 
 A = TypeVar("A")
 
 
+printable_chars = string.ascii_letters + string.digits
+
+
 def gen_char() -> str:
-    pos = random.randint(0, 26 * 2 - 1)
-    if pos < 26:
-        return chr(ord("A") + pos)
-    else:
-        return chr(ord("a") + pos - 26)
+    return random.choice(printable_chars)
 
 
 def gen_str() -> str:

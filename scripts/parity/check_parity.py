@@ -146,17 +146,17 @@ def testShellexecSpawnInput() -> None:
         "env": gen_opt(gen_dict(gen_str))(),
         "cwd": gen_opt(gen_str)(),
         "size": gen_opt(
-            lambda: cast(
-                size_type,
+            lambda: size_type(
                 {
                     "rows": gen_int(),
                     "cols": gen_int(),
-                },
-            )
+                }
+            ),
         )(),
         "useReplitRunEnv": gen_opt(gen_bool)(),
         "useCgroupMagic": gen_opt(gen_bool)(),
         "interactive": gen_opt(gen_bool)(),
+        "onlySpawnIfNoProcesses": gen_opt(gen_bool)(),
     }
 
     baseTestPattern(
@@ -176,12 +176,82 @@ def testConmanfilesystemPersistInput() -> None:
     )
 
 
+closeFile = tyd.ReplspaceapiInitInputOneOf_closeFile
+githubToken = tyd.ReplspaceapiInitInputOneOf_githubToken
+sshToken0 = tyd.ReplspaceapiInitInputOneOf_sshToken0
+sshToken1 = tyd.ReplspaceapiInitInputOneOf_sshToken1
+allowDefaultBucketAccess = tyd.ReplspaceapiInitInputOneOf_allowDefaultBucketAccess
+
+allowDefaultBucketAccessResultOk = (
+    tyd.ReplspaceapiInitInputOneOf_allowDefaultBucketAccessResultOneOf_ok
+)
+allowDefaultBucketAccessResultError = (
+    tyd.ReplspaceapiInitInputOneOf_allowDefaultBucketAccessResultOneOf_error
+)
+
+
+def testReplspaceapiInitInput() -> None:
+    x: tyd.ReplspaceapiInitInput = gen_choice(
+        list[tyd.ReplspaceapiInitInput](
+            [
+                closeFile(
+                    {"kind": "closeFile", "filename": gen_str(), "nonce": gen_str()}
+                ),
+                githubToken(
+                    {"kind": "githubToken", "token": gen_str(), "nonce": gen_str()}
+                ),
+                sshToken0(
+                    {
+                        "kind": "sshToken",
+                        "nonce": gen_str(),
+                        "SSHHostname": gen_str(),
+                        "token": gen_str(),
+                    }
+                ),
+                sshToken1({"kind": "sshToken", "nonce": gen_str(), "error": gen_str()}),
+                allowDefaultBucketAccess(
+                    {
+                        "kind": "allowDefaultBucketAccess",
+                        "nonce": gen_str(),
+                        "result": gen_choice(
+                            list[
+                                tyd.ReplspaceapiInitInputOneOf_allowDefaultBucketAccessResult
+                            ](
+                                [
+                                    allowDefaultBucketAccessResultOk(
+                                        {
+                                            "bucketId": gen_str(),
+                                            "sourceReplId": gen_str(),
+                                            "status": "ok",
+                                            "targetReplId": gen_str(),
+                                        }
+                                    ),
+                                    allowDefaultBucketAccessResultError(
+                                        {"message": gen_str(), "status": "error"}
+                                    ),
+                                ]
+                            )
+                        )(),
+                    }
+                ),
+            ]
+        )
+    )()
+
+    baseTestPattern(
+        x,
+        tyd.encode_ReplspaceapiInitInput,
+        TypeAdapter(pyd.ReplspaceapiInitInput),
+    )
+
+
 def main() -> None:
     testAiexecExecInit()
     testAgenttoollanguageserverOpendocumentInput()
     testAgenttoollanguageserverGetcodesymbolInput()
     testShellexecSpawnInput()
     testConmanfilesystemPersistInput()
+    testReplspaceapiInitInput()
 
 
 if __name__ == "__main__":
