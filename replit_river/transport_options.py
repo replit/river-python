@@ -3,7 +3,7 @@ from typing import Generic, TypedDict, TypeVar
 
 from pydantic import BaseModel
 
-MAX_MESSAGE_BUFFER_SIZE = 1024
+MAX_MESSAGE_BUFFER_SIZE = 128
 
 
 class ConnectionRetryOptions(BaseModel):

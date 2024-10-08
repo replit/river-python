@@ -5,6 +5,7 @@ import pytest
 
 from replit_river.client import Client
 from replit_river.error_schema import RiverError
+from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
 from tests.conftest import deserialize_error, deserialize_response, serialize_request
 
 
@@ -39,6 +40,27 @@ async def test_upload_method(client: Client) -> None:
         deserialize_response,
     )  # type: ignore
     assert response == "Uploaded: Initial Data, Data 1, Data 2, Data 3"
+
+
+@pytest.mark.asyncio
+async def test_upload_more_than_send_buffer_max(client: Client) -> None:
+    iterations = MAX_MESSAGE_BUFFER_SIZE * 2
+
+    async def upload_data() -> AsyncGenerator[str, None]:
+        for _ in range(0, iterations):
+            yield "Data"
+
+    response = await client.send_upload(
+        "test_service",
+        "upload_method",
+        "Initial Data",
+        upload_data(),
+        serialize_request,
+        serialize_request,
+        deserialize_response,
+        deserialize_response,
+    )  # type: ignore
+    assert response == "Uploaded: Initial Data" + (", Data" * iterations)
 
 
 @pytest.mark.asyncio
