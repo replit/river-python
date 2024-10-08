@@ -8,7 +8,7 @@ import websockets
 from aiochannel import Channel, ChannelClosed
 from websockets.exceptions import ConnectionClosed
 
-from replit_river.message_buffer import MessageBuffer
+from replit_river.message_buffer import MessageBuffer, MessageBufferClosedError
 from replit_river.messages import (
     FailedSendingMessageException,
     WebsocketClosedException,
@@ -386,10 +386,8 @@ class Session(object):
             async with self._msg_lock:
                 try:
                     await self._buffer.put(msg)
-                except Exception:
-                    # We should close the session when there are too many messages in
-                    # buffer
-                    await self.close()
+                except MessageBufferClosedError:
+                    # The session is closed and is no longer accepting new messages.
                     return
                 async with self._ws_lock:
                     if not await self._ws_wrapper.is_open():
@@ -541,6 +539,8 @@ class Session(object):
             await self._task_manager.cancel_all_tasks()
 
             await self.close_websocket(self._ws_wrapper, should_retry=False)
+
+            await self._buffer.close()
 
             # Clear the session in transports
             await self._close_session_callback(self)
