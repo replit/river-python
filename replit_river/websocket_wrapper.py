@@ -24,7 +24,7 @@ class WebsocketWrapper:
         async with self.ws_lock:
             return self.ws_state == WsState.OPEN
 
-    async def close(self) -> None:
+    async def close(self) -> asyncio.Task | None:
         async with self.ws_lock:
             if self.ws_state == WsState.OPEN:
                 self.ws_state = WsState.CLOSING
@@ -33,3 +33,5 @@ class WebsocketWrapper:
                     lambda _: logger.debug("old websocket %s closed.", self.ws.id)
                 )
                 self.ws_state = WsState.CLOSED
+                return task
+            return None

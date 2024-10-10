@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from typing import Any, Generic, Optional, Union
@@ -38,10 +39,11 @@ class Client(Generic[HandshakeMetadataType]):
             transport_options=transport_options,
         )
 
-    async def close(self) -> None:
+    async def close(self) -> asyncio.Task | None:
         logger.info(f"river client {self._client_id} start closing")
-        await self._transport.close()
+        cleanup_task = await self._transport.close()
         logger.info(f"river client {self._client_id} closed")
+        return cleanup_task
 
     async def ensure_connected(self) -> None:
         await self._transport.get_or_create_session()
