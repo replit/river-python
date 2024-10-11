@@ -27,8 +27,7 @@ class Transport:
         self._handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]] = {}
         self._session_lock = asyncio.Lock()
 
-    async def _close_all_sessions(self) -> asyncio.Task:
-        cleanup_tasks: list[asyncio.Task] = []
+    async def _close_all_sessions(self) -> None:
         sessions = self._sessions.values()
         logger.info(
             f"start closing sessions {self._transport_id}, number sessions : "
@@ -39,17 +38,9 @@ class Transport:
         # closing sessions requires access to the session lock, so we need to close
         # them one by one to be safe
         for session in sessions_to_close:
-            cleanup_task = await session.close()
-            if cleanup_task:
-                cleanup_tasks.append(cleanup_task)
+            await session.close()
 
         logger.info(f"Transport closed {self._transport_id}")
-
-        async def cleanup() -> None:
-            for cleanup_task in cleanup_tasks:
-                await cleanup_task
-
-        return asyncio.create_task(cleanup())
 
     async def _delete_session(self, session: Session) -> None:
         async with self._session_lock:
