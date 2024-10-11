@@ -68,9 +68,9 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
         # We want to make sure there's only one session creation at a time
         self._create_session_lock = asyncio.Lock()
 
-    async def close(self) -> None:
+    async def close(self) -> asyncio.Task:
         self._rate_limiter.close()
-        await self._close_all_sessions()
+        return await self._close_all_sessions()
 
     async def get_or_create_session(self) -> ClientSession:
         async with self._create_session_lock:
