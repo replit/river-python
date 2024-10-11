@@ -434,18 +434,15 @@ class Session(object):
 
     async def close_websocket(
         self, ws_wrapper: WebsocketWrapper, should_retry: bool
-    ) -> asyncio.Task | None:
+    ) -> None:
         """Mark the websocket as closed, close the websocket, and retry if needed."""
-        cleanup_websocket_task: asyncio.Task | None = None
         async with self._ws_lock:
             # Already closed.
             if not await ws_wrapper.is_open():
-                logger.info("websocket wrapper already closed")
-                return cleanup_websocket_task
-            cleanup_websocket_task = await ws_wrapper.close()
+                return
+            await ws_wrapper.close()
         if should_retry and self._retry_connection_callback:
             self._task_manager.create_task(self._retry_connection_callback())
-        return cleanup_websocket_task
 
     async def _open_stream_and_call_handler(
         self,
@@ -526,9 +523,8 @@ class Session(object):
     async def start_serve_responses(self) -> None:
         self._task_manager.create_task(self.serve())
 
-    async def close(self) -> asyncio.Task | None:
+    async def close(self) -> None:
         """Close the session and all associated streams."""
-        cleanup_websocket_task: asyncio.Task | None = None
         logger.info(
             f"{self._transport_id} closing session "
             f"to {self._to_id}, ws: {self._ws_wrapper.id}, "
@@ -537,14 +533,12 @@ class Session(object):
         async with self._state_lock:
             if self._state != SessionState.ACTIVE:
                 # already closing
-                return cleanup_websocket_task
+                return
             self._state = SessionState.CLOSING
             self._reset_session_close_countdown()
             await self._task_manager.cancel_all_tasks()
 
-            cleanup_websocket_task = await self.close_websocket(
-                self._ws_wrapper, should_retry=False
-            )
+            await self.close_websocket(self._ws_wrapper, should_retry=False)
 
             await self._buffer.close()
 
@@ -559,4 +553,3 @@ class Session(object):
                 self._streams.clear()
 
             self._state = SessionState.CLOSED
-        return cleanup_websocket_task
