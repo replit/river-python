@@ -548,6 +548,33 @@ def generate_river_client_module(
                                     )
                 """.rstrip()
 
+            # Init renderer
+            if typed_dict_inputs and init_type:
+                if is_literal(procedure.input):
+                    render_init_method = "lambda x: x"
+                elif isinstance(
+                    procedure.input, RiverConcreteType
+                ) and procedure.input.type in ["array"]:
+                    assert init_type.startswith(
+                        "List["
+                    )  # in case we change to list[...]
+                    _init_type_name = init_type[len("List[") : -len("]")]
+                    render_init_method = (
+                        f"lambda xs: [encode_{_init_type_name}(x) for x in xs]"
+                    )
+                else:
+                    render_init_method = f"encode_{init_type}"
+            else:
+                render_init_method = f"""\
+                                lambda x: TypeAdapter({input_type})
+                                  .validate_python
+                """.rstrip()
+            if isinstance(
+                procedure.init, RiverConcreteType
+            ) and procedure.init.type not in ["object", "array"]:
+                render_init_method = "lambda x: x"
+
+            # Input renderer
             if typed_dict_inputs:
                 if is_literal(procedure.input):
                     render_input_method = "lambda x: x"
@@ -648,7 +675,7 @@ def generate_river_client_module(
                             '{name}',
                             init,
                             inputStream,
-                            TypeAdapter({init_type}).validate_python,
+                            {render_init_method},
                             {render_input_method},
                             {parse_output_method},
                             {parse_error_method},
@@ -698,7 +725,7 @@ def generate_river_client_module(
                             '{name}',
                             init,
                             inputStream,
-                            TypeAdapter({init_type}).validate_python,
+                            {render_init_method},
                             {render_input_method},
                             {parse_output_method},
                             {parse_error_method},
