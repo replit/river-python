@@ -403,12 +403,26 @@ def encode_type(
                     if name not in type.required:
                         value = ""
                         if base_model != "TypedDict":
-                            value = f" = Field(default=None, alias='{name}')"
+                            value = dedent(
+                                f"""\
+                                = Field(
+                                  default=None,
+                                  alias='{name}', # type: ignore
+                                )
+                                """
+                            )
                         current_chunks.append(f"  kind: Optional[{type_name}]{value}")
                     else:
                         value = ""
                         if base_model != "TypedDict":
-                            value = f" = Field({field_value}, alias='{name}')"
+                            value = dedent(
+                                f"""\
+                                = Field(
+                                    {field_value},
+                                    alias='{name}', # type: ignore
+                                )
+                                """
+                            )
                         current_chunks.append(f"  kind: {type_name}{value}")
                 else:
                     if name not in type.required:
