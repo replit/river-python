@@ -302,7 +302,7 @@ def encode_type(
         elif type.type == "boolean":
             typeddict_encoder.append("x")
             return ("bool", ())
-        elif type.type == "null":
+        elif type.type == "null" or type.type == "undefined":
             typeddict_encoder.append("None")
             return ("None", ())
         elif type.type == "Date":
