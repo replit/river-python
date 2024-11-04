@@ -220,7 +220,7 @@ def message_encoder(
 
 
 def generate_river_module(
-    module_name: str,
+    pb_module_name: str,
     fds: descriptor_pb2.FileDescriptorSet,
 ) -> Sequence[str]:
     """Generates the lines of a River module."""
@@ -236,7 +236,7 @@ def generate_river_module(
 
         import replit_river as river
 
-        from . import {module_name}_pb2, {module_name}_pb2_grpc
+        from . import {pb_module_name}_pb2, {pb_module_name}_pb2_grpc
         """
         ),
         "",
@@ -249,15 +249,15 @@ def generate_river_module(
 
         # Generate the message encoders/decoders.
         for message in pd.message_type:
-            chunks.extend(message_encoder(module_name, message))
-            chunks.extend(message_decoder(module_name, message))
+            chunks.extend(message_encoder(pb_module_name, message))
+            chunks.extend(message_decoder(pb_module_name, message))
 
         # Generate the service stubs.
         for service in pd.service:
             chunks.extend(
                 [
                     f"""def add_{service.name}Servicer_to_server(
-                    servicer: {module_name}_pb2_grpc.{service.name}Servicer,
+                    servicer: {pb_module_name}_pb2_grpc.{service.name}Servicer,
                     server: river.Server,
                 ) -> None:""",
                     (
@@ -324,12 +324,12 @@ def proto_to_river_server_codegen(proto_path: str, target_directory: str) -> Non
         )
         with open(descriptor_path, "rb") as f:
             fds.ParseFromString(f.read())
-    module_name = os.path.splitext(os.path.basename(proto_path))[0]
+    pb_module_name = os.path.splitext(os.path.basename(proto_path))[0]
     contents = black.format_str(
-        "\n".join(generate_river_module(module_name, fds)),
+        "\n".join(generate_river_module(pb_module_name, fds)),
         mode=black.FileMode(string_normalization=False),
     )
     os.makedirs(target_directory, exist_ok=True)
-    output_path = f"{target_directory}/{module_name}_river.py"
+    output_path = f"{target_directory}/{pb_module_name}_river.py"
     with open(output_path, "w") as f:
         f.write(contents)
