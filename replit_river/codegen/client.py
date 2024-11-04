@@ -193,7 +193,7 @@ def encode_type(
                             """.strip()
                             )
                             if local_discriminators:
-                                local_discriminator = local_discriminators.pop()
+                                local_discriminator = sorted(local_discriminators).pop()
                             else:
                                 local_discriminator = "FIXME: Ambiguous discriminators"
                             typeddict_encoder.append(
