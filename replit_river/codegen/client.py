@@ -352,7 +352,7 @@ def encode_type(
                             else:
                                 local_discriminator = "FIXME: Ambiguous discriminators"
                             typeddict_encoder.append(
-                                f" if '{local_discriminator}' in x else "
+                                f" if {repr(local_discriminator)} in x else "
                             )
                         typeddict_encoder.pop()  # Drop the last ternary
                         typeddict_encoder.append(")")
@@ -372,8 +372,8 @@ def encode_type(
                         typeddict_encoder.append(f"{encoder_name}(x)")
                     typeddict_encoder.append(
                         f"""
-                            if x['{discriminator_name}']
-                            == '{discriminator_value}'
+                            if x[{repr(discriminator_name)}]
+                            == {repr(discriminator_value)}
                             else
                         """,
                     )
@@ -393,7 +393,7 @@ def encode_type(
                                 [
                                     dedent(
                                         f"""\
-                    {encoder_name}: Callable[['{prefix}'], Any] = (
+                    {encoder_name}: Callable[[{repr(prefix)}], Any] = (
                         lambda x:
                             """.rstrip()
                                     )
@@ -450,7 +450,10 @@ def encode_type(
             chunks.append(
                 FileContents(
                     "\n".join(
-                        [f"{encoder_name}: Callable[['{prefix}'], Any] = (lambda x: "]
+                        [
+                            f"{encoder_name}: Callable[[{repr(prefix)}], Any] = ("
+                            "lambda x: "
+                        ]
                         + typeddict_encoder
                         + [")"]
                     )
@@ -486,7 +489,7 @@ def encode_type(
             return (TypeName("Any"), [], [], set())
         elif type.type == "string":
             if type.const:
-                typeddict_encoder.append(f"'{type.const}'")
+                typeddict_encoder.append(repr(type.const))
                 return (LiteralTypeExpr(type.const), [], [], set())
             else:
                 typeddict_encoder.append("x")
@@ -565,7 +568,7 @@ def encode_type(
                 name,
                 prop,
             ) in sorted(list(type.properties.items()), key=lambda xs: xs[0]):
-                typeddict_encoder.append(f"'{name}':")
+                typeddict_encoder.append(f"{repr(name)}:")
                 type_name, _, contents, _ = encode_type(
                     prop, TypeName(prefix + name.title()), base_model, in_module
                 )
@@ -579,15 +582,15 @@ def encode_type(
                             f"encode_{ensure_literal_type(type_name)}"
                         )
                         encoder_names.add(encoder_name)
-                        typeddict_encoder.append(f"{encoder_name}(x['{name}'])")
+                        typeddict_encoder.append(f"{encoder_name}(x[{repr(name)}])")
                         if name not in type.required:
-                            typeddict_encoder.append(f"if x['{name}'] else None")
+                            typeddict_encoder.append(f"if x[{repr(name)}] else None")
                     elif isinstance(prop, RiverIntersectionType):
                         encoder_name = TypeName(
                             f"encode_{ensure_literal_type(type_name)}"
                         )
                         encoder_names.add(encoder_name)
-                        typeddict_encoder.append(f"{encoder_name}(x['{name}'])")
+                        typeddict_encoder.append(f"{encoder_name}(x[{repr(name)}])")
                     elif isinstance(prop, RiverConcreteType):
                         if name == "$kind":
                             safe_name = "kind"
@@ -599,14 +602,14 @@ def encode_type(
                             )
                             encoder_names.add(encoder_name)
                             typeddict_encoder.append(
-                                f"{encoder_name}(x['{safe_name}'])"
+                                f"{encoder_name}(x[{repr(safe_name)}])"
                             )
                             if name not in prop.required:
                                 typeddict_encoder.append(
                                     dedent(
                                         f"""
-                                        if '{safe_name}' in x
-                                        and x['{safe_name}'] is not None
+                                        if {repr(safe_name)} in x
+                                        and x[{repr(safe_name)}] is not None
                                         else None
                                     """
                                     )
@@ -615,7 +618,7 @@ def encode_type(
                             items = cast(RiverConcreteType, prop).items
                             assert items, "Somehow items was none"
                             if is_literal(cast(RiverType, items)):
-                                typeddict_encoder.append(f"x['{name}']")
+                                typeddict_encoder.append(f"x[{repr(name)}]")
                             else:
                                 match type_name:
                                     case ListTypeExpr(inner_type_name):
@@ -628,16 +631,16 @@ def encode_type(
                                                 f"""\
                                             [
                                                 {encoder_name}(y)
-                                                for y in x['{name}']
+                                                for y in x[{repr(name)}]
                                             ]
                                             """.rstrip()
                                             )
                                         )
                         else:
                             if name in prop.required:
-                                typeddict_encoder.append(f"x['{safe_name}']")
+                                typeddict_encoder.append(f"x[{repr(safe_name)}]")
                             else:
-                                typeddict_encoder.append(f"x.get('{safe_name}')")
+                                typeddict_encoder.append(f"x.get({repr(safe_name)})")
 
                 if name == "$kind":
                     # If the field is a literal, the Python type-checker will complain
@@ -657,7 +660,7 @@ def encode_type(
                                 f"""\
                                 = Field(
                                   default=None,
-                                  alias='{name}', # type: ignore
+                                  alias={repr(name)}, # type: ignore
                                 )
                                 """
                             )
@@ -671,7 +674,7 @@ def encode_type(
                                 f"""\
                                 = Field(
                                     {field_value},
-                                    alias='{name}', # type: ignore
+                                    alias={repr(name)}, # type: ignore
                                 )
                                 """
                             )
@@ -714,7 +717,7 @@ def encode_type(
                         [
                             dedent(
                                 f"""\
-                            {encoder_name}: Callable[['{prefix}'], Any] = (
+                            {encoder_name}: Callable[[{repr(prefix)}], Any] = (
                                 lambda {binding}:
                             """
                             )
@@ -936,8 +939,8 @@ def generate_individual_service(
               input: {render_type_expr(input_type)},
             ) -> {render_type_expr(output_type)}:
               {control_flow_keyword}await self.client.send_rpc(
-                '{schema_name}',
-                '{name}',
+                {repr(schema_name)},
+                {repr(name)},
                 input,
                 {reindent("                    ", render_input_method)},
                 {reindent("                    ", parse_output_method)},
@@ -958,8 +961,8 @@ def generate_individual_service(
               input: {render_type_expr(input_type)},
             ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
               return await self.client.send_subscription(
-                '{schema_name}',
-                '{name}',
+                {repr(schema_name)},
+                {repr(name)},
                 input,
                 {reindent("                    ", render_input_method)},
                 {reindent("                    ", parse_output_method)},
@@ -985,8 +988,8 @@ def generate_individual_service(
               inputStream: AsyncIterable[{render_type_expr(input_type)}],
             ) -> {output_type}:
               {control_flow_keyword}await self.client.send_upload(
-                '{schema_name}',
-                '{name}',
+                {repr(schema_name)},
+                {repr(name)},
                 init,
                 inputStream,
                 {reindent("                    ", render_init_method)},
@@ -1009,8 +1012,8 @@ def generate_individual_service(
               inputStream: AsyncIterable[{render_type_expr(input_type)}],
             ) -> {render_type_expr(output_or_error_type)}:
               {control_flow_keyword}await self.client.send_upload(
-                '{schema_name}',
-                '{name}',
+                {repr(schema_name)},
+                {repr(name)},
                 None,
                 inputStream,
                 None,
@@ -1035,8 +1038,8 @@ def generate_individual_service(
               inputStream: AsyncIterable[{render_type_expr(input_type)}],
             ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
               return await self.client.send_stream(
-                '{schema_name}',
-                '{name}',
+                {repr(schema_name)},
+                {repr(name)},
                 init,
                 inputStream,
                 {reindent("                    ", render_init_method)},
@@ -1059,8 +1062,8 @@ def generate_individual_service(
               inputStream: AsyncIterable[{render_type_expr(input_type)}],
             ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
               return await self.client.send_stream(
-                '{schema_name}',
-                '{name}',
+                {repr(schema_name)},
+                {repr(name)},
                 None,
                 inputStream,
                 None,
