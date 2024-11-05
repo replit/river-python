@@ -155,7 +155,7 @@ def is_literal(tpe: RiverType) -> bool:
     if isinstance(tpe, RiverUnionType):
         return all(is_literal(t) for t in tpe.anyOf)
     elif isinstance(tpe, RiverConcreteType):
-        return tpe.type in set(["string", "number", "boolean"])
+        return tpe.type not in set(["object", "array"])
     else:
         return False
 
@@ -988,15 +988,6 @@ def generate_individual_service(
                                 exclude_none=True,
                               )
                             """
-        if (
-            (
-                isinstance(procedure.input, RiverConcreteType)
-                and procedure.input.type not in ["object", "array"]
-            )
-            or isinstance(procedure.input, RiverNotType)
-            or procedure.input is None
-        ):
-            render_input_method = "lambda x: x"
 
         assert render_input_method, (
             f"Unable to derive the input encoder from: {input_type}"
