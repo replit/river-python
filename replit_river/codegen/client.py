@@ -85,7 +85,7 @@ def is_literal(tpe: RiverType) -> bool:
     if isinstance(tpe, RiverUnionType):
         return all(is_literal(t) for t in tpe.anyOf)
     elif isinstance(tpe, RiverConcreteType):
-        return tpe.type in set(["string", "number", "boolean"])
+        return tpe.type not in set(["object", "array"])
     else:
         return False
 
@@ -604,10 +604,6 @@ def generate_river_client_module(
                                 lambda x: TypeAdapter({input_type})
                                   .validate_python
                 """.rstrip()
-            if isinstance(
-                procedure.init, RiverConcreteType
-            ) and procedure.init.type not in ["object", "array"]:
-                render_init_method = "lambda x: x"
 
             # Input renderer
             if typed_dict_inputs:
