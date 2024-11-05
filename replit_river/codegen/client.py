@@ -534,12 +534,12 @@ def generate_river_client_module(
         for name, procedure in schema.procedures.items():
             init_type: Optional[str] = None
             if procedure.init:
-                init_type, input_chunks = encode_type(
+                init_type, init_chunks = encode_type(
                     procedure.init,
                     f"{schema_name.title()}{name.title()}Init",
                     base_model=input_base_class,
                 )
-                chunks.extend(input_chunks)
+                chunks.extend(init_chunks)
             input_type, input_chunks = encode_type(
                 procedure.input,
                 f"{schema_name.title()}{name.title()}Input",
@@ -584,12 +584,12 @@ def generate_river_client_module(
                 """.rstrip()
 
             # Init renderer
-            if typed_dict_inputs and init_type:
-                if is_literal(procedure.input):
+            if typed_dict_inputs and init_type and procedure.init:
+                if is_literal(procedure.init):
                     render_init_method = "lambda x: x"
                 elif isinstance(
-                    procedure.input, RiverConcreteType
-                ) and procedure.input.type in ["array"]:
+                    procedure.init, RiverConcreteType
+                ) and procedure.init.type in ["array"]:
                     assert init_type.startswith(
                         "List["
                     )  # in case we change to list[...]
@@ -601,7 +601,7 @@ def generate_river_client_module(
                     render_init_method = f"encode_{init_type}"
             else:
                 render_init_method = f"""\
-                                lambda x: TypeAdapter({input_type})
+                                lambda x: TypeAdapter({init_type})
                                   .validate_python
                 """.rstrip()
 
