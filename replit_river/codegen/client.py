@@ -197,7 +197,7 @@ def encode_type(
                             else:
                                 local_discriminator = "FIXME: Ambiguous discriminators"
                             typeddict_encoder.append(
-                                f" if '{local_discriminator}' in x else "
+                                f" if {repr(local_discriminator)} in x else "
                             )
                         typeddict_encoder.pop()  # Drop the last ternary
                         typeddict_encoder.append(")")
@@ -209,8 +209,8 @@ def encode_type(
                         typeddict_encoder.append(f"encode_{type_name}(x)")
                     typeddict_encoder.append(
                         f"""
-                            if x['{discriminator_name}']
-                            == '{discriminator_value}'
+                            if x[{repr(discriminator_name)}]
+                            == {repr(discriminator_value)}
                             else
                         """,
                     )
@@ -219,7 +219,7 @@ def encode_type(
 
                 if base_model == "TypedDict":
                     chunks.extend(
-                        [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
+                        [f"encode_{prefix}: Callable[[{repr(prefix)}], Any] = (lambda x: "]
                         + typeddict_encoder[:-1]  # Drop the last ternary
                         + [")"]
                     )
@@ -244,7 +244,7 @@ def encode_type(
         chunks.append(f"{prefix} = Union[" + ", ".join(any_of) + "]")
         if base_model == "TypedDict":
             chunks.extend(
-                [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
+                [f"encode_{prefix}: Callable[[{repr(prefix)}], Any] = (lambda x: "]
                 + typeddict_encoder
                 + [")"]
             )
@@ -277,8 +277,8 @@ def encode_type(
             return ("Any", ())
         elif type.type == "string":
             if type.const:
-                typeddict_encoder.append(f"'{type.const}'")
-                return (f"Literal['{type.const}']", ())
+                typeddict_encoder.append(f"{repr(type.const)}")
+                return (f"Literal[{repr(type.const)}]", ())
             else:
                 typeddict_encoder.append("x")
                 return ("str", ())
@@ -332,7 +332,7 @@ def encode_type(
             needs_binding = True
             typeddict_encoder.append("{")
             for name, prop in type.properties.items():
-                typeddict_encoder.append(f"'{name}':")
+                typeddict_encoder.append(f"{repr(name)}:")
 
                 type_name, type_chunks = encode_type(
                     prop, prefix + name.title(), base_model
@@ -343,11 +343,11 @@ def encode_type(
                     if isinstance(prop, RiverNotType):
                         typeddict_encoder.append("'not implemented'")
                     elif isinstance(prop, RiverUnionType):
-                        typeddict_encoder.append(f"encode_{type_name}(x['{name}'])")
+                        typeddict_encoder.append(f"encode_{type_name}(x[{repr(name)}])")
                         if name not in type.required:
-                            typeddict_encoder.append(f"if x['{name}'] else None")
+                            typeddict_encoder.append(f"if x[{repr(name)}] else None")
                     elif isinstance(prop, RiverIntersectionType):
-                        typeddict_encoder.append(f"encode_{type_name}(x['{name}'])")
+                        typeddict_encoder.append(f"encode_{type_name}(x[{repr(name)}])")
                     elif isinstance(prop, RiverConcreteType):
                         if name == "$kind":
                             safe_name = "kind"
@@ -355,14 +355,14 @@ def encode_type(
                             safe_name = name
                         if prop.type == "object" and not prop.patternProperties:
                             typeddict_encoder.append(
-                                f"encode_{type_name}(x['{safe_name}'])"
+                                f"encode_{type_name}(x[{repr(safe_name)}])"
                             )
                             if name not in prop.required:
                                 typeddict_encoder.append(
                                     dedent(
                                         f"""
-                                        if '{safe_name}' in x
-                                        and x['{safe_name}'] is not None
+                                        if {repr(safe_name)} in x
+                                        and x[{repr(safe_name)}] is not None
                                         else None
                                     """
                                     )
@@ -371,7 +371,7 @@ def encode_type(
                             items = cast(RiverConcreteType, prop).items
                             assert items, "Somehow items was none"
                             if is_literal(cast(RiverType, items)):
-                                typeddict_encoder.append(f"x['{name}']")
+                                typeddict_encoder.append(f"x[{repr(name)}]")
                             else:
                                 assert type_name.startswith(
                                     "List["
@@ -380,14 +380,14 @@ def encode_type(
                                 typeddict_encoder.append(
                                     f"""[
                                         encode_{_inner_type_name}(y)
-                                        for y in x['{name}']
+                                        for y in x[{repr(name)}]
                                         ]"""
                                 )
                         else:
                             if name in prop.required:
-                                typeddict_encoder.append(f"x['{safe_name}']")
+                                typeddict_encoder.append(f"x[{repr(safe_name)}]")
                             else:
-                                typeddict_encoder.append(f"x.get('{safe_name}')")
+                                typeddict_encoder.append(f"x.get({repr(safe_name)})")
 
                 if name == "$kind":
                     # If the field is a literal, the Python type-checker will complain
@@ -407,7 +407,7 @@ def encode_type(
                                 f"""\
                                 = Field(
                                   default=None,
-                                  alias='{name}', # type: ignore
+                                  alias={repr(name)}, # type: ignore
                                 )
                                 """
                             )
@@ -419,7 +419,7 @@ def encode_type(
                                 f"""\
                                 = Field(
                                     {field_value},
-                                    alias='{name}', # type: ignore
+                                    alias={repr(name)}, # type: ignore
                                 )
                                 """
                             )
@@ -448,7 +448,7 @@ def encode_type(
         if base_model == "TypedDict":
             binding = "x" if needs_binding else "_"
             current_chunks = (
-                [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda {binding}: "]
+                [f"encode_{prefix}: Callable[[{repr(prefix)}], Any] = (lambda {binding}: "]
                 + typeddict_encoder
                 + [")"]
                 + current_chunks
@@ -637,8 +637,8 @@ def generate_river_client_module(
                       input: {input_type},
                     ) -> {output_type}:
                       {control_flow_keyword}await self.client.send_rpc(
-                        '{schema_name}',
-                        '{name}',
+                        {repr(schema_name)},
+                        {repr(name)},
                         input,
                         {render_input_method},
                         {parse_output_method},
@@ -659,8 +659,8 @@ def generate_river_client_module(
                       input: {input_type},
                     ) -> AsyncIterator[{output_or_error_type}]:
                       return await self.client.send_subscription(
-                        '{schema_name}',
-                        '{name}',
+                        {repr(schema_name)},
+                        {repr(name)},
                         input,
                         {render_input_method},
                         {parse_output_method},
@@ -686,8 +686,8 @@ def generate_river_client_module(
                           inputStream: AsyncIterable[{input_type}],
                         ) -> {output_type}:
                           {control_flow_keyword}await self.client.send_upload(
-                            '{schema_name}',
-                            '{name}',
+                            {repr(schema_name)},
+                            {repr(name)},
                             init,
                             inputStream,
                             {render_init_method},
@@ -710,8 +710,8 @@ def generate_river_client_module(
                           inputStream: AsyncIterable[{input_type}],
                         ) -> {output_or_error_type}:
                           {control_flow_keyword}await self.client.send_upload(
-                            '{schema_name}',
-                            '{name}',
+                            {repr(schema_name)},
+                            {repr(name)},
                             None,
                             inputStream,
                             None,
@@ -736,8 +736,8 @@ def generate_river_client_module(
                           inputStream: AsyncIterable[{input_type}],
                         ) -> AsyncIterator[{output_or_error_type}]:
                           return await self.client.send_stream(
-                            '{schema_name}',
-                            '{name}',
+                            {repr(schema_name)},
+                            {repr(name)},
                             init,
                             inputStream,
                             {render_init_method},
@@ -760,8 +760,8 @@ def generate_river_client_module(
                           inputStream: AsyncIterable[{input_type}],
                         ) -> AsyncIterator[{output_or_error_type}]:
                           return await self.client.send_stream(
-                            '{schema_name}',
-                            '{name}',
+                            {repr(schema_name)},
+                            {repr(name)},
                             None,
                             inputStream,
                             None,
