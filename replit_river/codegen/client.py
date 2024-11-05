@@ -922,10 +922,6 @@ def generate_individual_service(
             parse_output_method = "lambda x: None"
 
         if procedure.type == "rpc":
-            control_flow_keyword = "return "
-            if output_type == "None":
-                control_flow_keyword = ""
-
             current_chunks.extend(
                 [
                     reindent(
@@ -935,7 +931,7 @@ def generate_individual_service(
               self,
               input: {render_type_expr(input_type)},
             ) -> {render_type_expr(output_type)}:
-              {control_flow_keyword}await self.client.send_rpc(
+              return await self.client.send_rpc(
                 {repr(schema_name)},
                 {repr(name)},
                 input,
@@ -970,9 +966,6 @@ def generate_individual_service(
                 ]
             )
         elif procedure.type == "upload":
-            control_flow_keyword = "return "
-            if output_type == "None":
-                control_flow_keyword = ""
             if init_type:
                 assert render_init_method, "Expected an init renderer!"
                 current_chunks.extend(
@@ -985,7 +978,7 @@ def generate_individual_service(
               init: {init_type},
               inputStream: AsyncIterable[{render_type_expr(input_type)}],
             ) -> {output_type}:
-              {control_flow_keyword}await self.client.send_upload(
+              return await self.client.send_upload(
                 {repr(schema_name)},
                 {repr(name)},
                 init,
@@ -1009,7 +1002,7 @@ def generate_individual_service(
               self,
               inputStream: AsyncIterable[{render_type_expr(input_type)}],
             ) -> {render_type_expr(output_or_error_type)}:
-              {control_flow_keyword}await self.client.send_upload(
+              return await self.client.send_upload(
                 {repr(schema_name)},
                 {repr(name)},
                 None,
