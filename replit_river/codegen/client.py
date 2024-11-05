@@ -877,10 +877,6 @@ def generate_individual_service(
                             lambda x: TypeAdapter({render_type_expr(input_type)})
                               .validate_python
             """
-        if isinstance(
-            procedure.init, RiverConcreteType
-        ) and procedure.init.type not in ["object", "array"]:
-            render_init_method = "lambda x: x"
 
         assert (
             render_init_method
