@@ -584,7 +584,7 @@ def generate_river_client_module(
                 """.rstrip()
 
             # Init renderer
-            if typed_dict_inputs and init_type and procedure.init:
+            if typed_dict_inputs and init_type:
                 if is_literal(procedure.init):
                     render_init_method = "lambda x: x"
                 elif isinstance(
@@ -639,10 +639,6 @@ def generate_river_client_module(
                 parse_output_method = "lambda x: None"
 
             if procedure.type == "rpc":
-                control_flow_keyword = "return "
-                if output_type == "None":
-                    control_flow_keyword = ""
-
                 current_chunks.extend(
                     [
                         reindent(
@@ -652,7 +648,7 @@ def generate_river_client_module(
                       self,
                       input: {input_type},
                     ) -> {output_type}:
-                      {control_flow_keyword}await self.client.send_rpc(
+                      return await self.client.send_rpc(
                         {repr(schema_name)},
                         {repr(name)},
                         input,
@@ -687,9 +683,6 @@ def generate_river_client_module(
                     ]
                 )
             elif procedure.type == "upload":
-                control_flow_keyword = "return "
-                if output_type == "None":
-                    control_flow_keyword = ""
                 if init_type:
                     current_chunks.extend(
                         [
@@ -701,7 +694,7 @@ def generate_river_client_module(
                           init: {init_type},
                           inputStream: AsyncIterable[{input_type}],
                         ) -> {output_type}:
-                          {control_flow_keyword}await self.client.send_upload(
+                          return await self.client.send_upload(
                             {repr(schema_name)},
                             {repr(name)},
                             init,
@@ -725,7 +718,7 @@ def generate_river_client_module(
                           self,
                           inputStream: AsyncIterable[{input_type}],
                         ) -> {output_or_error_type}:
-                          {control_flow_keyword}await self.client.send_upload(
+                          return await self.client.send_upload(
                             {repr(schema_name)},
                             {repr(name)},
                             None,
