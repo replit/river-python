@@ -784,7 +784,7 @@ def generate_individual_service(
         module_names = [ModuleName(name)]
         init_type: Optional[TypeExpression] = None
         if procedure.init:
-            init_type, module_info, input_chunks, encoder_names = encode_type(
+            init_type, module_info, init_chunks, encoder_names = encode_type(
                 procedure.init,
                 TypeName(f"{name.title()}Init"),
                 input_base_class,
@@ -794,7 +794,7 @@ def generate_individual_service(
                 (
                     [extract_inner_type(init_type), *encoder_names],
                     module_info,
-                    input_chunks,
+                    init_chunks,
                 )
             )
         input_type, module_info, input_chunks, encoder_names = encode_type(
@@ -859,27 +859,28 @@ def generate_individual_service(
 
         # Init renderer
         render_init_method: Optional[str] = None
-        if input_base_class == "TypedDict" and init_type:
-            if is_literal(procedure.input):
-                render_init_method = "lambda x: x"
-            elif isinstance(
-                procedure.input, RiverConcreteType
-            ) and procedure.input.type in ["array"]:
-                match init_type:
-                    case ListTypeExpr(init_type_name):
-                        render_init_method = (
-                            f"lambda xs: [encode_{init_type_name}(x) for x in xs]"
-                        )
+        if init_type and procedure.init is not None:
+            if input_base_class == "TypedDict":
+                if is_literal(procedure.init):
+                    render_init_method = "lambda x: x"
+                elif isinstance(
+                    procedure.init, RiverConcreteType
+                ) and procedure.init.type in ["array"]:
+                    match init_type:
+                        case ListTypeExpr(init_type_name):
+                            render_init_method = (
+                                f"lambda xs: [encode_{init_type_name}(x) for x in xs]"
+                            )
+                else:
+                    render_init_method = f"encode_{ensure_literal_type(init_type)}"
             else:
-                render_init_method = f"encode_{ensure_literal_type(init_type)}"
-        else:
-            render_init_method = f"""\
-                            lambda x: TypeAdapter({render_type_expr(input_type)})
-                              .validate_python
-            """
+                render_init_method = f"""\
+                                lambda x: TypeAdapter({render_type_expr(init_type)})
+                                  .validate_python
+                """
 
         assert (
-            render_init_method
+            init_type is None or render_init_method
         ), f"Unable to derive the init encoder from: {input_type}"
 
         # Input renderer
@@ -973,6 +974,7 @@ def generate_individual_service(
             if output_type == "None":
                 control_flow_keyword = ""
             if init_type:
+                assert render_init_method, "Expected an init renderer!"
                 current_chunks.extend(
                     [
                         reindent(
@@ -1023,6 +1025,7 @@ def generate_individual_service(
                 )
         elif procedure.type == "stream":
             if init_type:
+                assert render_init_method, "Expected an init renderer!"
                 current_chunks.extend(
                     [
                         reindent(
