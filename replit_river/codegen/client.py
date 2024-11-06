@@ -4,7 +4,6 @@ from textwrap import dedent, indent
 from typing import (
     Any,
     Dict,
-    List,
     Literal,
     Optional,
     OrderedDict,
@@ -32,11 +31,11 @@ class RiverConcreteType(BaseModel):
 
 
 class RiverUnionType(BaseModel):
-    anyOf: List["RiverType"]
+    anyOf: list["RiverType"]
 
 
 class RiverIntersectionType(BaseModel):
-    allOf: List["RiverType"]
+    allOf: list["RiverType"]
 
 
 class RiverNotType(BaseModel):
@@ -93,7 +92,7 @@ def is_literal(tpe: RiverType) -> bool:
 def encode_type(
     type: RiverType, prefix: str, base_model: str
 ) -> Tuple[str, Sequence[str]]:
-    chunks: List[str] = []
+    chunks: list[str] = []
     if isinstance(type, RiverNotType):
         return ("None", ())
     if isinstance(type, RiverUnionType):
@@ -114,7 +113,7 @@ def encode_type(
 
         type = RiverUnionType(anyOf=flatten_union(type))
 
-        one_of_candidate_types: List[RiverConcreteType] = [
+        one_of_candidate_types: list[RiverConcreteType] = [
             t
             for _t in type.anyOf
             for t in (_t.anyOf if isinstance(_t, RiverUnionType) else [_t])
@@ -160,7 +159,7 @@ def encode_type(
                         (discriminator_value, []),
                     )[1].append(oneof_t)
 
-                one_of: List[str] = []
+                one_of: list[str] = []
                 if discriminator_name == "$kind":
                     discriminator_name = "kind"
                 for pfx, (discriminator_value, oneof_ts) in one_of_pending.items():
@@ -234,7 +233,7 @@ def encode_type(
             # End of stable union detection
         # Restore the non-flattened union type
         type = original_type
-        any_of: List[str] = []
+        any_of: list[str] = []
 
         typeddict_encoder = []
         for i, t in enumerate(type.anyOf):
@@ -338,7 +337,7 @@ def encode_type(
             return (f"Dict[str, {type_name}]", type_chunks)
         assert type.type == "object", type.type
 
-        current_chunks: List[str] = [f"class {prefix}({base_model}):"]
+        current_chunks: list[str] = [f"class {prefix}({base_model}):"]
         # For the encoder path, do we need "x" to be bound?
         # lambda x: ... vs lambda _: {}
         needs_binding = False
@@ -484,7 +483,7 @@ def generate_river_client_module(
     schema_root: RiverSchema,
     typed_dict_inputs: bool,
 ) -> Sequence[str]:
-    chunks: List[str] = [
+    chunks: list[str] = [
         dedent(
             """\
         # ruff: noqa
@@ -522,7 +521,7 @@ def generate_river_client_module(
 
     input_base_class = "TypedDict" if typed_dict_inputs else "BaseModel"
     for schema_name, schema in schema_root.services.items():
-        current_chunks: List[str] = [
+        current_chunks: list[str] = [
             dedent(
                 f"""\
                   class {schema_name.title()}Service:
