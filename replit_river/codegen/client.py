@@ -646,13 +646,13 @@ def generate_river_client_module(
                             f"""\
                     async def {name}(
                       self,
-                      input: {input_type},
+                      init: {init_type},
                     ) -> {output_type}:
                       return await self.client.send_rpc(
                         {repr(schema_name)},
                         {repr(name)},
-                        input,
-                        {render_input_method},
+                        init,
+                        {render_init_method},
                         {parse_output_method},
                         {parse_error_method},
                       )
@@ -668,13 +668,13 @@ def generate_river_client_module(
                             f"""\
                     async def {name}(
                       self,
-                      input: {input_type},
+                      init: {init_type},
                     ) -> AsyncIterator[{output_or_error_type}]:
                       return await self.client.send_subscription(
                         {repr(schema_name)},
                         {repr(name)},
-                        input,
-                        {render_input_method},
+                        init,
+                        {render_init_method},
                         {parse_output_method},
                         {parse_error_method},
                       )
@@ -683,7 +683,7 @@ def generate_river_client_module(
                     ]
                 )
             elif procedure.type == "upload":
-                if init_type:
+                if input_type is not None:
                     current_chunks.extend(
                         [
                             reindent(
@@ -716,15 +716,15 @@ def generate_river_client_module(
                                 f"""\
                         async def {name}(
                           self,
-                          inputStream: AsyncIterable[{input_type}],
-                        ) -> {output_or_error_type}:
+                          init: {init_type},
+                        ) -> {output_type}:
                           return await self.client.send_upload(
                             {repr(schema_name)},
                             {repr(name)},
+                            init,
                             None,
-                            inputStream,
+                            {render_init_method},
                             None,
-                            {render_input_method},
                             {parse_output_method},
                             {parse_error_method},
                           )
@@ -733,7 +733,7 @@ def generate_river_client_module(
                         ]
                     )
             elif procedure.type == "stream":
-                if init_type:
+                if input_type is not None:
                     current_chunks.extend(
                         [
                             reindent(
@@ -766,15 +766,15 @@ def generate_river_client_module(
                                 f"""\
                         async def {name}(
                           self,
-                          inputStream: AsyncIterable[{input_type}],
+                          init: {init_type},
                         ) -> AsyncIterator[{output_or_error_type}]:
                           return await self.client.send_stream(
                             {repr(schema_name)},
                             {repr(name)},
+                            init,
                             None,
-                            inputStream,
+                            {render_init_method},
                             None,
-                            {render_input_method},
                             {parse_output_method},
                             {parse_error_method},
                           )
