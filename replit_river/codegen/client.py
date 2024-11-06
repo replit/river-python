@@ -324,7 +324,7 @@ def encode_type(
         elif type.type == "array" and type.items:
             type_name, type_chunks = encode_type(type.items, prefix, base_model)
             typeddict_encoder.append("TODO: dstewart")
-            return (f"List[{type_name}]", type_chunks)
+            return (f"list[{type_name}]", type_chunks)
         elif (
             type.type == "object"
             and type.patternProperties
@@ -387,9 +387,9 @@ def encode_type(
                                 typeddict_encoder.append(f"x[{repr(name)}]")
                             else:
                                 assert type_name.startswith(
-                                    "List["
+                                    "list["
                                 )  # in case we change to list[...]
-                                _inner_type_name = type_name[len("List[") : -len("]")]
+                                _inner_type_name = type_name[len("list[") : -len("]")]
                                 typeddict_encoder.append(
                                     f"""[
                                         encode_{_inner_type_name}(y)
@@ -493,7 +493,6 @@ def generate_river_client_module(
         from typing import (
             Any,
             Dict,
-            List,
             Literal,
             Optional,
             Mapping,
@@ -590,9 +589,9 @@ def generate_river_client_module(
                     procedure.init, RiverConcreteType
                 ) and procedure.init.type in ["array"]:
                     assert init_type.startswith(
-                        "List["
+                        "list["
                     )  # in case we change to list[...]
-                    _init_type_name = init_type[len("List[") : -len("]")]
+                    _init_type_name = init_type[len("list[") : -len("]")]
                     render_init_method = (
                         f"lambda xs: [encode_{_init_type_name}(x) for x in xs]"
                     )
@@ -612,9 +611,9 @@ def generate_river_client_module(
                     procedure.input, RiverConcreteType
                 ) and procedure.input.type in ["array"]:
                     assert input_type.startswith(
-                        "List["
+                        "list["
                     )  # in case we change to list[...]
-                    _input_type_name = input_type[len("List[") : -len("]")]
+                    _input_type_name = input_type[len("list[") : -len("]")]
                     render_input_method = (
                         f"lambda xs: [encode_{_input_type_name}(x) for x in xs]"
                     )
