@@ -9,7 +9,6 @@ from typing import (
     Optional,
     Mapping,
     NotRequired,
-    Union,
     TypedDict,
 )
 from typing_extensions import Annotated
