@@ -219,7 +219,14 @@ def encode_type(
 
                 if base_model == "TypedDict":
                     chunks.extend(
-                        [f"encode_{prefix}: Callable[[{repr(prefix)}], Any] = (lambda x: "]
+                        [
+                            dedent(
+                                f"""\
+                    def encode_{prefix}(x: {repr(prefix)}) -> Any:
+                        return (
+                            """
+                            ),
+                        ]
                         + typeddict_encoder[:-1]  # Drop the last ternary
                         + [")"]
                     )
@@ -244,7 +251,14 @@ def encode_type(
         chunks.append(f"{prefix} = Union[" + ", ".join(any_of) + "]")
         if base_model == "TypedDict":
             chunks.extend(
-                [f"encode_{prefix}: Callable[[{repr(prefix)}], Any] = (lambda x: "]
+                [
+                    dedent(
+                        f"""\
+                    def encode_{prefix}(x: {repr(prefix)}) -> Any:
+                        return (
+                            """
+                    ),
+                ]
                 + typeddict_encoder
                 + [")"]
             )
@@ -448,7 +462,14 @@ def encode_type(
         if base_model == "TypedDict":
             binding = "x" if needs_binding else "_"
             current_chunks = (
-                [f"encode_{prefix}: Callable[[{repr(prefix)}], Any] = (lambda {binding}: "]
+                [
+                    dedent(
+                        f"""\
+                    def encode_{prefix}({binding}: {repr(prefix)}) -> Any:
+                        return (
+                            """
+                    ),
+                ]
                 + typeddict_encoder
                 + [")"]
                 + current_chunks
@@ -472,7 +493,6 @@ def generate_river_client_module(
         import datetime
         from typing import (
             Any,
-            Callable,
             Dict,
             List,
             Literal,
