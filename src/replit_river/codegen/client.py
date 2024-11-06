@@ -78,7 +78,6 @@ from collections.abc import AsyncIterable, AsyncIterator
 import datetime
 from typing import (
     Any,
-    Callable,
     Dict,
     List,
     Literal,
@@ -332,22 +331,27 @@ def encode_type(
                     encoder_name = TypeName(f"encode_{render_literal_type(prefix)}")
                     encoder_names.add(encoder_name)
                     _field_name = render_literal_type(encoder_name)
-                    _field_type = (
-                        f"Callable[[{repr(render_literal_type(prefix))}], Any]"
-                    )
+                    typeddict_encoder = typeddict_encoder[:-1]  # Drop the last ternary
                     chunks.append(
                         FileContents(
                             "\n".join(
                                 [
                                     dedent(
                                         f"""\
-                    {_field_name}: {_field_type} = (
-                        lambda x:
-                            """.rstrip()
+                            def {_field_name}(
+                                x: {repr(render_literal_type(prefix))},
+                            ) -> Any:
+                                return (
+                                    {
+                                            reindent(
+                                                "                                    ",
+                                                "\n".join(typeddict_encoder),
+                                            )
+                                        }
+                                )
+                                        """.rstrip()
                                     )
                                 ]
-                                + typeddict_encoder[:-1]  # Drop the last ternary
-                                + [")"]
                             )
                         )
                     )
@@ -404,13 +408,20 @@ def encode_type(
             encoder_name = TypeName(f"encode_{render_literal_type(prefix)}")
             encoder_names.add(encoder_name)
             _field_name = render_literal_type(encoder_name)
-            _field_type = f"Callable[[{repr(render_literal_type(prefix))}], Any]"
             chunks.append(
                 FileContents(
-                    "\n".join(
-                        [f"{_field_name}: {_field_type} = (lambda x: "]
-                        + typeddict_encoder
-                        + [")"]
+                    dedent(
+                        f"""
+                    def {_field_name}(x: {repr(render_literal_type(prefix))}) -> Any:
+                        return (
+                            {
+                            reindent(
+                                "                            ",
+                                "\n".join(typeddict_encoder),
+                            )
+                        }
+                        )
+                        """
                     )
                 )
             )
@@ -702,7 +713,6 @@ def encode_type(
             encoder_name = TypeName(f"encode_{render_literal_type(prefix)}")
             encoder_names.add(encoder_name)
             _field_name = render_literal_type(encoder_name)
-            _field_type = f"Callable[[{repr(render_literal_type(prefix))}], Any]"
             current_chunks.insert(
                 0,
                 FileContents(
@@ -710,13 +720,20 @@ def encode_type(
                         [
                             dedent(
                                 f"""\
-                            {_field_name}: {_field_type} = (
-                                lambda {binding}:
+                            def {_field_name}(
+                                {binding}: {repr(render_literal_type(prefix))},
+                            ) -> Any:
+                                return (
+                                {
+                                    reindent(
+                                        "                                ",
+                                        "\n".join(typeddict_encoder),
+                                    )
+                                }
+                            )
                             """
                             )
                         ]
-                        + typeddict_encoder
-                        + [")"]
                     )
                 ),
             )
