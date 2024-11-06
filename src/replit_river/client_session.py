@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable
 from datetime import timedelta
-from typing import Any, AsyncGenerator, Callable, Optional, Union
+from typing import Any, AsyncGenerator, Callable, Optional
 
 import nanoid  # type: ignore
 from aiochannel import Channel
@@ -194,7 +194,7 @@ class ClientSession(Session):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
         span: Span,
-    ) -> AsyncGenerator[Union[ResponseType, ErrorType], None]:
+    ) -> AsyncGenerator[ResponseType | ErrorType, None]:
         """Sends a subscription request to the server.
 
         Expects the input and output be messages that will be msgpacked.
@@ -248,7 +248,7 @@ class ClientSession(Session):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
         span: Span,
-    ) -> AsyncGenerator[Union[ResponseType, ErrorType], None]:
+    ) -> AsyncGenerator[ResponseType | ErrorType, None]:
         """Sends a subscription request to the server.
 
         Expects the input and output be messages that will be msgpacked.

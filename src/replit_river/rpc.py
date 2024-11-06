@@ -14,8 +14,8 @@ from typing import (
     NoReturn,
     Optional,
     Sequence,
+    TypeAlias,
     TypeVar,
-    Union,
 )
 
 import grpc
@@ -43,7 +43,7 @@ RequestType = TypeVar("RequestType")
 ResponseType = TypeVar("ResponseType")
 ErrorType = TypeVar("ErrorType", bound=RiverError)
 
-_MetadataType = Union[grpc.aio.Metadata, Sequence[tuple[str, Union[str, bytes]]]]
+_MetadataType: TypeAlias = grpc.aio.Metadata | Sequence[tuple[str, str | bytes]]
 
 GenericRpcHandler = Callable[
     [str, Channel[Any], Channel[Any]], Coroutine[None, None, None]

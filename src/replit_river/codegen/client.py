@@ -12,7 +12,6 @@ from typing import (
     Sequence,
     Set,
     TextIO,
-    Union,
     cast,
 )
 
@@ -79,7 +78,6 @@ from typing import (
     Optional,
     Mapping,
     NotRequired,
-    Union,
     TypedDict,
 )
 from typing_extensions import Annotated
@@ -99,7 +97,7 @@ class RiverConcreteType(BaseModel):
     properties: dict[str, "RiverType"] = Field(default_factory=lambda: dict())
     required: Set[str] = Field(default=set())
     items: Optional["RiverType"] = Field(default=None)
-    const: Optional[Union[str, int]] = Field(default=None)
+    const: Optional[str | int] = Field(default=None)
     patternProperties: dict[str, "RiverType"] = Field(default_factory=lambda: dict())
 
 
@@ -117,9 +115,7 @@ class RiverNotType(BaseModel):
     not_: Any = Field(..., alias="not")
 
 
-RiverType = Union[
-    RiverConcreteType, RiverUnionType, RiverNotType, RiverIntersectionType
-]
+RiverType = RiverConcreteType | RiverUnionType | RiverNotType | RiverIntersectionType
 
 
 class RiverProcedure(BaseModel):
