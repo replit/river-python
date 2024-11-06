@@ -3,7 +3,6 @@ import re
 from textwrap import dedent, indent
 from typing import (
     Any,
-    Dict,
     Literal,
     Optional,
     OrderedDict,
@@ -23,11 +22,11 @@ _LITERAL_RE = re.compile(r"^Literal\[(.+)\]$")
 
 class RiverConcreteType(BaseModel):
     type: Optional[str] = Field(default=None)
-    properties: Dict[str, "RiverType"] = Field(default_factory=lambda: dict())
+    properties: dict[str, "RiverType"] = Field(default_factory=lambda: dict())
     required: Set[str] = Field(default=set())
     items: Optional["RiverType"] = Field(default=None)
     const: Optional[Union[str, int]] = Field(default=None)
-    patternProperties: Dict[str, "RiverType"] = Field(default_factory=lambda: dict())
+    patternProperties: dict[str, "RiverType"] = Field(default_factory=lambda: dict())
 
 
 class RiverUnionType(BaseModel):
@@ -61,11 +60,11 @@ class RiverProcedure(BaseModel):
 
 
 class RiverService(BaseModel):
-    procedures: Dict[str, RiverProcedure]
+    procedures: dict[str, RiverProcedure]
 
 
 class RiverSchema(BaseModel):
-    services: Dict[str, RiverService]
+    services: dict[str, RiverService]
     handshakeSchema: Optional[RiverConcreteType] = Field(default=None)
 
 
