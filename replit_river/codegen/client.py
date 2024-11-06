@@ -333,7 +333,7 @@ def encode_type(
                 type.patternProperties["^(.*)$"], prefix, base_model
             )
             typeddict_encoder.append(f"encode_{type_name}(x)")
-            return (f"Dict[str, {type_name}]", type_chunks)
+            return (f"dict[str, {type_name}]", type_chunks)
         assert type.type == "object", type.type
 
         current_chunks: list[str] = [f"class {prefix}({base_model}):"]
@@ -491,7 +491,6 @@ def generate_river_client_module(
         import datetime
         from typing import (
             Any,
-            Dict,
             Literal,
             Optional,
             Mapping,
