@@ -13,6 +13,9 @@ def main() -> None:
     server = subparsers.add_parser(
         "server", help="Codegen a River server from gRPC protos"
     )
+    server.add_argument(
+        "--module", dest="module_name", help="output module", default="."
+    )
     server.add_argument("--output", help="output directory", required=True)
     server.add_argument("proto", help="proto file")
 
@@ -39,7 +42,7 @@ def main() -> None:
     if args.command == "server":
         proto_path = os.path.abspath(args.proto)
         target_directory = os.path.abspath(args.output)
-        proto_to_river_server_codegen(proto_path, target_directory)
+        proto_to_river_server_codegen(args.module_name, proto_path, target_directory)
     elif args.command == "server-schema":
         proto_path = os.path.abspath(args.proto)
         target_directory = os.path.abspath(args.output)
