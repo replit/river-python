@@ -51,8 +51,8 @@ RiverType = Union[
 
 
 class RiverProcedure(BaseModel):
-    init: Optional[RiverType] = Field(default=None)
-    input: RiverType
+    init: RiverType
+    input: Optional[RiverType] = Field(default=None)
     output: RiverType
     errors: Optional[RiverType] = Field(default=None)
     type: (
@@ -532,20 +532,20 @@ def generate_river_client_module(
             ),
         ]
         for name, procedure in schema.procedures.items():
-            init_type: Optional[str] = None
-            if procedure.init:
-                init_type, init_chunks = encode_type(
-                    procedure.init,
-                    f"{schema_name.title()}{name.title()}Init",
-                    base_model=input_base_class,
-                )
-                chunks.extend(init_chunks)
-            input_type, input_chunks = encode_type(
-                procedure.input,
-                f"{schema_name.title()}{name.title()}Input",
+            init_type, init_chunks = encode_type(
+                procedure.init,
+                f"{schema_name.title()}{name.title()}Init",
                 base_model=input_base_class,
             )
-            chunks.extend(input_chunks)
+            chunks.extend(init_chunks)
+            input_type: Optional[str] = None
+            if procedure.input:
+                input_type, input_chunks = encode_type(
+                    procedure.input,
+                    f"{schema_name.title()}{name.title()}Input",
+                    base_model=input_base_class,
+                )
+                chunks.extend(input_chunks)
             output_type, output_chunks = encode_type(
                 procedure.output,
                 f"{schema_name.title()}{name.title()}Output",
@@ -584,7 +584,7 @@ def generate_river_client_module(
                 """.rstrip()
 
             # Init renderer
-            if typed_dict_inputs and init_type:
+            if typed_dict_inputs:
                 if is_literal(procedure.init):
                     render_init_method = "lambda x: x"
                 elif isinstance(
@@ -606,7 +606,7 @@ def generate_river_client_module(
                 """.rstrip()
 
             # Input renderer
-            if typed_dict_inputs:
+            if typed_dict_inputs and input_type and procedure.input:
                 if is_literal(procedure.input):
                     render_input_method = "lambda x: x"
                 elif isinstance(
