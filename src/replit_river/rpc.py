@@ -21,6 +21,7 @@ from typing import (
 )
 
 import grpc
+import grpc.aio
 from aiochannel import Channel, ChannelClosed
 from opentelemetry.propagators.textmap import Setter
 from pydantic import BaseModel, ConfigDict, Field
