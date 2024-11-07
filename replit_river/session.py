@@ -526,8 +526,8 @@ class Session(object):
     async def close(self) -> None:
         """Close the session and all associated streams."""
         logger.info(
-            f"{self._transport_id} closing session "
-            f"to {self._to_id}, ws: {self._ws_wrapper.id}, "
+            f"{self._transport_id} closing session to {self._to_id}, "
+            f"ws: {self._ws_wrapper.id}, "
             f"current_state : {self._ws_wrapper.ws_state.name}"
         )
         async with self._state_lock:
