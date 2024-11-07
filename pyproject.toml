@@ -6,7 +6,19 @@ authors = [{ name = "Replit", email = "eng@replit.com" }]
 license = { file = "LICENSE" }
 keywords = ["rpc", "websockets"]
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<4"
+classifiers = [
+  "Development Status :: 4 - Beta",
+
+  "Intended Audience :: Developers",
+  "Topic :: Internet",
+
+  "License :: OSI Approved :: MIT License",
+
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
 dependencies = [
 	"pydantic==2.9.2",
     "aiochannel>=1.2.1",

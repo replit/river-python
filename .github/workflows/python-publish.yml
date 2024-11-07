@@ -43,7 +43,7 @@ jobs:
 
     - name: Build and publish
       run: |
-        uv sync --locked
+        uv sync --frozen  # NB: Not --locked, since bumping the version changes the lockfile.
         uv build
         UV_PUBLISH_TOKEN="${{ secrets.PYPI_TOKEN }}" \
         uv publish
