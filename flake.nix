@@ -19,7 +19,7 @@
       };
       packages = replitNixDeps ++ [
         pkgs.python311
-        pkgs.poetry
+        pkgs.uv
       ];
     };
   in

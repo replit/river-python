@@ -7,38 +7,33 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v3
+        with:
+          enable-cache: true
+
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: cache poetry install
-        uses: actions/cache@v2
-        with:
-          path: ~/.local
-          key: poetry-1.6.1-0
-      - uses: snok/install-poetry@v1
-        with:
-          version: 1.6.1
-          virtualenvs-create: true
-          virtualenvs-in-project: true
-      - name: cache deps
-        id: cache-deps
-        uses: actions/cache@v2
-        with:
-          path: .venv
-          key: pydeps-${{ hashFiles('**/poetry.lock') }}
+
       - name: Install dependencies
         run: |
-          poetry install --no-interaction
+          uv sync --locked
+
       - name: Format check
         run: |
-          poetry run black --check .
+          uv run black --check .
+
       - name: Lint check
         run: |
-          poetry run ruff .
+          uv run ruff check .
+
       - name: Type check
         run: |
-          poetry run mypy .
+          uv run mypy .
+
       - name: Test with pytest
         run: |
-          poetry run pytest tests
+          uv run pytest tests

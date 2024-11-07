@@ -1,48 +1,41 @@
-[build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
-
-[tool.poetry]
+[project]
 name="replit-river"
 version="0.0.0a0"
 description="Replit river toolkit for Python"
-authors = ["Replit <eng@replit.com>"]
-license = "LICENSE"
+authors = [{ name = "Replit", email = "eng@replit.com" }]
+license = { file = "LICENSE" }
 keywords = ["rpc", "websockets"]
 readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+	"pydantic==2.9.2",
+    "aiochannel>=1.2.1",
+    "black>=23.11,<25.0",
+    "grpcio-tools>=1.59.3",
+    "grpcio>=1.59.3",
+    "msgpack-types>=0.3.0",
+    "msgpack>=1.0.7",
+    "nanoid>=2.0.0",
+    "protobuf>=4.24.4",
+    "pydantic-core>=2.20.1",
+    "websockets>=12.0",
+]
 
-[tool.poetry.scripts]
-river-codegen-py = "replit_river.codegen.run:main"
-
-[tool.poetry.dependencies]
-python = "^3.11"
-grpcio = "^1.59.3"
-grpcio-tools = "^1.59.3"
-protobuf = "^4.24.4"
-black = ">=23.11,<25.0"
-msgpack = "^1.0.7"
-aiochannel = "^1.2.1"
-nanoid = "^2.0.0"
-websockets = "^12.0"
-pydantic-core = "^2.20.1"
-msgpack-types = "^0.3.0"
-pydantic = "=2.9.2"
-
-[tool.poetry.group.dev.dependencies]
-pytest = "^7.4.0"
-mypy = "^1.4.0"
-black = ">=23.3,<25.0"
-pytest-cov = "^4.1.0"
-ruff = "^0.0.278"
-
-pytest-mock = "^3.11.1"
-pytest-asyncio = "^0.21.1"
-types-protobuf = "^4.24.0.20240311"
-mypy-protobuf = "^3.5.0"
-deptry = "^0.14.0"
+[tool.uv]
+dev-dependencies = [
+    "deptry>=0.14.0",
+    "mypy>=1.4.0",
+    "mypy-protobuf>=3.5.0",
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.1",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.1",
+    "ruff>=0.0.278",
+    "types-protobuf>=4.24.0.20240311",
+]
 
 [tool.ruff]
-select = ["F", "E", "W", "I001"]
+lint.select = ["F", "E", "W", "I001"]
 
 # Should be kept in sync with mypy.ini in the project root.
 # The VSCode mypy extension can only read /mypy.ini.
