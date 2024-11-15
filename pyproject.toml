@@ -20,7 +20,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-	"pydantic==2.9.2",
+    "pydantic==2.9.2",
     "aiochannel>=1.2.1",
     "black>=23.11,<25.0",
     "grpcio-tools>=1.59.3",
@@ -28,7 +28,7 @@ dependencies = [
     "msgpack-types>=0.3.0",
     "msgpack>=1.0.7",
     "nanoid>=2.0.0",
-    "protobuf>=4.24.4",
+    "protobuf>=5.28.3",
     "pydantic-core>=2.20.1",
     "websockets>=12.0",
 ]
