@@ -85,6 +85,11 @@ class ControlMessageHandshakeResponse(BaseModel):
     status: HandShakeStatus
 
 
+class PropagationContext:
+    traceparent: str
+    tracestate: str
+
+
 class TransportMessage(BaseModel):
     id: str
     # from_ is used instead of from because from is a reserved keyword in Python
@@ -96,6 +101,7 @@ class TransportMessage(BaseModel):
     procedureName: Optional[str] = None
     streamId: str
     controlFlags: int
+    tracing: Optional[PropagationContext] = None
     payload: Any
     model_config = ConfigDict(populate_by_name=True)
     # need this because we create TransportMessage objects with destructuring
