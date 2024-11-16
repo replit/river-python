@@ -543,7 +543,7 @@ requires-dist = [
     { name = "msgpack", specifier = ">=1.0.7" },
     { name = "msgpack-types", specifier = ">=0.3.0" },
     { name = "nanoid", specifier = ">=2.0.0" },
-    { name = "protobuf", specifier = ">=4.24.4" },
+    { name = "protobuf", specifier = ">=5.28.3" },
     { name = "pydantic", specifier = "==2.9.2" },
     { name = "pydantic-core", specifier = ">=2.20.1" },
     { name = "websockets", specifier = ">=12.0" },
