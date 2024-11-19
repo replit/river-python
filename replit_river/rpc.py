@@ -193,7 +193,9 @@ def get_response_or_error_payload(
 
 
 def rpc_method_handler(
-    method: Callable[[RequestType, grpc.aio.ServicerContext], Awaitable[ResponseType]],
+    method: Callable[
+        [RequestType, grpc.aio.ServicerContext], ResponseType | Awaitable[ResponseType]
+    ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
 ) -> GenericRpcHandler:
@@ -206,7 +208,9 @@ def rpc_method_handler(
         try:
             context = GrpcContext(peer)
             request = request_deserializer(await input.get())
-            response = await method(request, context)
+            response = method(request, context)
+            if isinstance(response, Awaitable):
+                response = await response
             await output.put(
                 get_response_or_error_payload(response, response_serializer)
             )
@@ -247,7 +251,8 @@ def rpc_method_handler(
 
 def subscription_method_handler(
     method: Callable[
-        [RequestType, grpc.aio.ServicerContext], AsyncIterable[ResponseType]
+        [RequestType, grpc.aio.ServicerContext],
+        Iterable[ResponseType] | AsyncIterable[ResponseType],
     ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
@@ -261,10 +266,17 @@ def subscription_method_handler(
         try:
             context = GrpcContext(peer)
             request = request_deserializer(await input.get())
-            async for response in method(request, context):
-                await output.put(
-                    get_response_or_error_payload(response, response_serializer)
-                )
+            iterator = method(request, context)
+            if isinstance(iterator, AsyncIterable):
+                async for response in iterator:
+                    await output.put(
+                        get_response_or_error_payload(response, response_serializer)
+                    )
+            else:
+                for response in iterator:
+                    await output.put(
+                        get_response_or_error_payload(response, response_serializer)
+                    )
         except grpc.RpcError:
             code = grpc.StatusCode(context._abort_code).name if context else "UNKNOWN"
             message = (
@@ -300,7 +312,7 @@ def subscription_method_handler(
 def upload_method_handler(
     method: Callable[
         [AsyncIterator[RequestType], grpc.aio.ServicerContext],
-        Awaitable[ResponseType],
+        ResponseType | Awaitable[ResponseType],
     ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
@@ -324,7 +336,9 @@ def upload_method_handler(
 
             async def _convert_outputs() -> None:
                 try:
-                    response = await method(request, context)
+                    response = method(request, context)
+                    if isinstance(response, Awaitable):
+                        response = await response
                     await output.put(
                         get_response_or_error_payload(response, response_serializer)
                     )
