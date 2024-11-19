@@ -312,7 +312,7 @@ def subscription_method_handler(
 def upload_method_handler(
     method: Callable[
         [AsyncIterator[RequestType], grpc.aio.ServicerContext],
-        Awaitable[ResponseType],
+        ResponseType | Awaitable[ResponseType],
     ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
@@ -336,7 +336,9 @@ def upload_method_handler(
 
             async def _convert_outputs() -> None:
                 try:
-                    response = await method(request, context)
+                    response = method(request, context)
+                    if isinstance(response, Awaitable):
+                        response = await response
                     await output.put(
                         get_response_or_error_payload(response, response_serializer)
                     )
