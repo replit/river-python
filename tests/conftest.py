@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from typing import Any, AsyncGenerator, Literal
+from typing import Any, AsyncGenerator, Iterator, Literal
 
 import nanoid  # type: ignore
 import pytest
@@ -79,18 +79,28 @@ async def subscription_handler(
         yield f"Subscription message {i} for {request}"
 
 
-async def upload_handler(request: AsyncIterator[str], context: Any) -> str:
+async def upload_handler(
+    request: Iterator[str] | AsyncIterator[str], context: Any
+) -> str:
     uploaded_data = []
-    async for data in request:
-        uploaded_data.append(data)
+    if isinstance(request, AsyncIterator):
+        async for data in request:
+            uploaded_data.append(data)
+    else:
+        for data in request:
+            uploaded_data.append(data)
     return f"Uploaded: {', '.join(uploaded_data)}"
 
 
 async def stream_handler(
-    request: AsyncIterator[str], context: GrpcContext
+    request: Iterator[str] | AsyncIterator[str], context: GrpcContext
 ) -> AsyncGenerator[str, None]:
-    async for data in request:
-        yield f"Stream response for {data}"
+    if isinstance(request, AsyncIterator):
+        async for data in request:
+            yield f"Stream response for {data}"
+    else:
+        for data in request:
+            yield f"Stream response for {data}"
 
 
 @pytest.fixture

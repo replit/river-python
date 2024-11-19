@@ -9,6 +9,7 @@ from typing import (
     Dict,
     Generic,
     Iterable,
+    Iterator,
     Literal,
     Mapping,
     NoReturn,
@@ -311,7 +312,7 @@ def subscription_method_handler(
 
 def upload_method_handler(
     method: Callable[
-        [AsyncIterator[RequestType], grpc.aio.ServicerContext],
+        [Iterator[RequestType] | AsyncIterator[RequestType], grpc.aio.ServicerContext],
         ResponseType | Awaitable[ResponseType],
     ],
     request_deserializer: Callable[[Any], RequestType],
@@ -388,7 +389,7 @@ def upload_method_handler(
 
 def stream_method_handler(
     method: Callable[
-        [AsyncIterator[RequestType], grpc.aio.ServicerContext],
+        [Iterator[RequestType] | AsyncIterator[RequestType], grpc.aio.ServicerContext],
         AsyncIterable[ResponseType],
     ],
     request_deserializer: Callable[[Any], RequestType],
