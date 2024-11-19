@@ -193,7 +193,9 @@ def get_response_or_error_payload(
 
 
 def rpc_method_handler(
-    method: Callable[[RequestType, grpc.aio.ServicerContext], Awaitable[ResponseType]],
+    method: Callable[
+        [RequestType, grpc.aio.ServicerContext], ResponseType | Awaitable[ResponseType]
+    ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
 ) -> GenericRpcHandler:
@@ -206,7 +208,9 @@ def rpc_method_handler(
         try:
             context = GrpcContext(peer)
             request = request_deserializer(await input.get())
-            response = await method(request, context)
+            response = method(request, context)
+            if isinstance(response, Awaitable):
+                response = await response
             await output.put(
                 get_response_or_error_payload(response, response_serializer)
             )
