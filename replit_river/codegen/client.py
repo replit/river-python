@@ -20,6 +20,7 @@ from typing import (
 import black
 from pydantic import BaseModel, Field, RootModel
 
+TypeName = NewType("TypeName", str)
 ModuleName = NewType("ModuleName", str)
 ClassName = NewType("ClassName", str)
 FileContents = NewType("FileContents", str)
@@ -125,11 +126,11 @@ def is_literal(tpe: RiverType) -> bool:
 
 
 def encode_type(
-    type: RiverType, prefix: str, base_model: str
-) -> Tuple[str, Sequence[str]]:
-    chunks: List[str] = []
+    type: RiverType, prefix: TypeName, base_model: str
+) -> Tuple[TypeName, Optional[Tuple[Path, ModuleName]], list[FileContents]]:
+    chunks: List[FileContents] = []
     if isinstance(type, RiverNotType):
-        return ("None", ())
+        return (TypeName("None"), None, [])
     if isinstance(type, RiverUnionType):
         typeddict_encoder = list[str]()
 
@@ -213,11 +214,11 @@ def encode_type(
                                 )
 
                         for i, oneof_t in enumerate(oneof_ts):
-                            type_name, type_chunks = encode_type(
-                                oneof_ts[i], f"{pfx}{i}", base_model
+                            type_name, _, contents = encode_type(
+                                oneof_ts[i], TypeName(f"{pfx}{i}"), base_model
                             )
-                            chunks.extend(type_chunks)
                             one_of.append(type_name)
+                            chunks.extend(contents)
                             local_discriminators = set(
                                 oneof_t.properties.keys()
                             ).difference(common_members)
@@ -237,9 +238,11 @@ def encode_type(
                         typeddict_encoder.append(")")
                     else:
                         oneof_t = oneof_ts[0]
-                        type_name, type_chunks = encode_type(oneof_t, pfx, base_model)
-                        chunks.extend(type_chunks)
+                        type_name, _, contents = encode_type(
+                            oneof_t, TypeName(pfx), base_model
+                        )
                         one_of.append(type_name)
+                        chunks.extend(contents)
                         typeddict_encoder.append(f"encode_{type_name}(x)")
                     typeddict_encoder.append(
                         f"""
@@ -248,16 +251,29 @@ def encode_type(
                             else
                         """,
                     )
-                chunks.append(f"{prefix} = Union[" + ", ".join(one_of) + "]")
-                chunks.append("")
+                chunks.append(
+                    FileContents(f"{prefix} = Union[" + ", ".join(one_of) + "]")
+                )
+                chunks.append(FileContents(""))
 
                 if base_model == "TypedDict":
-                    chunks.extend(
-                        [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
-                        + typeddict_encoder[:-1]  # Drop the last ternary
-                        + [")"]
+                    chunks.append(
+                        FileContents(
+                            "\n".join(
+                                [
+                                    dedent(
+                                        f"""\
+                                    encode_{prefix}: Callable[['{prefix}'], Any] = (
+                                        lambda x:
+                                    """
+                                    )
+                                ]
+                                + typeddict_encoder[:-1]  # Drop the last ternary
+                                + [")"]
+                            )
+                        )
                     )
-                return (prefix, chunks)
+                return (prefix, None, chunks)
             # End of stable union detection
         # Restore the non-flattened union type
         type = original_type
@@ -265,9 +281,11 @@ def encode_type(
 
         typeddict_encoder = []
         for i, t in enumerate(type.anyOf):
-            type_name, type_chunks = encode_type(t, f"{prefix}AnyOf_{i}", base_model)
-            chunks.extend(type_chunks)
+            type_name, _, contents = encode_type(
+                t, TypeName(f"{prefix}AnyOf_{i}"), base_model
+            )
             any_of.append(type_name)
+            chunks.extend(contents)
             if isinstance(t, RiverConcreteType):
                 if t.type == "string":
                     typeddict_encoder.extend(["x", " if isinstance(x, str) else "])
@@ -275,14 +293,18 @@ def encode_type(
                     typeddict_encoder.append(f"encode_{type_name}(x)")
         if is_literal(type):
             typeddict_encoder = ["x"]
-        chunks.append(f"{prefix} = Union[" + ", ".join(any_of) + "]")
+        chunks.append(FileContents(f"{prefix} = Union[" + ", ".join(any_of) + "]"))
         if base_model == "TypedDict":
-            chunks.extend(
-                [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
-                + typeddict_encoder
-                + [")"]
+            chunks.append(
+                FileContents(
+                    "\n".join(
+                        [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
+                        + typeddict_encoder
+                        + [")"]
+                    )
+                )
             )
-        return (prefix, chunks)
+        return (prefix, None, chunks)
     if isinstance(type, RiverIntersectionType):
 
         def extract_props(tpe: RiverType) -> list[dict[str, RiverType]]:
@@ -308,54 +330,56 @@ def encode_type(
         if type.type is None:
             # Handle the case where type is not specified
             typeddict_encoder.append("x")
-            return ("Any", ())
+            return (TypeName("Any"), None, [])
         elif type.type == "string":
             if type.const:
                 typeddict_encoder.append(f"'{type.const}'")
-                return (f"Literal['{type.const}']", ())
+                return (TypeName(f"Literal['{type.const}']"), None, [])
             else:
                 typeddict_encoder.append("x")
-                return ("str", ())
+                return (TypeName("str"), None, [])
         elif type.type == "Uint8Array":
             typeddict_encoder.append("x.decode()")
-            return ("bytes", ())
+            return (TypeName("bytes"), None, [])
         elif type.type == "number":
             if type.const is not None:
                 # enums are represented as const number in the schema
                 typeddict_encoder.append(f"{type.const}")
-                return (f"Literal[{type.const}]", ())
+                return (TypeName(f"Literal[{type.const}]"), None, [])
             typeddict_encoder.append("x")
-            return ("float", ())
+            return (TypeName("float"), None, [])
         elif type.type == "integer":
             if type.const is not None:
                 # enums are represented as const number in the schema
                 typeddict_encoder.append(f"{type.const}")
-                return (f"Literal[{type.const}]", ())
+                return (TypeName(f"Literal[{type.const}]"), None, [])
             typeddict_encoder.append("x")
-            return ("int", ())
+            return (TypeName("int"), None, [])
         elif type.type == "boolean":
             typeddict_encoder.append("x")
-            return ("bool", ())
+            return (TypeName("bool"), None, [])
         elif type.type == "null" or type.type == "undefined":
             typeddict_encoder.append("None")
-            return ("None", ())
+            return (TypeName("None"), None, [])
         elif type.type == "Date":
             typeddict_encoder.append("TODO: dstewart")
-            return ("datetime.datetime", ())
+            return (TypeName("datetime.datetime"), None, [])
         elif type.type == "array" and type.items:
-            type_name, type_chunks = encode_type(type.items, prefix, base_model)
+            type_name, file_info, type_chunks = encode_type(
+                type.items, prefix, base_model
+            )
             typeddict_encoder.append("TODO: dstewart")
-            return (f"List[{type_name}]", type_chunks)
+            return (TypeName(f"List[{type_name}]"), file_info, type_chunks)
         elif (
             type.type == "object"
             and type.patternProperties
             and "^(.*)$" in type.patternProperties
         ):
-            type_name, type_chunks = encode_type(
+            type_name, file_info, type_chunks = encode_type(
                 type.patternProperties["^(.*)$"], prefix, base_model
             )
             typeddict_encoder.append(f"encode_{type_name}(x)")
-            return (f"Dict[str, {type_name}]", type_chunks)
+            return (TypeName(f"Dict[str, {type_name}]"), file_info, type_chunks)
         assert type.type == "object", type.type
 
         current_chunks: List[str] = [f"class {prefix}({base_model}):"]
@@ -367,12 +391,10 @@ def encode_type(
             typeddict_encoder.append("{")
             for name, prop in type.properties.items():
                 typeddict_encoder.append(f"'{name}':")
-
-                type_name, type_chunks = encode_type(
-                    prop, prefix + name.title(), base_model
+                type_name, _, contents = encode_type(
+                    prop, TypeName(prefix + name.title()), base_model
                 )
-                chunks.extend(type_chunks)
-
+                chunks.extend(contents)
                 if base_model == "TypedDict":
                     if isinstance(prop, RiverNotType):
                         typeddict_encoder.append("'not implemented'")
@@ -481,15 +503,26 @@ def encode_type(
 
         if base_model == "TypedDict":
             binding = "x" if needs_binding else "_"
-            current_chunks = (
-                [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda {binding}: "]
-                + typeddict_encoder
-                + [")"]
-                + current_chunks
+            current_chunks.insert(
+                0,
+                FileContents(
+                    "\n".join(
+                        [
+                            dedent(
+                                f"""\
+                            encode_{prefix}: Callable[['{prefix}'], Any] = (
+                                lambda {binding}:
+                            """
+                            )
+                        ]
+                        + typeddict_encoder
+                        + [")"]
+                    )
+                ),
             )
-        chunks.extend(current_chunks)
+        chunks.append(FileContents("\n".join(current_chunks)))
 
-    return (prefix, chunks)
+    return (prefix, None, chunks)
 
 
 def generate_common_client(
@@ -529,7 +562,7 @@ def generate_individual_service(
     schema: RiverService,
     input_base_class: Literal["TypedDict"] | Literal["BaseModel"],
 ) -> Tuple[Path, ModuleName, ClassName, FileContents]:
-    serdes: list[str] = []
+    serdes: list[Tuple[TypeName, Tuple[Path, ModuleName], list[FileContents]]] = []
     class_name = ClassName(f"{schema_name.title()}Service")
     current_chunks: List[str] = [
         dedent(
@@ -543,37 +576,40 @@ def generate_individual_service(
     for name, procedure in schema.procedures.items():
         init_type: Optional[str] = None
         if procedure.init:
-            init_type, input_chunks = encode_type(
+            init_type, file_info, input_chunks = encode_type(
                 procedure.init,
-                f"{schema_name.title()}{name.title()}Init",
+                TypeName(f"{schema_name.title()}{name.title()}Init"),
                 base_model=input_base_class,
             )
-            serdes.extend(input_chunks)
-        input_type, input_chunks = encode_type(
+            if file_info is not None:
+                serdes.append((init_type, file_info, input_chunks))
+        input_type, file_info, input_chunks = encode_type(
             procedure.input,
-            f"{schema_name.title()}{name.title()}Input",
+            TypeName(f"{schema_name.title()}{name.title()}Input"),
             base_model=input_base_class,
         )
-        serdes.extend(input_chunks)
-        output_type, output_chunks = encode_type(
+        if file_info is not None:
+            serdes.append((input_type, file_info, input_chunks))
+        output_type, file_info, output_chunks = encode_type(
             procedure.output,
-            f"{schema_name.title()}{name.title()}Output",
+            TypeName(f"{schema_name.title()}{name.title()}Output"),
             "BaseModel",
         )
-        serdes.extend(output_chunks)
+        if file_info is not None:
+            serdes.append((output_type, file_info, output_chunks))
         if procedure.errors:
-            error_type, errors_chunks = encode_type(
+            error_type, file_info, errors_chunks = encode_type(
                 procedure.errors,
-                f"{schema_name.title()}{name.title()}Errors",
+                TypeName(f"{schema_name.title()}{name.title()}Errors"),
                 base_model="RiverError",
             )
             if error_type == "None":
-                error_type = "RiverError"
-            else:
-                serdes.extend(errors_chunks)
+                error_type = TypeName("RiverError")
+            elif file_info is not None:
+                serdes.append((error_type, file_info, errors_chunks))
         else:
-            error_type = "RiverError"
-        output_or_error_type = f"Union[{output_type}, {error_type}]"
+            error_type = TypeName("RiverError")
+        output_or_error_type = TypeName(f"Union[{output_type}, {error_type}]")
 
         # NB: These strings must be indented to at least the same level of
         #     the function strings in the branches below, otherwise `dedent`
@@ -800,11 +836,12 @@ def generate_individual_service(
                 )
 
         current_chunks.append("")
+    # TODO: Translate serdes into a sequence of imports that we can inject below
     return (
-        Path(f"{schema_name}.py"),
+        Path(f"{schema_name}/__init__.py"),
         ModuleName(schema_name),
         class_name,
-        FileContents("\n".join([FILE_HEADER] + serdes + current_chunks)),
+        FileContents("\n".join([FILE_HEADER] + current_chunks)),
     )
 
 
@@ -816,11 +853,12 @@ def generate_river_client_module(
     files: dict[Path, FileContents] = {}
 
     # Negotiate handshake shape
-    handshake_chunks: Sequence[str] = []
+    handshake_chunks: list[str] = []
     if schema_root.handshakeSchema is not None:
-        (_handshake_type, handshake_chunks) = encode_type(
-            schema_root.handshakeSchema, "HandshakeSchema", "BaseModel"
+        _handshake_type, _, contents = encode_type(
+            schema_root.handshakeSchema, TypeName("HandshakeSchema"), "BaseModel"
         )
+        handshake_chunks.extend(contents)
         handshake_type = HandshakeType(_handshake_type)
     else:
         handshake_type = HandshakeType("Literal[None]")
