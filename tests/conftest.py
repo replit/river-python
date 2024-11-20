@@ -148,7 +148,6 @@ async def client(
     transport_options: TransportOptions,
     no_logging_error: NoErrors,
 ) -> AsyncGenerator[Client, None]:
-
     async def websocket_uri_factory() -> UriAndMetadata[None]:
         return {
             "uri": "ws://localhost:8765",
