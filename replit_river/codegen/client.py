@@ -211,6 +211,7 @@ def encode_type(
     base_model: str,
     in_module: list[ModuleName],
 ) -> Tuple[TypeExpression, list[ModuleName], list[FileContents], set[TypeName]]:
+    encoder_name: Optional[str] = None  # defining this up here to placate mypy
     chunks: List[FileContents] = []
     if isinstance(type, RiverNotType):
         return (TypeName("None"), [], [], set())
@@ -528,7 +529,7 @@ def encode_type(
         # For the encoder path, do we need "x" to be bound?
         # lambda x: ... vs lambda _: {}
         needs_binding = False
-        encoder_names: set[TypeName] = set()
+        encoder_names = set()
         if type.properties:
             needs_binding = True
             typeddict_encoder.append("{")
@@ -537,7 +538,7 @@ def encode_type(
                 type_name, _, contents, _ = encode_type(
                     prop, TypeName(prefix + name.title()), base_model, in_module
                 )
-                encoder_name: Optional[str] = None
+                encoder_name = None
                 chunks.extend(contents)
                 if base_model == "TypedDict":
                     if isinstance(prop, RiverNotType):
