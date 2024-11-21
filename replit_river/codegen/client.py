@@ -1,7 +1,7 @@
 import json
 import re
 from pathlib import Path
-from textwrap import dedent, indent
+from textwrap import dedent
 from typing import (
     Any,
     Dict,
@@ -19,6 +19,7 @@ from typing import (
 import black
 from pydantic import BaseModel, Field, RootModel
 
+from replit_river.codegen.format import reindent
 from replit_river.codegen.typing import (
     ClassName,
     DictTypeExpr,
@@ -141,14 +142,6 @@ class RiverSchema(BaseModel):
 
 
 RiverSchemaFile = RootModel[RiverSchema]
-
-
-def reindent(prefix: str, code: str) -> str:
-    """
-    Take an arbitrarily indented code block, dedent to the lowest common
-    indent level and then reindent based on the supplied prefix
-    """
-    return indent(dedent(code.rstrip()), prefix)
 
 
 def is_literal(tpe: RiverType) -> bool:
