@@ -27,6 +27,8 @@ ClassName = NewType("ClassName", str)
 FileContents = NewType("FileContents", str)
 HandshakeType = NewType("HandshakeType", str)
 
+RenderedPath = NewType("RenderedPath", str)
+
 
 @dataclass
 class DictTypeExpr:
@@ -43,17 +45,26 @@ class LiteralTypeExpr:
     nested: int | str
 
 
-TypeExpression = TypeName | DictTypeExpr | ListTypeExpr | LiteralTypeExpr
+@dataclass
+class UnionTypeExpr:
+    nested: list["TypeExpression"]
+
+
+TypeExpression = (
+    TypeName | DictTypeExpr | ListTypeExpr | LiteralTypeExpr | UnionTypeExpr
+)
 
 
 def render_type_expr(value: TypeExpression) -> str:
     match value:
         case DictTypeExpr(nested):
-            return f"dict[str, {nested}]"
+            return f"dict[str, {render_type_expr(nested)}]"
         case ListTypeExpr(nested):
-            return f"list[{nested}]"
+            return f"list[{render_type_expr(nested)}]"
         case LiteralTypeExpr(inner):
             return f"Literal[{repr(inner)}]"
+        case UnionTypeExpr(inner):
+            return " | ".join(render_type_expr(x) for x in inner)
         case other:
             return other
 
@@ -66,6 +77,10 @@ def extract_inner_type(value: TypeExpression) -> TypeName:
             return extract_inner_type(nested)
         case LiteralTypeExpr(_):
             raise ValueError(f"Unexpected literal type: {value}")
+        case UnionTypeExpr(_):
+            raise ValueError(
+                f"Attempting to extract from a union, currently not possible: {value}"
+            )
         case other:
             return other
 
@@ -81,6 +96,10 @@ def ensure_literal_type(value: TypeExpression) -> TypeName:
                 f"Unexpected expression when expecting a type name: {value}"
             )
         case LiteralTypeExpr(_):
+            raise ValueError(
+                f"Unexpected expression when expecting a type name: {value}"
+            )
+        case UnionTypeExpr(_):
             raise ValueError(
                 f"Unexpected expression when expecting a type name: {value}"
             )
@@ -187,13 +206,17 @@ def is_literal(tpe: RiverType) -> bool:
 
 
 def encode_type(
-    type: RiverType, prefix: TypeName, base_model: str
-) -> Tuple[TypeExpression, Optional[Tuple[Path, ModuleName]], list[FileContents]]:
+    type: RiverType,
+    prefix: TypeName,
+    base_model: str,
+    in_module: list[ModuleName],
+) -> Tuple[TypeExpression, list[ModuleName], list[FileContents], set[TypeName]]:
     chunks: List[FileContents] = []
     if isinstance(type, RiverNotType):
-        return (TypeName("None"), None, [])
+        return (TypeName("None"), [], [], set())
     if isinstance(type, RiverUnionType):
         typeddict_encoder = list[str]()
+        encoder_names: set[TypeName] = set()
 
         # First check if it's a discriminated union. Typebox currently doesn't have
         # a way of expressing the intention of having a discriminated union. So we
@@ -275,17 +298,24 @@ def encode_type(
                                 )
 
                         for i, oneof_t in enumerate(oneof_ts):
-                            type_name, _, contents = encode_type(
-                                oneof_ts[i], TypeName(f"{pfx}{i}"), base_model
+                            type_name, _, contents, _ = encode_type(
+                                oneof_ts[i],
+                                TypeName(f"{pfx}{i}"),
+                                base_model,
+                                in_module,
                             )
                             one_of.append(type_name)
                             chunks.extend(contents)
                             local_discriminators = set(
                                 oneof_t.properties.keys()
                             ).difference(common_members)
+                            encoder_name = TypeName(
+                                f"encode_{ensure_literal_type(type_name)}"
+                            )
+                            encoder_names.add(encoder_name)
                             typeddict_encoder.append(
                                 f"""
-                    encode_{ensure_literal_type(type_name)}(x) # type: ignore[arg-type]
+                                {encoder_name}(x) # type: ignore[arg-type]
                             """.strip()
                             )
                             if local_discriminators:
@@ -299,14 +329,18 @@ def encode_type(
                         typeddict_encoder.append(")")
                     else:
                         oneof_t = oneof_ts[0]
-                        type_name, _, contents = encode_type(
-                            oneof_t, TypeName(pfx), base_model
+                        type_name, _, contents, _ = encode_type(
+                            oneof_t, TypeName(pfx), base_model, in_module
                         )
                         one_of.append(type_name)
                         chunks.extend(contents)
-                        typeddict_encoder.append(
-                            f"encode_{ensure_literal_type(type_name)}(x)"
+                        encoder_name = TypeName(
+                            f"encode_{ensure_literal_type(type_name)}"
                         )
+                        # TODO(dstewart): Figure out why uncommenting this breaks
+                        #                 generated code
+                        # encoder_names.add(encoder_name)
+                        typeddict_encoder.append(f"{encoder_name}(x)")
                     typeddict_encoder.append(
                         f"""
                             if x['{discriminator_name}']
@@ -316,23 +350,23 @@ def encode_type(
                     )
                 chunks.append(
                     FileContents(
-                        f"{prefix} = Union["
-                        + ", ".join(render_type_expr(x) for x in one_of)
-                        + "]"
+                        f"{prefix} = {render_type_expr(UnionTypeExpr(one_of))}"
                     )
                 )
                 chunks.append(FileContents(""))
 
                 if base_model == "TypedDict":
+                    encoder_name = TypeName(f"encode_{prefix}")
+                    encoder_names.add(encoder_name)
                     chunks.append(
                         FileContents(
                             "\n".join(
                                 [
                                     dedent(
                                         f"""\
-                                    encode_{prefix}: Callable[['{prefix}'], Any] = (
-                                        lambda x:
-                                    """
+                    {encoder_name}: Callable[['{prefix}'], Any] = (
+                        lambda x:
+                            """
                                     )
                                 ]
                                 + typeddict_encoder[:-1]  # Drop the last ternary
@@ -340,7 +374,7 @@ def encode_type(
                             )
                         )
                     )
-                return (prefix, None, chunks)
+                return (prefix, in_module, chunks, encoder_names)
             # End of stable union detection
         # Restore the non-flattened union type
         type = original_type
@@ -348,8 +382,8 @@ def encode_type(
 
         typeddict_encoder = []
         for i, t in enumerate(type.anyOf):
-            type_name, _, contents = encode_type(
-                t, TypeName(f"{prefix}AnyOf_{i}"), base_model
+            type_name, _, contents, _ = encode_type(
+                t, TypeName(f"{prefix}AnyOf_{i}"), base_model, in_module
             )
             any_of.append(type_name)
             chunks.extend(contents)
@@ -358,8 +392,8 @@ def encode_type(
                     typeddict_encoder.extend(["x", " if isinstance(x, str) else "])
                 else:
                     # TODO(dstewart): This structure changed since we were incorrectly
-                    #                 leaking ListTypeExprs into codegen. This
-                    #                 generated code is probably wrong.
+                    #                 leaking ListTypeExprs into codegen. This generated
+                    #                 code is probably wrong.
                     match type_name:
                         case ListTypeExpr(inner_type_name):
                             typeddict_encoder.append(
@@ -379,23 +413,21 @@ def encode_type(
         if is_literal(type):
             typeddict_encoder = ["x"]
         chunks.append(
-            FileContents(
-                f"{prefix} = Union["
-                + ", ".join(render_type_expr(x) for x in any_of)
-                + "]"
-            )
+            FileContents(f"{prefix} = {render_type_expr(UnionTypeExpr(any_of))}")
         )
         if base_model == "TypedDict":
+            encoder_name = TypeName(f"encode_{prefix}")
+            encoder_names.add(encoder_name)
             chunks.append(
                 FileContents(
                     "\n".join(
-                        [f"encode_{prefix}: Callable[['{prefix}'], Any] = (lambda x: "]
+                        [f"{encoder_name}: Callable[['{prefix}'], Any] = (lambda x: "]
                         + typeddict_encoder
                         + [")"]
                     )
                 )
             )
-        return (prefix, None, chunks)
+        return (prefix, in_module, chunks, encoder_names)
     if isinstance(type, RiverIntersectionType):
 
         def extract_props(tpe: RiverType) -> list[dict[str, RiverType]]:
@@ -413,61 +445,65 @@ def encode_type(
             combined.update(x)
         return encode_type(
             RiverConcreteType(type="object", properties=combined),
-            prefix=prefix,
-            base_model=base_model,
+            prefix,
+            base_model,
+            in_module,
         )
     if isinstance(type, RiverConcreteType):
         typeddict_encoder = list[str]()
         if type.type is None:
             # Handle the case where type is not specified
             typeddict_encoder.append("x")
-            return (TypeName("Any"), None, [])
+            return (TypeName("Any"), [], [], set())
         elif type.type == "string":
             if type.const:
                 typeddict_encoder.append(f"'{type.const}'")
-                return (TypeName(f"Literal['{type.const}']"), None, [])
+                return (LiteralTypeExpr(type.const), [], [], set())
             else:
                 typeddict_encoder.append("x")
-                return (TypeName("str"), None, [])
+                return (TypeName("str"), [], [], set())
         elif type.type == "Uint8Array":
             typeddict_encoder.append("x.decode()")
-            return (TypeName("bytes"), None, [])
+            return (TypeName("bytes"), [], [], set())
         elif type.type == "number":
             if type.const is not None:
                 # enums are represented as const number in the schema
                 typeddict_encoder.append(f"{type.const}")
-                return (TypeName(f"Literal[{type.const}]"), None, [])
+                return (LiteralTypeExpr(type.const), [], [], set())
             typeddict_encoder.append("x")
-            return (TypeName("float"), None, [])
+            return (TypeName("float"), [], [], set())
         elif type.type == "integer":
             if type.const is not None:
                 # enums are represented as const number in the schema
                 typeddict_encoder.append(f"{type.const}")
-                return (TypeName(f"Literal[{type.const}]"), None, [])
+                return (LiteralTypeExpr(type.const), [], [], set())
             typeddict_encoder.append("x")
-            return (TypeName("int"), None, [])
+            return (TypeName("int"), [], [], set())
         elif type.type == "boolean":
             typeddict_encoder.append("x")
-            return (TypeName("bool"), None, [])
+            return (TypeName("bool"), [], [], set())
         elif type.type == "null" or type.type == "undefined":
             typeddict_encoder.append("None")
-            return (TypeName("None"), None, [])
+            return (TypeName("None"), [], [], set())
         elif type.type == "Date":
             typeddict_encoder.append("TODO: dstewart")
-            return (TypeName("datetime.datetime"), None, [])
+            return (TypeName("datetime.datetime"), [], [], set())
         elif type.type == "array" and type.items:
-            type_name, file_info, type_chunks = encode_type(
-                type.items, prefix, base_model
+            type_name, module_info, type_chunks, encoder_names = encode_type(
+                type.items, prefix, base_model, in_module
             )
             typeddict_encoder.append("TODO: dstewart")
-            return (ListTypeExpr(type_name), file_info, type_chunks)
+            return (ListTypeExpr(type_name), module_info, type_chunks, encoder_names)
         elif (
             type.type == "object"
             and type.patternProperties
             and "^(.*)$" in type.patternProperties
         ):
-            type_name, file_info, type_chunks = encode_type(
-                type.patternProperties["^(.*)$"], prefix, base_model
+            type_name, module_info, type_chunks, encoder_names = encode_type(
+                type.patternProperties["^(.*)$"],
+                prefix,
+                base_model,
+                in_module,
             )
             # TODO(dstewart): This structure changed since we were incorrectly leaking
             #                 ListTypeExprs into codegen. This generated code is
@@ -485,43 +521,53 @@ def encode_type(
                     typeddict_encoder.append(repr(const))
                 case other:
                     typeddict_encoder.append(f"encode_{ensure_literal_type(other)}(x)")
-            return (DictTypeExpr(type_name), file_info, type_chunks)
+            return (DictTypeExpr(type_name), module_info, type_chunks, encoder_names)
         assert type.type == "object", type.type
 
         current_chunks: List[str] = [f"class {prefix}({base_model}):"]
         # For the encoder path, do we need "x" to be bound?
         # lambda x: ... vs lambda _: {}
         needs_binding = False
+        encoder_names: set[TypeName] = set()
         if type.properties:
             needs_binding = True
             typeddict_encoder.append("{")
             for name, prop in type.properties.items():
                 typeddict_encoder.append(f"'{name}':")
-                type_name, _, contents = encode_type(
-                    prop, TypeName(prefix + name.title()), base_model
+                type_name, _, contents, _ = encode_type(
+                    prop, TypeName(prefix + name.title()), base_model, in_module
                 )
+                encoder_name: Optional[str] = None
                 chunks.extend(contents)
                 if base_model == "TypedDict":
                     if isinstance(prop, RiverNotType):
                         typeddict_encoder.append("'not implemented'")
                     elif isinstance(prop, RiverUnionType):
-                        typeddict_encoder.append(
-                            f"encode_{ensure_literal_type(type_name)}(x['{name}'])"
+                        encoder_name = TypeName(
+                            f"encode_{ensure_literal_type(type_name)}"
                         )
+                        encoder_names.add(encoder_name)
+                        typeddict_encoder.append(f"{encoder_name}(x['{name}'])")
                         if name not in type.required:
                             typeddict_encoder.append(f"if x['{name}'] else None")
                     elif isinstance(prop, RiverIntersectionType):
-                        typeddict_encoder.append(
-                            f"encode_{ensure_literal_type(type_name)}(x['{name}'])"
+                        encoder_name = TypeName(
+                            f"encode_{ensure_literal_type(type_name)}"
                         )
+                        encoder_names.add(encoder_name)
+                        typeddict_encoder.append(f"{encoder_name}(x['{name}'])")
                     elif isinstance(prop, RiverConcreteType):
                         if name == "$kind":
                             safe_name = "kind"
                         else:
                             safe_name = name
                         if prop.type == "object" and not prop.patternProperties:
+                            encoder_name = TypeName(
+                                f"encode_{ensure_literal_type(type_name)}"
+                            )
+                            encoder_names.add(encoder_name)
                             typeddict_encoder.append(
-                                f"encode_{ensure_literal_type(type_name)}(x['{safe_name}'])"
+                                f"{encoder_name}(x['{safe_name}'])"
                             )
                             if name not in prop.required:
                                 typeddict_encoder.append(
@@ -541,10 +587,13 @@ def encode_type(
                             else:
                                 match type_name:
                                     case ListTypeExpr(inner_type_name):
-                                        print(f"HERE: {type_name} -> {inner_type_name}")
+                                        encoder_name = TypeName(
+                                            f"encode_{ensure_literal_type(inner_type_name)}"
+                                        )
+                                        encoder_names.add(encoder_name)
                                         typeddict_encoder.append(
                                             f"""[
-                                                encode_{ensure_literal_type(inner_type_name)}(y)
+                                                {encoder_name}(y)
                                                 for y in x['{name}']
                                                 ]"""
                                         )
@@ -620,6 +669,8 @@ def encode_type(
 
         if base_model == "TypedDict":
             binding = "x" if needs_binding else "_"
+            encoder_name = TypeName(f"encode_{prefix}")
+            encoder_names.add(encoder_name)
             current_chunks.insert(
                 0,
                 FileContents(
@@ -627,8 +678,9 @@ def encode_type(
                         [
                             dedent(
                                 f"""\
-                            encode_{prefix}: Callable[['{prefix}'], Any] = (
-                                lambda {binding}: """
+                            {encoder_name}: Callable[['{prefix}'], Any] = (
+                                lambda {binding}:
+                            """
                             )
                         ]
                         + typeddict_encoder
@@ -638,8 +690,7 @@ def encode_type(
             )
         chunks.append(FileContents("\n".join(current_chunks)))
 
-    # # type: RiverType, prefix: TypeName, base_model: str
-    return (prefix, (Path("foop"), ModuleName("beep")), chunks)
+    return (prefix, in_module, chunks, encoder_names)
 
 
 def generate_common_client(
@@ -678,10 +729,8 @@ def generate_individual_service(
     schema_name: str,
     schema: RiverService,
     input_base_class: Literal["TypedDict"] | Literal["BaseModel"],
-) -> Tuple[ModuleName, ClassName, dict[Path, FileContents]]:
-    serdes: list[Tuple[TypeExpression, Tuple[Path, ModuleName], list[FileContents]]] = (
-        []
-    )
+) -> Tuple[ModuleName, ClassName, dict[RenderedPath, FileContents]]:
+    serdes: list[Tuple[list[TypeName], list[ModuleName], list[FileContents]]] = []
     class_name = ClassName(f"{schema_name.title()}Service")
     current_chunks: List[str] = [
         dedent(
@@ -693,55 +742,77 @@ def generate_individual_service(
         ),
     ]
     for name, procedure in schema.procedures.items():
+        module_names = [ModuleName(name)]
         init_type: Optional[TypeExpression] = None
         if procedure.init:
-            init_type, file_info, input_chunks = encode_type(
+            init_type, module_info, input_chunks, encoder_names = encode_type(
                 procedure.init,
-                TypeName(f"{schema_name.title()}{name.title()}Init"),
-                base_model=input_base_class,
+                TypeName(f"{name.title()}Init"),
+                input_base_class,
+                module_names,
             )
-            if file_info is not None:
-                serdes.append((init_type, file_info, input_chunks))
-        input_type, file_info, input_chunks = encode_type(
+            serdes.append(
+                (
+                    [extract_inner_type(init_type), *encoder_names],
+                    module_info,
+                    input_chunks,
+                )
+            )
+        input_type, module_info, input_chunks, encoder_names = encode_type(
             procedure.input,
-            TypeName(f"{schema_name.title()}{name.title()}Input"),
-            base_model=input_base_class,
+            TypeName(f"{name.title()}Input"),
+            input_base_class,
+            module_names,
         )
-        if file_info is not None:
-            serdes.append((input_type, file_info, input_chunks))
-        output_type, file_info, output_chunks = encode_type(
+        serdes.append(
+            (
+                [extract_inner_type(input_type), *encoder_names],
+                module_info,
+                input_chunks,
+            )
+        )
+        output_type, module_info, output_chunks, encoder_names = encode_type(
             procedure.output,
-            TypeName(f"{schema_name.title()}{name.title()}Output"),
+            TypeName(f"{name.title()}Output"),
             "BaseModel",
+            module_names,
         )
-        if file_info is not None:
-            serdes.append((output_type, file_info, output_chunks))
+        serdes.append(
+            (
+                [extract_inner_type(output_type), *encoder_names],
+                module_info,
+                output_chunks,
+            )
+        )
         if procedure.errors:
-            error_type, file_info, errors_chunks = encode_type(
+            error_type, module_info, errors_chunks, encoder_names = encode_type(
                 procedure.errors,
-                TypeName(f"{schema_name.title()}{name.title()}Errors"),
-                base_model="RiverError",
+                TypeName(f"{name.title()}Errors"),
+                "RiverError",
+                module_names,
             )
             if error_type == "None":
                 error_type = TypeName("RiverError")
-            elif file_info is not None:
-                serdes.append((error_type, file_info, errors_chunks))
+            else:
+                serdes.append(
+                    ([extract_inner_type(error_type)], module_info, errors_chunks)
+                )
         else:
             error_type = TypeName("RiverError")
-        output_or_error_type = TypeName(f"Union[{output_type}, {error_type}]")
+        output_or_error_type = UnionTypeExpr([output_type, error_type])
 
         # NB: These strings must be indented to at least the same level of
         #     the function strings in the branches below, otherwise `dedent`
         #     will pick our indentation level for normalization, which will
         #     break the "def" indentation presuppositions.
         parse_output_method = f"""\
-                            lambda x: TypeAdapter({output_type})
+                            lambda x: TypeAdapter({render_type_expr(output_type)})
                                 .validate_python(
                                     x # type: ignore[arg-type]
                                 )
             """.rstrip()
         parse_error_method = f"""\
-                            lambda x: TypeAdapter({error_type})
+                            lambda x: TypeAdapter({render_type_expr(error_type)})
                                 .validate_python(
                                     x # type: ignore[arg-type]
                                 )
@@ -761,10 +832,10 @@ def generate_individual_service(
                             f"lambda xs: [encode_{init_type_name}(x) for x in xs]"
                         )
             else:
-                render_init_method = f"encode_{init_type}"
+                render_init_method = f"encode_{ensure_literal_type(init_type)}"
         else:
             render_init_method = f"""\
-                            lambda x: TypeAdapter({input_type})
+                            lambda x: TypeAdapter({render_type_expr(input_type)})
                               .validate_python
             """.rstrip()
         if isinstance(
@@ -789,15 +860,15 @@ def generate_individual_service(
                         render_input_method = dedent(
                             f"""\
                         lambda xs: [
-                            encode_{ensure_literal_type(input_type_name)}(x)
-                            for x in xs
-                        ]"""
+                            encode_{ensure_literal_type(input_type_name)}(x) for x in xs
+                        ]
+                        """
                         )
             else:
-                render_input_method = f"encode_{input_type}"
+                render_input_method = f"encode_{ensure_literal_type(input_type)}"
         else:
             render_input_method = f"""\
-                            lambda x: TypeAdapter({input_type})
+                            lambda x: TypeAdapter({render_type_expr(input_type)})
                               .dump_python(
                                 x, # type: ignore[arg-type]
                                 by_alias=True,
@@ -828,8 +899,8 @@ def generate_individual_service(
                         f"""\
                 async def {name}(
                   self,
-                  input: {input_type},
-                ) -> {output_type}:
+                  input: {render_type_expr(input_type)},
+                ) -> {render_type_expr(output_type)}:
                   {control_flow_keyword}await self.client.send_rpc(
                     '{schema_name}',
                     '{name}',
@@ -850,8 +921,8 @@ def generate_individual_service(
                         f"""\
                 async def {name}(
                   self,
-                  input: {input_type},
-                ) -> AsyncIterator[{output_or_error_type}]:
+                  input: {render_type_expr(input_type)},
+                ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
                   return await self.client.send_subscription(
                     '{schema_name}',
                     '{name}',
@@ -877,7 +948,7 @@ def generate_individual_service(
                     async def {name}(
                       self,
                       init: {init_type},
-                      inputStream: AsyncIterable[{input_type}],
+                      inputStream: AsyncIterable[{render_type_expr(input_type)}],
                     ) -> {output_type}:
                       {control_flow_keyword}await self.client.send_upload(
                         '{schema_name}',
@@ -901,8 +972,8 @@ def generate_individual_service(
                             f"""\
                     async def {name}(
                       self,
-                      inputStream: AsyncIterable[{input_type}],
-                    ) -> {output_or_error_type}:
+                      inputStream: AsyncIterable[{render_type_expr(input_type)}],
+                    ) -> {render_type_expr(output_or_error_type)}:
                       {control_flow_keyword}await self.client.send_upload(
                         '{schema_name}',
                         '{name}',
@@ -926,9 +997,9 @@ def generate_individual_service(
                             f"""\
                     async def {name}(
                       self,
-                      init: {init_type},
-                      inputStream: AsyncIterable[{input_type}],
-                    ) -> AsyncIterator[{output_or_error_type}]:
+                      init: {render_type_expr(init_type)},
+                      inputStream: AsyncIterable[{render_type_expr(input_type)}],
+                    ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
                       return await self.client.send_stream(
                         '{schema_name}',
                         '{name}',
@@ -951,8 +1022,8 @@ def generate_individual_service(
                             f"""\
                     async def {name}(
                       self,
-                      inputStream: AsyncIterable[{input_type}],
-                    ) -> AsyncIterator[{output_or_error_type}]:
+                      inputStream: AsyncIterable[{render_type_expr(input_type)}],
+                    ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
                       return await self.client.send_stream(
                         '{schema_name}',
                         '{name}',
@@ -970,20 +1041,30 @@ def generate_individual_service(
 
         current_chunks.append("")
 
-    emitted_files: dict[Path, FileContents] = {}
+    emitted_files: dict[RenderedPath, FileContents] = {}
 
-    imports: list[FileContents] = []
+    imports: dict[str, set[TypeName]] = dict()
 
-    for type_name, (path, module_name), contents in serdes:
-        imports.append(
-            FileContents(f"from .{module_name} import {extract_inner_type(type_name)}")
-        )
-        emitted_files[Path(schema_name, path)] = FileContents(
-            "\n".join([FileContents(FILE_HEADER)] + contents)
-        )
+    in_root: list[FileContents] = []
+    for names, module_info, contents in serdes:
+        if not module_info:
+            in_root.extend(contents)
+            continue
 
-    emitted_files[Path(f"{schema_name}/__init__.py")] = FileContents(
-        "\n".join([FILE_HEADER] + imports + current_chunks)
+        imports.setdefault(".".join(module_info), set()).update(names)
+
+        leaf_module = module_info[-1] + ".py"
+        file_path = RenderedPath(str(Path(schema_name, *module_info[:-1], leaf_module)))
+        existing = emitted_files.get(file_path, FileContents(FILE_HEADER))
+        emitted_files[file_path] = FileContents("\n".join([existing] + contents))
+
+    rendered_imports = [
+        f"from .{dotted_modules} import {', '.join(names)}"
+        for dotted_modules, names in imports.items()
+    ]
+
+    emitted_files[RenderedPath(str(Path(f"{schema_name}/__init__.py")))] = FileContents(
+        "\n".join([FILE_HEADER] + rendered_imports + in_root + current_chunks)
     )
     return (
         ModuleName(schema_name),
@@ -996,14 +1077,14 @@ def generate_river_client_module(
     client_name: str,
     schema_root: RiverSchema,
     typed_dict_inputs: bool,
-) -> dict[Path, FileContents]:
-    files: dict[Path, FileContents] = {}
+) -> dict[RenderedPath, FileContents]:
+    files: dict[RenderedPath, FileContents] = {}
 
     # Negotiate handshake shape
     handshake_chunks: list[str] = []
     if schema_root.handshakeSchema is not None:
-        _handshake_type, _, contents = encode_type(
-            schema_root.handshakeSchema, TypeName("HandshakeSchema"), "BaseModel"
+        _handshake_type, _, contents, _ = encode_type(
+            schema_root.handshakeSchema, TypeName("HandshakeSchema"), "BaseModel", []
         )
         handshake_chunks.extend(contents)
         handshake_type = HandshakeType(render_type_expr(_handshake_type))
@@ -1024,7 +1105,7 @@ def generate_river_client_module(
     main_contents = generate_common_client(
         client_name, handshake_type, handshake_chunks, modules
     )
-    files[Path("__init__.py")] = main_contents
+    files[RenderedPath(str(Path("__init__.py")))] = main_contents
 
     return files
 
