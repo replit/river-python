@@ -1,11 +1,13 @@
 import json
 import re
+from pathlib import Path
 from textwrap import dedent, indent
 from typing import (
     Any,
     Dict,
     List,
     Literal,
+    NewType,
     Optional,
     OrderedDict,
     Sequence,
@@ -17,6 +19,11 @@ from typing import (
 
 import black
 from pydantic import BaseModel, Field, RootModel
+
+ModuleName = NewType("ModuleName", str)
+ClassName = NewType("ClassName", str)
+FileContents = NewType("FileContents", str)
+HandshakeType = NewType("HandshakeType", str)
 
 _NON_ALNUM_RE = re.compile(r"[^a-zA-Z0-9_]+")
 _LITERAL_RE = re.compile(r"^Literal\[(.+)\]$")
@@ -485,18 +492,50 @@ def encode_type(
     return (prefix, chunks)
 
 
+def generate_common_client(
+    client_name: str,
+    handshake_type: HandshakeType,
+    handshake_chunks: Sequence[str],
+    modules: list[Tuple[ModuleName, ClassName]],
+) -> FileContents:
+    chunks: list[str] = [FILE_HEADER]
+    chunks.extend(
+        [
+            f"from .{model_name} import {class_name}"
+            for model_name, class_name in modules
+        ]
+    )
+    chunks.extend(handshake_chunks)
+    chunks.extend(
+        [
+            dedent(
+                f"""\
+                class {client_name}:
+                  def __init__(self, client: river.Client[{handshake_type}]):
+                """.rstrip()
+            )
+        ]
+    )
+    for module_name, class_name in modules:
+        chunks.append(
+            f"    self.{module_name} = {class_name}(client)",
+        )
+
+    return FileContents("\n".join(chunks))
+
+
 def generate_individual_service(
     schema_name: str,
-    handshake_type: str,
     schema: RiverService,
     input_base_class: Literal["TypedDict"] | Literal["BaseModel"],
-) -> list[str]:
+) -> Tuple[Path, ModuleName, ClassName, FileContents]:
     serdes: list[str] = []
+    class_name = ClassName(f"{schema_name.title()}Service")
     current_chunks: List[str] = [
         dedent(
             f"""\
-              class {schema_name.title()}Service:
-                def __init__(self, client: river.Client[{handshake_type}]):
+              class {class_name}:
+                def __init__(self, client: river.Client[Any]):
                   self.client = client
             """
         ),
@@ -761,49 +800,48 @@ def generate_individual_service(
                 )
 
         current_chunks.append("")
-    return current_chunks
+    return (
+        Path(f"{schema_name}.py"),
+        ModuleName(schema_name),
+        class_name,
+        FileContents("\n".join([FILE_HEADER] + serdes + current_chunks)),
+    )
 
 
 def generate_river_client_module(
     client_name: str,
     schema_root: RiverSchema,
     typed_dict_inputs: bool,
-) -> Sequence[str]:
-    chunks: List[str] = [FILE_HEADER]
+) -> dict[Path, FileContents]:
+    files: dict[Path, FileContents] = {}
 
+    # Negotiate handshake shape
+    handshake_chunks: Sequence[str] = []
     if schema_root.handshakeSchema is not None:
-        (handshake_type, handshake_chunks) = encode_type(
+        (_handshake_type, handshake_chunks) = encode_type(
             schema_root.handshakeSchema, "HandshakeSchema", "BaseModel"
         )
-        chunks.extend(handshake_chunks)
+        handshake_type = HandshakeType(_handshake_type)
     else:
-        handshake_type = "Literal[None]"
+        handshake_type = HandshakeType("Literal[None]")
 
+    modules: list[Tuple[ModuleName, ClassName]] = []
     input_base_class: Literal["TypedDict"] | Literal["BaseModel"] = (
         "TypedDict" if typed_dict_inputs else "BaseModel"
     )
     for schema_name, schema in schema_root.services.items():
-        current_chunks = generate_individual_service(
-            schema_name, handshake_type, schema, input_base_class
+        path, module_name, class_name, file_contents = generate_individual_service(
+            schema_name, schema, input_base_class
         )
-        chunks.extend(current_chunks)
+        files[path] = file_contents
+        modules.append((module_name, class_name))
 
-    chunks.extend(
-        [
-            dedent(
-                f"""\
-                class {client_name}:
-                  def __init__(self, client: river.Client[{handshake_type}]):
-                """.rstrip()
-            )
-        ]
+    main_contents = generate_common_client(
+        client_name, handshake_type, handshake_chunks, modules
     )
-    for schema_name, schema in schema_root.services.items():
-        chunks.append(
-            f"    self.{schema_name} = {schema_name.title()}Service(client)",
-        )
+    files[Path("__init__.py")] = main_contents
 
-    return chunks
+    return files
 
 
 def schema_to_river_client_codegen(
@@ -815,14 +853,18 @@ def schema_to_river_client_codegen(
     """Generates the lines of a River module."""
     with open(schema_path) as f:
         schemas = RiverSchemaFile(json.load(f))
-    with open(target_path, "w") as f:
-        s = "\n".join(
-            generate_river_client_module(client_name, schemas.root, typed_dict_inputs)
-        )
-        try:
-            f.write(
-                black.format_str(s, mode=black.FileMode(string_normalization=False))
-            )
-        except:
-            f.write(s)
-            raise
+    for subpath, contents in generate_river_client_module(
+        client_name, schemas.root, typed_dict_inputs
+    ).items():
+        module_path = Path(target_path).joinpath(subpath)
+        module_path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+        with open(module_path, "w") as f:
+            try:
+                f.write(
+                    black.format_str(
+                        contents, mode=black.FileMode(string_normalization=False)
+                    )
+                )
+            except:
+                f.write(contents)
+                raise
