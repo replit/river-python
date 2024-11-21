@@ -88,8 +88,8 @@ class ControlMessageHandshakeResponse(BaseModel):
 
 
 class PropagationContext(BaseModel):
-    traceparent: Optional[str] = None
-    tracestate: Optional[str] = None
+    traceparent: str = Field(default="")
+    tracestate: str = Field(default="")
 
 
 class TransportMessage(BaseModel):
