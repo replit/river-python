@@ -6,6 +6,7 @@ from typing import Any, Callable, Coroutine, Dict, Optional, Tuple
 import nanoid  # type: ignore
 import websockets
 from aiochannel import Channel, ChannelClosed
+from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from websockets.exceptions import ConnectionClosed
 
 from replit_river.message_buffer import MessageBuffer, MessageBufferClosedError
@@ -31,6 +32,7 @@ from .rpc import (
     STREAM_OPEN_BIT,
     GenericRpcHandler,
     TransportMessage,
+    TransportMessageTracingSetter,
 )
 
 logger = logging.getLogger(__name__)
@@ -379,6 +381,9 @@ class Session(object):
             payload=payload,
             serviceName=service_name,
             procedureName=procedure_name,
+        )
+        TraceContextTextMapPropagator().inject(
+            msg, None, TransportMessageTracingSetter()
         )
         try:
             # We need this lock to ensure the buffer order and message sending order

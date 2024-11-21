@@ -1,8 +1,12 @@
 import logging
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
-from typing import Any, Generic, Optional, Union
+from contextlib import contextmanager
+from typing import Any, Generator, Generic, Literal, Optional, Union
+
+from opentelemetry import trace
 
 from replit_river.client_transport import ClientTransport
+from replit_river.error_schema import RiverException
 from replit_river.transport_options import (
     HandshakeMetadataType,
     TransportOptions,
@@ -17,6 +21,7 @@ from .rpc import (
 )
 
 logger = logging.getLogger(__name__)
+tracer = trace.get_tracer(__name__)
 
 
 class Client(Generic[HandshakeMetadataType]):
@@ -55,15 +60,16 @@ class Client(Generic[HandshakeMetadataType]):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> ResponseType:
-        session = await self._transport.get_or_create_session()
-        return await session.send_rpc(
-            service_name,
-            procedure_name,
-            request,
-            request_serializer,
-            response_deserializer,
-            error_deserializer,
-        )
+        with _trace_procedure("rpc", service_name, procedure_name):
+            session = await self._transport.get_or_create_session()
+            return await session.send_rpc(
+                service_name,
+                procedure_name,
+                request,
+                request_serializer,
+                response_deserializer,
+                error_deserializer,
+            )
 
     async def send_upload(
         self,
@@ -76,17 +82,18 @@ class Client(Generic[HandshakeMetadataType]):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> ResponseType:
-        session = await self._transport.get_or_create_session()
-        return await session.send_upload(
-            service_name,
-            procedure_name,
-            init,
-            request,
-            init_serializer,
-            request_serializer,
-            response_deserializer,
-            error_deserializer,
-        )
+        with _trace_procedure("upload", service_name, procedure_name):
+            session = await self._transport.get_or_create_session()
+            return await session.send_upload(
+                service_name,
+                procedure_name,
+                init,
+                request,
+                init_serializer,
+                request_serializer,
+                response_deserializer,
+                error_deserializer,
+            )
 
     async def send_subscription(
         self,
@@ -97,15 +104,16 @@ class Client(Generic[HandshakeMetadataType]):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> AsyncIterator[Union[ResponseType, ErrorType]]:
-        session = await self._transport.get_or_create_session()
-        return session.send_subscription(
-            service_name,
-            procedure_name,
-            request,
-            request_serializer,
-            response_deserializer,
-            error_deserializer,
-        )
+        with _trace_procedure("subscription", service_name, procedure_name):
+            session = await self._transport.get_or_create_session()
+            return session.send_subscription(
+                service_name,
+                procedure_name,
+                request,
+                request_serializer,
+                response_deserializer,
+                error_deserializer,
+            )
 
     async def send_stream(
         self,
@@ -118,14 +126,33 @@ class Client(Generic[HandshakeMetadataType]):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
     ) -> AsyncIterator[Union[ResponseType, ErrorType]]:
-        session = await self._transport.get_or_create_session()
-        return session.send_stream(
-            service_name,
-            procedure_name,
-            init,
-            request,
-            init_serializer,
-            request_serializer,
-            response_deserializer,
-            error_deserializer,
-        )
+        with _trace_procedure("stream", service_name, procedure_name):
+            session = await self._transport.get_or_create_session()
+            return session.send_stream(
+                service_name,
+                procedure_name,
+                init,
+                request,
+                init_serializer,
+                request_serializer,
+                response_deserializer,
+                error_deserializer,
+            )
+
+
+@contextmanager
+def _trace_procedure(
+    procedure_type: Literal["rpc", "upload", "subscription", "stream"],
+    service_name: str,
+    procedure_name: str,
+) -> Generator[None, None, None]:
+    with tracer.start_as_current_span(
+        f"river.client.{procedure_type}.{service_name}.{procedure_name}",
+        kind=trace.SpanKind.CLIENT,
+    ) as span:
+        try:
+            yield
+        except RiverException as e:
+            span.set_attribute("river.error_code", e.code)
+            span.set_attribute("river.error_message", e.message)
+            raise e

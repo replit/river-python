@@ -31,6 +31,8 @@ dependencies = [
     "protobuf>=5.28.3",
     "pydantic-core>=2.20.1",
     "websockets>=12.0",
+    "opentelemetry-sdk>=1.28.2",
+    "opentelemetry-api>=1.28.2",
 ]
 
 [tool.uv]
