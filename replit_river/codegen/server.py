@@ -10,6 +10,8 @@ from google.protobuf import descriptor_pb2
 from google.protobuf.descriptor import FieldDescriptor
 from grpc_tools import protoc
 
+from replit_river.codegen.format import reindent
+
 
 def to_camel_case(snake_str: str) -> str:
     """Converts a string in snake_case to camelCase."""
@@ -39,12 +41,16 @@ def message_decoder(
 ) -> Sequence[str]:
     """Generates the lines of a River -> protobuf decoder."""
     chunks = [
-        f"def _{m.name}Decoder(",
-        "  d: Mapping[str, Any],",
-        f") -> {module_name}_pb2.{m.name}:",
-        f"  m = {module_name}_pb2.{m.name}()",
-        "  if d is None:",
-        "    return m",
+        dedent(
+            f"""\
+        def _{m.name}Decoder(
+          d: Mapping[str, Any],
+        ) -> {module_name}_pb2.{m.name}:
+          m = {module_name}_pb2.{m.name}()
+          if d is None:
+            return m
+        """
+        ),
     ]
     # Non-oneof fields.
     oneofs: DefaultDict[int, List[descriptor_pb2.FieldDescriptorProto]] = (
@@ -55,88 +61,149 @@ def message_decoder(
             oneofs[field.oneof_index].append(field)
             continue
         chunks.append(
-            f"  if d.get('{to_camel_case(field.name)}') is not None:",
+            f"  if d.get({repr(to_camel_case(field.name))}) is not None:",
         )
         if field.type_name == ".google.protobuf.Timestamp":
-            chunks.extend(
-                [
-                    f"    _{field.name} = timestamp_pb2.Timestamp()",
-                    f"    _{field.name}.FromDatetime(d['{to_camel_case(field.name)}'])",
-                    f"    m.{field.name}.MergeFrom(_{field.name})",
-                ]
+            chunks.append(
+                reindent(
+                    "    ",
+                    f"""\
+                _{field.name} = timestamp_pb2.Timestamp()
+                _{field.name}.FromDatetime(d[{repr(to_camel_case(field.name))}])
+                m.{field.name}.MergeFrom(_{field.name})
+                """,
+                )
             )
         elif field.type_name == ".google.protobuf.BoolValue":
-            chunks.extend(
-                [
-                    f"    _{field.name} = BoolValue()",
-                    f"    _{field.name}.value = d['{to_camel_case(field.name)}']",
-                    f"    m.{field.name}.MergeFrom(_{field.name})",
-                ]
+            chunks.append(
+                reindent(
+                    "    ",
+                    f"""\
+                _{field.name} = BoolValue()
+                _{field.name}.value = d[{repr(to_camel_case(field.name))}]
+                m.{field.name}.MergeFrom(_{field.name})
+                """,
+                )
             )
         elif field.label == FieldDescriptor.LABEL_REPEATED:
             if field.type == descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE:
                 decode_method_name = get_decoder_name(field)
                 chunks.append(
-                    f"    m.{field.name}.extend([{decode_method_name}(item) for"
-                    f" item in d['{to_camel_case(field.name)}']])"
+                    reindent(
+                        "    ",
+                        f"""\
+                    m.{field.name}.extend(
+                        {decode_method_name}(item)
+                        for item in d[{repr(to_camel_case(field.name))}]
+                    )
+                    """,
+                    )
                 )
             else:
                 chunks.append(
-                    f"    m.{field.name}.MergeFrom(d['{to_camel_case(field.name)}'])"
+                    reindent(
+                        "    ",
+                        f"""\
+                    m.{field.name}.MergeFrom(d[{repr(to_camel_case(field.name))}])
+                    """,
+                    )
                 )
         elif field.type == descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE:
             decode_method_name = get_decoder_name(field)
             chunks.append(
-                f"    m.{field.name}.MergeFrom"
-                f"({decode_method_name}(d['{to_camel_case(field.name)}']))"
+                reindent(
+                    "    ",
+                    f"""\
+                m.{field.name}.MergeFrom(
+                    {decode_method_name}(d[{repr(to_camel_case(field.name))}])
+                )
+                """,
+                ),
             )
         else:
             chunks.append(
-                f"    setattr(m, '{field.name}',  d['{to_camel_case(field.name)}'])"
+                reindent(
+                    "    ",
+                    f"""\
+                setattr(
+                    m,
+                    {repr(field.name)},
+                    d[{repr(to_camel_case(field.name))}]
+                )
+                """,
+                )
             )
     # oneof fields.
     for index, oneof in enumerate(m.oneof_decl):
         chunks.extend(
             [
-                f"  _{oneof.name} = d.get('{to_camel_case(oneof.name)}', {{}})",
-                f"  if _{oneof.name}:",
-                f"    match _{oneof.name}.get('$kind', None):",
+                reindent(
+                    "  ",
+                    f"""\
+                _{oneof.name} = d.get({repr(to_camel_case(oneof.name))}, {{}})
+                if _{oneof.name}:
+                    match _{oneof.name}.get('$kind', None):
+                """,
+                ),
             ]
         )
         for field in oneofs[index]:
             chunks.append(
-                f"        case '{to_camel_case(field.name)}':",
+                reindent(
+                    "        ",
+                    f"""\
+                    case {repr(to_camel_case(field.name))}:
+                    """,
+                ),
             )
             if field.type_name == ".google.protobuf.Timestamp":
-                chunks.extend(
-                    [
-                        f"          _{field.name} = timestamp_pb2.Timestamp()"
-                        f"          _{field.name}.FromDatetime(",
-                        f"              _{oneof.name}['{to_camel_case(field.name)}'],",
-                        "          )",
-                        f"          m.{field.name}.MergeFrom(_{field.name})",
-                    ]
+                chunks.append(
+                    reindent(
+                        "          ",
+                        f"""\
+                    _{field.name} = timestamp_pb2.Timestamp()
+                    _{field.name}.FromDatetime(
+                        _{oneof.name}[{repr(to_camel_case(field.name))}],
+                    )
+                    m.{field.name}.MergeFrom(_{field.name})
+                    """,
+                    )
                 )
             elif field.label == FieldDescriptor.LABEL_REPEATED:
                 chunks.append(
-                    f"          m.{field.name}.MergeFrom"
-                    f"(_{oneof.name}['{to_camel_case(field.name)}'])"
+                    reindent(
+                        "          ",
+                        f"""\
+                    m.{field.name}.MergeFrom(
+                        _{oneof.name}[{repr(to_camel_case(field.name))}]
+                    )
+                    """,
+                    )
                 )
             elif field.type == descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE:
                 decode_method_name = get_decoder_name(field)
                 chunks.append(
-                    f"          m.{field.name}.MergeFrom({decode_method_name}"
-                    f"(_{oneof.name}['{to_camel_case(field.name)}']))"
+                    reindent(
+                        "          ",
+                        f"""\
+                    m.{field.name}.MergeFrom(
+                        {decode_method_name}(_{oneof.name}[{repr(to_camel_case(field.name))}])
+                    )
+                    """,
+                    )
                 )
             else:
-                chunks.extend(
-                    [
-                        "          setattr(",
-                        "            m,",
-                        f"            '{field.name}',",
-                        f"            _{oneof.name}['{to_camel_case(field.name)}'],",
-                        "          )",
-                    ]
+                chunks.append(
+                    reindent(
+                        "          ",
+                        f"""\
+                    setattr(
+                        m,
+                        {repr(field.name)},
+                        _{oneof.name}[{repr(to_camel_case(field.name))}],
+                    )
+                    """,
+                    )
                 )
     chunks.extend(
         [
@@ -153,10 +220,14 @@ def message_encoder(
 ) -> Sequence[str]:
     """Generates the lines of a protobuf -> River encoder."""
     chunks = [
-        f"def _{m.name}Encoder(",
-        f"  e: {module_name}_pb2.{m.name}",
-        ") -> Dict[str, Any]:",
-        "  d: Dict[str, Any] = {}",
+        dedent(
+            f"""\
+        def _{m.name}Encoder(
+            e: {module_name}_pb2.{m.name}
+        ) -> Dict[str, Any]:
+          d: Dict[str, Any] = {{}}
+        """
+        ),
     ]
     # Non-oneof fields.
     oneofs: DefaultDict[int, List[descriptor_pb2.FieldDescriptorProto]] = (
@@ -183,16 +254,19 @@ def message_encoder(
             value = f"{encode_method_name}(_{field.name})"
         else:
             value = f"_{field.name}"
-        chunks.extend(
-            [
-                f"  _{field.name} = e.{field.name}",
-                f"  if _{field.name} is not None:",
-                f"    d['{to_camel_case(field.name)}'] = {value}",
-            ]
+        chunks.append(
+            reindent(
+                "  ",
+                f"""\
+            _{field.name} = e.{field.name}
+            if _{field.name} is not None:
+              d[{repr(to_camel_case(field.name))}] = {value}
+            """,
+            )
         )
     # oneof fields.
     for index, oneof in enumerate(m.oneof_decl):
-        chunks.append(f"  match e.WhichOneof('{oneof.name}'):")
+        chunks.append(f"  match e.WhichOneof({repr(oneof.name)}):")
         for field in oneofs[index]:
             if field.type_name == ".google.protobuf.Timestamp":
                 value = f"e.{field.name}.ToDatetime()"
@@ -201,14 +275,17 @@ def message_encoder(
                 value = f"{encode_method_name}(e.{field.name})"
             else:
                 value = f"e.{field.name}"
-            chunks.extend(
-                [
-                    f"    case '{field.name}':",
-                    f"      d['{to_camel_case(oneof.name)}'] = {{",
-                    f"        '$kind': '{to_camel_case(field.name)}',",
-                    f"        '{to_camel_case(field.name)}': {value},",
-                    "      }",
-                ]
+            chunks.append(
+                reindent(
+                    "    ",
+                    f"""\
+                case {repr(field.name)}:
+                  d[{repr(to_camel_case(oneof.name))}] = {{
+                    '$kind': {repr(to_camel_case(field.name))},
+                    {repr(to_camel_case(field.name))}: {value},
+                  }}
+                """,
+                )
             )
     chunks.extend(
         [
@@ -255,24 +332,24 @@ def generate_river_module(
 
         # Generate the service stubs.
         for service in pd.service:
-            chunks.extend(
-                [
-                    f"""def add_{service.name}Servicer_to_server(
+            chunks.append(
+                dedent(
+                    f"""\
+                def add_{service.name}Servicer_to_server(
                     servicer: {pb_module_name}_pb2_grpc.{service.name}Servicer,
                     server: river.Server,
-                ) -> None:""",
-                    (
-                        "  rpc_method_handlers: Mapping[Tuple[str, str], "
-                        "Tuple[str, river.GenericRpcHandler]] = {"
-                    ),
-                ]
+                ) -> None:
+                  rpc_method_handlers: Mapping[
+                    Tuple[str, str],
+                    Tuple[str, river.GenericRpcHandler]
+                  ] = {{
+                """
+                ),
             )
             for method in service.method:
-                descriptor = f"""('{
-                    ''.join([service.name[0].lower(), service.name[1:]])
-                    }', '{
-                    ''.join([method.name[0].lower(), method.name[1:]])
-                    }')"""
+                service_name = "".join([service.name[0].lower(), service.name[1:]])
+                method_name = "".join([method.name[0].lower(), method.name[1:]])
+                descriptor = f"({repr(service_name)}, {repr(method_name)})"
                 method_kind: str
                 handler_name: str
                 if method.client_streaming:
@@ -290,18 +367,23 @@ def generate_river_module(
                         method_kind = "rpc"
                         handler_name = "rpc_method_handler"
 
-                chunks.extend(
-                    [
-                        f"    {descriptor}: ('{method_kind}', river.{handler_name}(",
-                        f"      servicer.{method.name},",
-                        f"""      _{
-                            _remove_namespace(method.input_type)
-                        }Decoder,""",
-                        f"""      _{
-                            _remove_namespace(method.output_type)
-                        }Encoder,""",
-                        "    )),",
-                    ]
+                decoder_name = f"_{_remove_namespace(method.input_type)}Decoder"
+                encoder_name = f"_{_remove_namespace(method.output_type)}Encoder"
+
+                chunks.append(
+                    reindent(
+                        "    ",
+                        f"""\
+                    {descriptor}: (
+                        {repr(method_kind)},
+                        river.{handler_name}(
+                            servicer.{method.name},
+                            {decoder_name},
+                            {encoder_name},
+                        ),
+                    ),
+                    """,
+                    ),
                 )
             chunks.append("  }")
             chunks.append("  server.add_rpc_handlers(rpc_method_handlers)")
