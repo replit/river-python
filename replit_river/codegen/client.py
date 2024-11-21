@@ -193,7 +193,7 @@ def reindent(prefix: str, code: str) -> str:
     Take an arbitrarily indented code block, dedent to the lowest common
     indent level and then reindent based on the supplied prefix
     """
-    return indent(dedent(code), prefix)
+    return indent(dedent(code.rstrip()), prefix)
 
 
 def is_literal(tpe: RiverType) -> bool:
@@ -314,9 +314,9 @@ def encode_type(
                             )
                             encoder_names.add(encoder_name)
                             typeddict_encoder.append(
-                                f"""
+                                f"""\
                                 {encoder_name}(x) # type: ignore[arg-type]
-                            """.strip()
+                                """.strip()
                             )
                             if local_discriminators:
                                 local_discriminator = sorted(local_discriminators).pop()
@@ -366,7 +366,7 @@ def encode_type(
                                         f"""\
                     {encoder_name}: Callable[['{prefix}'], Any] = (
                         lambda x:
-                            """
+                            """.rstrip()
                                     )
                                 ]
                                 + typeddict_encoder[:-1]  # Drop the last ternary
@@ -592,10 +592,14 @@ def encode_type(
                                         )
                                         encoder_names.add(encoder_name)
                                         typeddict_encoder.append(
-                                            f"""[
+                                            dedent(
+                                                f"""\
+                                            [
                                                 {encoder_name}(y)
                                                 for y in x['{name}']
-                                                ]"""
+                                            ]
+                                            """.rstrip()
+                                            )
                                         )
                         else:
                             if name in prop.required:
@@ -810,13 +814,13 @@ def generate_individual_service(
                                 .validate_python(
                                     x # type: ignore[arg-type]
                                 )
-            """.rstrip()
+                            """
         parse_error_method = f"""\
                             lambda x: TypeAdapter({render_type_expr(error_type)})
                                 .validate_python(
                                     x # type: ignore[arg-type]
                                 )
-            """.rstrip()
+                            """
 
         # Init renderer
         render_init_method: Optional[str] = None
@@ -837,7 +841,7 @@ def generate_individual_service(
             render_init_method = f"""\
                             lambda x: TypeAdapter({render_type_expr(input_type)})
                               .validate_python
-            """.rstrip()
+            """
         if isinstance(
             procedure.init, RiverConcreteType
         ) and procedure.init.type not in ["object", "array"]:
@@ -857,13 +861,11 @@ def generate_individual_service(
             ) and procedure.input.type in ["array"]:
                 match input_type:
                     case ListTypeExpr(input_type_name):
-                        render_input_method = dedent(
-                            f"""\
+                        render_input_method = f"""\
                         lambda xs: [
                             encode_{ensure_literal_type(input_type_name)}(x) for x in xs
                         ]
                         """
-                        )
             else:
                 render_input_method = f"encode_{ensure_literal_type(input_type)}"
         else:
@@ -874,7 +876,7 @@ def generate_individual_service(
                                 by_alias=True,
                                 exclude_none=True,
                               )
-            """.rstrip()
+                            """
         if isinstance(
             procedure.input, RiverConcreteType
         ) and procedure.input.type not in ["object", "array"]:
@@ -897,18 +899,18 @@ def generate_individual_service(
                     reindent(
                         "  ",
                         f"""\
-                async def {name}(
-                  self,
-                  input: {render_type_expr(input_type)},
-                ) -> {render_type_expr(output_type)}:
-                  {control_flow_keyword}await self.client.send_rpc(
-                    '{schema_name}',
-                    '{name}',
-                    input,
-                    {render_input_method},
-                    {parse_output_method},
-                    {parse_error_method},
-                  )
+            async def {name}(
+              self,
+              input: {render_type_expr(input_type)},
+            ) -> {render_type_expr(output_type)}:
+              {control_flow_keyword}await self.client.send_rpc(
+                '{schema_name}',
+                '{name}',
+                input,
+                {reindent("                    ", render_input_method)},
+                {reindent("                    ", parse_output_method)},
+                {reindent("                    ", parse_error_method)},
+              )
                     """,
                     )
                 ]
@@ -919,18 +921,18 @@ def generate_individual_service(
                     reindent(
                         "  ",
                         f"""\
-                async def {name}(
-                  self,
-                  input: {render_type_expr(input_type)},
-                ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
-                  return await self.client.send_subscription(
-                    '{schema_name}',
-                    '{name}',
-                    input,
-                    {render_input_method},
-                    {parse_output_method},
-                    {parse_error_method},
-                  )
+            async def {name}(
+              self,
+              input: {render_type_expr(input_type)},
+            ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
+              return await self.client.send_subscription(
+                '{schema_name}',
+                '{name}',
+                input,
+                {reindent("                    ", render_input_method)},
+                {reindent("                    ", parse_output_method)},
+                {reindent("                    ", parse_error_method)},
+              )
                   """,
                     )
                 ]
@@ -945,21 +947,21 @@ def generate_individual_service(
                         reindent(
                             "  ",
                             f"""\
-                    async def {name}(
-                      self,
-                      init: {init_type},
-                      inputStream: AsyncIterable[{render_type_expr(input_type)}],
-                    ) -> {output_type}:
-                      {control_flow_keyword}await self.client.send_upload(
-                        '{schema_name}',
-                        '{name}',
-                        init,
-                        inputStream,
-                        {render_init_method},
-                        {render_input_method},
-                        {parse_output_method},
-                        {parse_error_method},
-                      )
+            async def {name}(
+              self,
+              init: {init_type},
+              inputStream: AsyncIterable[{render_type_expr(input_type)}],
+            ) -> {output_type}:
+              {control_flow_keyword}await self.client.send_upload(
+                '{schema_name}',
+                '{name}',
+                init,
+                inputStream,
+                {reindent("                    ", render_init_method)},
+                {reindent("                    ", render_input_method)},
+                {reindent("                    ", parse_output_method)},
+                {reindent("                    ", parse_error_method)},
+              )
                         """,
                         )
                     ]
@@ -970,20 +972,20 @@ def generate_individual_service(
                         reindent(
                             "  ",
                             f"""\
-                    async def {name}(
-                      self,
-                      inputStream: AsyncIterable[{render_type_expr(input_type)}],
-                    ) -> {render_type_expr(output_or_error_type)}:
-                      {control_flow_keyword}await self.client.send_upload(
-                        '{schema_name}',
-                        '{name}',
-                        None,
-                        inputStream,
-                        None,
-                        {render_input_method},
-                        {parse_output_method},
-                        {parse_error_method},
-                      )
+            async def {name}(
+              self,
+              inputStream: AsyncIterable[{render_type_expr(input_type)}],
+            ) -> {render_type_expr(output_or_error_type)}:
+              {control_flow_keyword}await self.client.send_upload(
+                '{schema_name}',
+                '{name}',
+                None,
+                inputStream,
+                None,
+                {reindent("                    ", render_input_method)},
+                {reindent("                    ", parse_output_method)},
+                {reindent("                    ", parse_error_method)},
+              )
                         """,
                         )
                     ]
@@ -995,21 +997,21 @@ def generate_individual_service(
                         reindent(
                             "  ",
                             f"""\
-                    async def {name}(
-                      self,
-                      init: {render_type_expr(init_type)},
-                      inputStream: AsyncIterable[{render_type_expr(input_type)}],
-                    ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
-                      return await self.client.send_stream(
-                        '{schema_name}',
-                        '{name}',
-                        init,
-                        inputStream,
-                        {render_init_method},
-                        {render_input_method},
-                        {parse_output_method},
-                        {parse_error_method},
-                      )
+            async def {name}(
+              self,
+              init: {render_type_expr(init_type)},
+              inputStream: AsyncIterable[{render_type_expr(input_type)}],
+            ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
+              return await self.client.send_stream(
+                '{schema_name}',
+                '{name}',
+                init,
+                inputStream,
+                {reindent("                    ", render_init_method)},
+                {reindent("                    ", render_input_method)},
+                {reindent("                    ", parse_output_method)},
+                {reindent("                    ", parse_error_method)},
+              )
                         """,
                         )
                     ]
@@ -1020,20 +1022,20 @@ def generate_individual_service(
                         reindent(
                             "  ",
                             f"""\
-                    async def {name}(
-                      self,
-                      inputStream: AsyncIterable[{render_type_expr(input_type)}],
-                    ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
-                      return await self.client.send_stream(
-                        '{schema_name}',
-                        '{name}',
-                        None,
-                        inputStream,
-                        None,
-                        {render_input_method},
-                        {parse_output_method},
-                        {parse_error_method},
-                      )
+            async def {name}(
+              self,
+              inputStream: AsyncIterable[{render_type_expr(input_type)}],
+            ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
+              return await self.client.send_stream(
+                '{schema_name}',
+                '{name}',
+                None,
+                inputStream,
+                None,
+                {reindent("                    ", render_input_method)},
+                {reindent("                    ", parse_output_method)},
+                {reindent("                    ", parse_error_method)},
+              )
                         """,
                         )
                     ]
