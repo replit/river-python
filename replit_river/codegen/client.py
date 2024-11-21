@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from textwrap import dedent, indent
 from typing import (
-    Any,
     Dict,
     List,
     Literal,
@@ -180,15 +179,7 @@ class RiverIntersectionType(BaseModel):
     allOf: List["RiverType"]
 
 
-class RiverNotType(BaseModel):
-    """This is used to represent void / never."""
-
-    not_: Any = Field(..., alias="not")
-
-
-RiverType = Union[
-    RiverConcreteType, RiverUnionType, RiverNotType, RiverIntersectionType
-]
+RiverType = Union[RiverConcreteType, RiverUnionType, RiverIntersectionType]
 
 
 class RiverProcedure(BaseModel):
@@ -239,8 +230,6 @@ def encode_type(
 ) -> Tuple[TypeExpression, list[ModuleName], list[FileContents], set[TypeName]]:
     encoder_name: Optional[str] = None  # defining this up here to placate mypy
     chunks: List[FileContents] = []
-    if isinstance(type, RiverNotType):
-        return (TypeName("None"), [], [], set())
     if isinstance(type, RiverUnionType):
         typeddict_encoder = list[str]()
         encoder_names: set[TypeName] = set()
@@ -460,7 +449,7 @@ def encode_type(
                 )
             )
         return (prefix, in_module, chunks, encoder_names)
-    if isinstance(type, RiverIntersectionType):
+    elif isinstance(type, RiverIntersectionType):
 
         def extract_props(tpe: RiverType) -> list[dict[str, RiverType]]:
             if isinstance(tpe, RiverUnionType):
@@ -481,12 +470,14 @@ def encode_type(
             base_model,
             in_module,
         )
-    if isinstance(type, RiverConcreteType):
+    elif isinstance(type, RiverConcreteType):
         typeddict_encoder = list[str]()
         if type.type is None:
             # Handle the case where type is not specified
             typeddict_encoder.append("x")
             return (TypeName("Any"), [], [], set())
+        elif type.type == "not":
+            return (TypeName("None"), [], [], set())
         elif type.type == "string":
             if type.const:
                 typeddict_encoder.append(repr(type.const))
@@ -575,9 +566,7 @@ def encode_type(
                 encoder_name = None
                 chunks.extend(contents)
                 if base_model == "TypedDict":
-                    if isinstance(prop, RiverNotType):
-                        typeddict_encoder.append("'not implemented'")
-                    elif isinstance(prop, RiverUnionType):
+                    if isinstance(prop, RiverUnionType):
                         encoder_name = TypeName(
                             f"encode_{ensure_literal_type(type_name)}"
                         )
@@ -596,7 +585,9 @@ def encode_type(
                             safe_name = "kind"
                         else:
                             safe_name = name
-                        if prop.type == "object" and not prop.patternProperties:
+                        if prop.type == "not":
+                            typeddict_encoder.append("'not implemented'")
+                        elif prop.type == "object" and not prop.patternProperties:
                             encoder_name = TypeName(
                                 f"encode_{ensure_literal_type(type_name)}"
                             )
