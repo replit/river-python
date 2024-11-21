@@ -22,6 +22,7 @@ from typing import (
 
 import grpc
 from aiochannel import Channel, ChannelClosed
+from opentelemetry.propagators.textmap import Setter
 from pydantic import BaseModel, ConfigDict, Field
 
 from replit_river.error_schema import (
@@ -86,6 +87,11 @@ class ControlMessageHandshakeResponse(BaseModel):
     status: HandShakeStatus
 
 
+class PropagationContext(BaseModel):
+    traceparent: Optional[str] = None
+    tracestate: Optional[str] = None
+
+
 class TransportMessage(BaseModel):
     id: str
     # from_ is used instead of from because from is a reserved keyword in Python
@@ -97,10 +103,28 @@ class TransportMessage(BaseModel):
     procedureName: Optional[str] = None
     streamId: str
     controlFlags: int
+    tracing: Optional[PropagationContext] = None
     payload: Any
     model_config = ConfigDict(populate_by_name=True)
     # need this because we create TransportMessage objects with destructuring
     # where the key is "from"
+
+
+class TransportMessageTracingSetter(Setter[TransportMessage]):
+    """
+    Handles propagating tracing context to the recipient of the message.
+    """
+
+    def set(self, carrier: TransportMessage, key: str, value: str) -> None:
+        if not carrier.tracing:
+            carrier.tracing = PropagationContext()
+        match key:
+            case "traceparent":
+                carrier.tracing.traceparent = value
+            case "tracestate":
+                carrier.tracing.tracestate = value
+            case _:
+                logger.warning("unknown trace propagation key", extra={"key": key})
 
 
 class GrpcContext(grpc.aio.ServicerContext):
