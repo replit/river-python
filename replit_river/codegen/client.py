@@ -270,7 +270,9 @@ def encode_type(
                 for oneof_t in one_of_candidate_types:
                     discriminator_value = [
                         _NON_ALNUM_RE.sub("", str(prop.const))
-                        for name, prop in oneof_t.properties.items()
+                        for name, prop in sorted(
+                            list(oneof_t.properties.items()), key=lambda kv: kv[0]
+                        )
                         if isinstance(prop, RiverConcreteType)
                         and name == discriminator_name
                         and prop.const is not None
@@ -533,7 +535,10 @@ def encode_type(
         if type.properties:
             needs_binding = True
             typeddict_encoder.append("{")
-            for name, prop in type.properties.items():
+            for (
+                name,
+                prop,
+            ) in sorted(list(type.properties.items()), key=lambda xs: xs[0]):
                 typeddict_encoder.append(f"'{name}':")
                 type_name, _, contents, _ = encode_type(
                     prop, TypeName(prefix + name.title()), base_model, in_module
