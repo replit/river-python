@@ -1,5 +1,6 @@
 import collections
 import os.path
+from pathlib import Path
 import tempfile
 from textwrap import dedent
 from typing import DefaultDict, List, Sequence
@@ -11,6 +12,7 @@ from google.protobuf.descriptor import FieldDescriptor
 from grpc_tools import protoc
 
 from replit_river.codegen.format import reindent
+from replit_river.codegen.typing import FileContents, RenderedPath
 
 
 def to_camel_case(snake_str: str) -> str:
@@ -300,8 +302,9 @@ def generate_river_module(
     module_name: str,
     pb_module_name: str,
     fds: descriptor_pb2.FileDescriptorSet,
-) -> Sequence[str]:
+) -> dict[RenderedPath, FileContents]:
     """Generates the lines of a River module."""
+    files: dict[RenderedPath, FileContents] = {}
     chunks: List[str] = [
         dedent(
             f"""\
@@ -388,7 +391,11 @@ def generate_river_module(
             chunks.append("    }")
             chunks.append("    server.add_rpc_handlers(rpc_method_handlers)")
             chunks.append("")
-    return chunks
+
+    main_contents = FileContents("\n".join(chunks))
+    files[RenderedPath(str(Path("__init__.py")))] = main_contents
+
+    return files
 
 
 def proto_to_river_server_codegen(
@@ -411,12 +418,21 @@ def proto_to_river_server_codegen(
         )
         with open(descriptor_path, "rb") as f:
             fds.ParseFromString(f.read())
+
     pb_module_name = os.path.splitext(os.path.basename(proto_path))[0]
-    contents = black.format_str(
-        "\n".join(generate_river_module(module_name, pb_module_name, fds)),
-        mode=black.FileMode(string_normalization=False),
-    )
     os.makedirs(target_directory, exist_ok=True)
-    output_path = f"{target_directory}/{pb_module_name}_river.py"
-    with open(output_path, "w") as f:
-        f.write(contents)
+
+    for subpath, contents in generate_river_module(module_name, pb_module_name, fds).items():
+        module_path = Path(target_directory).joinpath(subpath)
+        module_path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
+
+        with open(module_path, "w") as f:
+            try:
+                f.write(
+                    black.format_str(
+                        contents, mode=black.FileMode(string_normalization=False)
+                    )
+                )
+            except:
+                f.write(contents)
+                raise
