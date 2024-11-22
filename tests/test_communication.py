@@ -37,8 +37,8 @@ async def test_upload_method(client: Client) -> None:
         serialize_request,
         serialize_request,
         deserialize_response,
-        deserialize_response,
-    )  # type: ignore
+        deserialize_error,
+    )
     assert response == "Uploaded: Initial Data, Data 1, Data 2, Data 3"
 
 
@@ -58,8 +58,8 @@ async def test_upload_more_than_send_buffer_max(client: Client) -> None:
         serialize_request,
         serialize_request,
         deserialize_response,
-        deserialize_response,
-    )  # type: ignore
+        deserialize_error,
+    )
     assert response == "Uploaded: Initial Data" + (", Data" * iterations)
 
 
@@ -77,14 +77,14 @@ async def test_upload_empty(client: Client) -> None:
         None,
         serialize_request,
         deserialize_response,
-        deserialize_response,
-    )  # type: ignore
+        deserialize_error,
+    )
     assert response == "Uploaded: "
 
 
 @pytest.mark.asyncio
 async def test_subscription_method(client: Client) -> None:
-    async for response in await client.send_subscription(
+    async for response in client.send_subscription(
         "test_service",
         "subscription_method",
         "Bob",
@@ -92,6 +92,7 @@ async def test_subscription_method(client: Client) -> None:
         deserialize_response,
         deserialize_error,
     ):
+        assert isinstance(response, str)
         assert "Subscription message" in response
 
 
@@ -103,7 +104,7 @@ async def test_stream_method(client: Client) -> None:
         yield "Stream 3"
 
     responses = []
-    async for response in await client.send_stream(
+    async for response in client.send_stream(
         "test_service",
         "stream_method",
         "Initial Stream Data",
@@ -130,7 +131,7 @@ async def test_stream_empty(client: Client) -> None:
             yield "unreachable"
 
     responses = []
-    async for response in await client.send_stream(
+    async for response in client.send_stream(
         "test_service",
         "stream_method",
         None,
@@ -167,7 +168,7 @@ async def test_multiplexing(client: Client) -> None:
             deserialize_error,
         )
     )
-    stream_task = await client.send_stream(
+    stream_task = client.send_stream(
         "test_service",
         "stream_method",
         "Initial Stream Data",

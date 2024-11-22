@@ -953,7 +953,7 @@ def generate_individual_service(
               self,
               input: {render_type_expr(input_type)},
             ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
-              return await self.client.send_subscription(
+              return self.client.send_subscription(
                 {repr(schema_name)},
                 {repr(name)},
                 input,
@@ -1029,7 +1029,7 @@ def generate_individual_service(
               init: {render_type_expr(init_type)},
               inputStream: AsyncIterable[{render_type_expr(input_type)}],
             ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
-              return await self.client.send_stream(
+              return self.client.send_stream(
                 {repr(schema_name)},
                 {repr(name)},
                 init,
@@ -1053,7 +1053,7 @@ def generate_individual_service(
               self,
               inputStream: AsyncIterable[{render_type_expr(input_type)}],
             ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
-              return await self.client.send_stream(
+              return self.client.send_stream(
                 {repr(schema_name)},
                 {repr(name)},
                 None,
