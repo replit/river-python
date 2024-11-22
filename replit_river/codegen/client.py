@@ -978,7 +978,7 @@ def generate_individual_service(
               init: {init_type},
               inputStream: AsyncIterable[{render_type_expr(input_type)}],
             ) -> {output_type}:
-              return self.client.send_upload(
+              return await self.client.send_upload(
                 {repr(schema_name)},
                 {repr(name)},
                 init,
@@ -1002,7 +1002,7 @@ def generate_individual_service(
               self,
               inputStream: AsyncIterable[{render_type_expr(input_type)}],
             ) -> {render_type_expr(output_or_error_type)}:
-              return self.client.send_upload(
+              return await self.client.send_upload(
                 {repr(schema_name)},
                 {repr(name)},
                 None,
