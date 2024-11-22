@@ -84,7 +84,7 @@ async def test_upload_empty(client: Client) -> None:
 
 @pytest.mark.asyncio
 async def test_subscription_method(client: Client) -> None:
-    async for response in await client.send_subscription(
+    async for response in client.send_subscription(
         "test_service",
         "subscription_method",
         "Bob",
@@ -103,7 +103,7 @@ async def test_stream_method(client: Client) -> None:
         yield "Stream 3"
 
     responses = []
-    async for response in await client.send_stream(
+    async for response in client.send_stream(
         "test_service",
         "stream_method",
         "Initial Stream Data",
@@ -130,7 +130,7 @@ async def test_stream_empty(client: Client) -> None:
             yield "unreachable"
 
     responses = []
-    async for response in await client.send_stream(
+    async for response in client.send_stream(
         "test_service",
         "stream_method",
         None,
@@ -167,7 +167,7 @@ async def test_multiplexing(client: Client) -> None:
             deserialize_error,
         )
     )
-    stream_task = await client.send_stream(
+    stream_task = client.send_stream(
         "test_service",
         "stream_method",
         "Initial Stream Data",

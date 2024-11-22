@@ -106,14 +106,15 @@ class Client(Generic[HandshakeMetadataType]):
     ) -> AsyncIterator[Union[ResponseType, ErrorType]]:
         with _trace_procedure("subscription", service_name, procedure_name):
             session = await self._transport.get_or_create_session()
-            return session.send_subscription(
+            async for msg in session.send_subscription(
                 service_name,
                 procedure_name,
                 request,
                 request_serializer,
                 response_deserializer,
                 error_deserializer,
-            )
+            ):
+                yield msg
 
     async def send_stream(
         self,
@@ -128,7 +129,7 @@ class Client(Generic[HandshakeMetadataType]):
     ) -> AsyncIterator[Union[ResponseType, ErrorType]]:
         with _trace_procedure("stream", service_name, procedure_name):
             session = await self._transport.get_or_create_session()
-            return session.send_stream(
+            async for msg in session.send_stream(
                 service_name,
                 procedure_name,
                 init,
@@ -137,7 +138,8 @@ class Client(Generic[HandshakeMetadataType]):
                 request_serializer,
                 response_deserializer,
                 error_deserializer,
-            )
+            ):
+                yield msg
 
 
 @contextmanager
