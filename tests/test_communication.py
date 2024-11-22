@@ -37,8 +37,8 @@ async def test_upload_method(client: Client) -> None:
         serialize_request,
         serialize_request,
         deserialize_response,
-        deserialize_response,
-    )  # type: ignore
+        deserialize_error,
+    )
     assert response == "Uploaded: Initial Data, Data 1, Data 2, Data 3"
 
 
@@ -58,8 +58,8 @@ async def test_upload_more_than_send_buffer_max(client: Client) -> None:
         serialize_request,
         serialize_request,
         deserialize_response,
-        deserialize_response,
-    )  # type: ignore
+        deserialize_error,
+    )
     assert response == "Uploaded: Initial Data" + (", Data" * iterations)
 
 
@@ -77,8 +77,8 @@ async def test_upload_empty(client: Client) -> None:
         None,
         serialize_request,
         deserialize_response,
-        deserialize_response,
-    )  # type: ignore
+        deserialize_error,
+    )
     assert response == "Uploaded: "
 
 
@@ -92,6 +92,7 @@ async def test_subscription_method(client: Client) -> None:
         deserialize_response,
         deserialize_error,
     ):
+        assert isinstance(response, str)
         assert "Subscription message" in response
 
 
