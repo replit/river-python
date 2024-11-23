@@ -6,7 +6,7 @@ from typing import Any, Generator, Generic, Literal, Optional, Union
 from opentelemetry import trace
 
 from replit_river.client_transport import ClientTransport
-from replit_river.error_schema import RiverException
+from replit_river.error_schema import RiverError, RiverException
 from replit_river.transport_options import (
     HandshakeMetadataType,
     TransportOptions,
@@ -114,7 +114,9 @@ class Client(Generic[HandshakeMetadataType]):
                 response_deserializer,
                 error_deserializer,
             ):
-                yield msg
+                if isinstance(msg, RiverError):
+                    _record_river_error(msg)
+                yield msg  # type: ignore # https://github.com/python/mypy/issues/10817
 
     async def send_stream(
         self,
@@ -139,7 +141,16 @@ class Client(Generic[HandshakeMetadataType]):
                 response_deserializer,
                 error_deserializer,
             ):
-                yield msg
+                if isinstance(msg, RiverError):
+                    _record_river_error(msg)
+                yield msg  # type: ignore # https://github.com/python/mypy/issues/10817
+
+
+def _record_river_error(error: RiverError) -> None:
+    span = trace.get_current_span()
+    span.record_exception(RiverException(error.code, error.message))
+    span.set_attribute("river.error_code", error.code)
+    span.set_attribute("river.error_message", error.message)
 
 
 @contextmanager
