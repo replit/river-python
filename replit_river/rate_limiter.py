@@ -1,5 +1,6 @@
 import asyncio
 import random
+from contextvars import Context
 from typing import Dict
 
 from replit_river.transport_options import ConnectionRetryOptions
@@ -83,7 +84,9 @@ class LeakyBucketRateLimit:
         Args:
             user (str): The identifier for the user.
         """
-        self.tasks[user] = asyncio.create_task(self.restore_budget(user))
+        self.tasks[user] = asyncio.create_task(
+            self.restore_budget(user), context=Context()
+        )
 
     async def restore_budget(self, user: str) -> None:
         """Asynchronously wait for the interval and then restore the budget for the
