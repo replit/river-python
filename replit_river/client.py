@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from typing import Any, Generator, Generic, Literal, Optional, Union
 
 from opentelemetry import trace
+from opentelemetry.trace import Span, SpanKind, StatusCode
 
 from replit_river.client_transport import ClientTransport
 from replit_river.error_schema import RiverError, RiverException
@@ -118,7 +119,7 @@ class Client(Generic[HandshakeMetadataType]):
                 span,
             ):
                 if isinstance(msg, RiverError):
-                    _record_river_error(msg)
+                    _record_river_error(span, msg)
                 yield msg  # type: ignore # https://github.com/python/mypy/issues/10817
 
     async def send_stream(
@@ -146,15 +147,8 @@ class Client(Generic[HandshakeMetadataType]):
                 span,
             ):
                 if isinstance(msg, RiverError):
-                    _record_river_error(msg)
+                    _record_river_error(span, msg)
                 yield msg  # type: ignore # https://github.com/python/mypy/issues/10817
-
-
-def _record_river_error(error: RiverError) -> None:
-    span = trace.get_current_span()
-    span.record_exception(RiverException(error.code, error.message))
-    span.set_attribute("river.error_code", error.code)
-    span.set_attribute("river.error_message", error.message)
 
 
 @contextmanager
@@ -162,14 +156,20 @@ def _trace_procedure(
     procedure_type: Literal["rpc", "upload", "subscription", "stream"],
     service_name: str,
     procedure_name: str,
-) -> Generator[trace.Span, None, None]:
+) -> Generator[Span, None, None]:
     with tracer.start_span(
         f"river.client.{procedure_type}.{service_name}.{procedure_name}",
-        kind=trace.SpanKind.CLIENT,
+        kind=SpanKind.CLIENT,
     ) as span:
         try:
             yield span
         except RiverException as e:
-            span.set_attribute("river.error_code", e.code)
-            span.set_attribute("river.error_message", e.message)
+            _record_river_error(span, RiverError(code=e.code, message=e.message))
             raise e
+
+
+def _record_river_error(span: Span, error: RiverError) -> None:
+    span.set_status(StatusCode.ERROR, error.message)
+    span.record_exception(RiverException(error.code, error.message))
+    span.set_attribute("river.error_code", error.code)
+    span.set_attribute("river.error_message", error.message)

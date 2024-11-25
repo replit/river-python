@@ -388,8 +388,9 @@ def upload_method_handler(
 
             convert_inputs_task = task_manager.create_task(_convert_inputs())
             convert_outputs_task = task_manager.create_task(_convert_outputs())
-            await asyncio.wait((convert_inputs_task, convert_outputs_task))
-
+            done, _ = await asyncio.wait((convert_inputs_task, convert_outputs_task))
+            for task in done:
+                await task
         except Exception as e:
             logger.exception("Uncaught exception in upload")
             await output.put(
@@ -440,17 +441,16 @@ def stream_method_handler(
             response = method(request, context)
 
             async def _convert_outputs() -> None:
-                try:
-                    async for item in response:
-                        await output.put(
-                            get_response_or_error_payload(item, response_serializer)
-                        )
-                finally:
-                    output.close()
+                async for item in response:
+                    await output.put(
+                        get_response_or_error_payload(item, response_serializer)
+                    )
 
             convert_inputs_task = task_manager.create_task(_convert_inputs())
             convert_outputs_task = task_manager.create_task(_convert_outputs())
-            await asyncio.wait((convert_inputs_task, convert_outputs_task))
+            done, _ = await asyncio.wait((convert_inputs_task, convert_outputs_task))
+            for task in done:
+                await task
         except grpc.RpcError:
             logger.exception("RPC exception in stream")
             code = grpc.StatusCode(context._abort_code).name if context else "UNKNOWN"

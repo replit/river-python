@@ -38,6 +38,9 @@ from .rpc import (
 
 logger = logging.getLogger(__name__)
 
+trace_propagator = TraceContextTextMapPropagator()
+trace_setter = TransportMessageTracingSetter()
+
 
 class SessionState(enum.Enum):
     """The state a session can be in.
@@ -386,9 +389,7 @@ class Session(object):
         )
         if span:
             with use_span(span):
-                TraceContextTextMapPropagator().inject(
-                    msg, None, TransportMessageTracingSetter()
-                )
+                trace_propagator.inject(msg, None, trace_setter)
         try:
             # We need this lock to ensure the buffer order and message sending order
             # are the same.

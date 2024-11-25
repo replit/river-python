@@ -3,15 +3,19 @@ import logging
 from collections.abc import AsyncIterator
 from typing import Any, AsyncGenerator, Iterator, Literal
 
+import grpc.aio
 import nanoid  # type: ignore
 import pytest
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from websockets.server import serve
 
 from replit_river.client import Client
 from replit_river.client_transport import UriAndMetadata
-from replit_river.error_schema import RiverError
+from replit_river.error_schema import RiverError, RiverException
 from replit_river.rpc import (
-    GrpcContext,
     TransportMessage,
     rpc_method_handler,
     stream_method_handler,
@@ -68,12 +72,12 @@ def deserialize_error(response: dict) -> RiverError:
 
 
 # RPC method handlers for testing
-async def rpc_handler(request: str, context: GrpcContext) -> str:
+async def rpc_handler(request: str, context: grpc.aio.ServicerContext) -> str:
     return f"Hello, {request}!"
 
 
 async def subscription_handler(
-    request: str, context: GrpcContext
+    request: str, context: grpc.aio.ServicerContext
 ) -> AsyncGenerator[str, None]:
     for i in range(5):
         yield f"Subscription message {i} for {request}"
@@ -93,7 +97,8 @@ async def upload_handler(
 
 
 async def stream_handler(
-    request: Iterator[str] | AsyncIterator[str], context: GrpcContext
+    request: Iterator[str] | AsyncIterator[str],
+    context: grpc.aio.ServicerContext,
 ) -> AsyncGenerator[str, None]:
     if isinstance(request, AsyncIterator):
         async for data in request:
@@ -101,6 +106,14 @@ async def stream_handler(
     else:
         for data in request:
             yield f"Stream response for {data}"
+
+
+async def stream_error_handler(
+    request: Iterator[str] | AsyncIterator[str],
+    context: grpc.aio.ServicerContext,
+) -> AsyncGenerator[str, None]:
+    raise RiverException("INJECTED_ERROR", "test error")
+    yield "test"  # appease the type checker
 
 
 @pytest.fixture
@@ -135,6 +148,12 @@ def server(transport_options: TransportOptions) -> Server:
                 "stream",
                 stream_method_handler(
                     stream_handler, deserialize_request, serialize_response
+                ),
+            ),
+            ("test_service", "stream_method_error"): (
+                "stream",
+                stream_method_handler(
+                    stream_error_handler, deserialize_request, serialize_response
                 ),
             ),
         }
@@ -173,3 +192,18 @@ async def client(
         await server.close()
         # Server should close normally
         no_logging_error()
+
+
+@pytest.fixture(scope="session")
+def span_exporter() -> InMemorySpanExporter:
+    exporter = InMemorySpanExporter()
+    processor = SimpleSpanProcessor(exporter)
+    provider = TracerProvider()
+    provider.add_span_processor(processor)
+    trace.set_tracer_provider(provider)
+    return exporter
+
+
+@pytest.fixture(autouse=True)
+def reset_span_exporter(span_exporter: InMemorySpanExporter) -> None:
+    span_exporter.clear()
