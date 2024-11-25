@@ -6,6 +6,7 @@ from typing import Any, Callable, Coroutine, Dict, Optional, Tuple
 import nanoid  # type: ignore
 import websockets
 from aiochannel import Channel, ChannelClosed
+from opentelemetry.trace import Span, use_span
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from websockets.exceptions import ConnectionClosed
 
@@ -365,6 +366,7 @@ class Session(object):
         control_flags: int = 0,
         service_name: str | None = None,
         procedure_name: str | None = None,
+        span: Span | None = None,
     ) -> None:
         """Send serialized messages to the websockets."""
         # if the session is not active, we should not do anything
@@ -382,9 +384,11 @@ class Session(object):
             serviceName=service_name,
             procedureName=procedure_name,
         )
-        TraceContextTextMapPropagator().inject(
-            msg, None, TransportMessageTracingSetter()
-        )
+        if span:
+            with use_span(span):
+                TraceContextTextMapPropagator().inject(
+                    msg, None, TransportMessageTracingSetter()
+                )
         try:
             # We need this lock to ensure the buffer order and message sending order
             # are the same.

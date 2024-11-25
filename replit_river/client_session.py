@@ -5,6 +5,7 @@ from typing import Any, Callable, Optional, Union
 import nanoid  # type: ignore
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
+from opentelemetry.trace import Span
 
 from replit_river.error_schema import (
     ERROR_CODE_STREAM_CLOSED,
@@ -37,6 +38,7 @@ class ClientSession(Session):
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
+        span: Span,
     ) -> ResponseType:
         """Sends a single RPC request to the server.
 
@@ -51,6 +53,7 @@ class ClientSession(Session):
             payload=request_serializer(request),
             service_name=service_name,
             procedure_name=procedure_name,
+            span=span,
         )
         # Handle potential errors during communication
         try:
@@ -89,6 +92,7 @@ class ClientSession(Session):
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
+        span: Span,
     ) -> ResponseType:
         """Sends an upload request to the server.
 
@@ -107,6 +111,7 @@ class ClientSession(Session):
                     service_name=service_name,
                     procedure_name=procedure_name,
                     payload=init_serializer(init),
+                    span=span,
                 )
                 first_message = False
             # If this request is not closed and the session is killed, we should
@@ -122,6 +127,7 @@ class ClientSession(Session):
                     procedure_name=procedure_name,
                     control_flags=control_flags,
                     payload=request_serializer(item),
+                    span=span,
                 )
         except Exception as e:
             raise RiverServiceException(
@@ -171,6 +177,7 @@ class ClientSession(Session):
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
+        span: Span,
     ) -> AsyncIterator[Union[ResponseType, ErrorType]]:
         """Sends a subscription request to the server.
 
@@ -185,6 +192,7 @@ class ClientSession(Session):
             stream_id=stream_id,
             control_flags=STREAM_OPEN_BIT,
             payload=request_serializer(request),
+            span=span,
         )
 
         # Handle potential errors during communication
@@ -221,6 +229,7 @@ class ClientSession(Session):
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
+        span: Span,
     ) -> AsyncIterator[Union[ResponseType, ErrorType]]:
         """Sends a subscription request to the server.
 
@@ -239,6 +248,7 @@ class ClientSession(Session):
                     stream_id=stream_id,
                     control_flags=STREAM_OPEN_BIT,
                     payload=init_serializer(init),
+                    span=span,
                 )
             else:
                 # Get the very first message to open the stream
@@ -250,6 +260,7 @@ class ClientSession(Session):
                     stream_id=stream_id,
                     control_flags=STREAM_OPEN_BIT,
                     payload=request_serializer(first),
+                    span=span,
                 )
 
         except StopAsyncIteration:
