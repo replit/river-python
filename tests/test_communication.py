@@ -18,7 +18,7 @@ async def test_rpc_method(client: Client) -> None:
         serialize_request,
         deserialize_response,
         deserialize_error,
-    )  # type: ignore
+    )
     assert response == "Hello, Alice!"
 
 
