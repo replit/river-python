@@ -1,3 +1,4 @@
+from datetime import timedelta
 from typing import AsyncGenerator, AsyncIterator, Iterator
 
 import grpc
@@ -38,6 +39,7 @@ async def test_rpc_method_span(
         serialize_request,
         deserialize_response,
         deserialize_error,
+        timedelta(seconds=20),
     )
     assert response == "Hello, Alice!"
     spans = span_exporter.get_finished_spans()

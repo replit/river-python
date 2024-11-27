@@ -1,4 +1,5 @@
 import asyncio
+from datetime import timedelta
 from typing import AsyncGenerator
 
 import pytest
@@ -29,6 +30,7 @@ async def test_rpc_method(client: Client) -> None:
         serialize_request,
         deserialize_response,
         deserialize_error,
+        timedelta(seconds=20),
     )
     assert response == "Hello, Alice!"
 
