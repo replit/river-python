@@ -1,10 +1,8 @@
 import asyncio
 import logging
-from collections.abc import AsyncIterator
-from typing import Any, AsyncGenerator, Iterator, Literal
+from typing import Any, AsyncGenerator, Literal, Mapping
 
-import grpc.aio
-import nanoid  # type: ignore
+import nanoid
 import pytest
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
@@ -14,13 +12,10 @@ from websockets.server import serve
 
 from replit_river.client import Client
 from replit_river.client_transport import UriAndMetadata
-from replit_river.error_schema import RiverError, RiverException
+from replit_river.error_schema import RiverError
 from replit_river.rpc import (
+    GenericRpcHandler,
     TransportMessage,
-    rpc_method_handler,
-    stream_method_handler,
-    subscription_method_handler,
-    upload_method_handler,
 )
 from replit_river.server import Server
 from replit_river.transport_options import TransportOptions
@@ -28,6 +23,8 @@ from tests.river_fixtures.logging import NoErrors
 
 # Modular fixtures
 pytest_plugins = ["tests.river_fixtures.logging"]
+
+HandlerMapping = Mapping[tuple[str, str], tuple[str, GenericRpcHandler]]
 
 
 def transport_message(
@@ -71,93 +68,22 @@ def deserialize_error(response: dict) -> RiverError:
     return RiverError.model_validate(response)
 
 
-# RPC method handlers for testing
-async def rpc_handler(request: str, context: grpc.aio.ServicerContext) -> str:
-    return f"Hello, {request}!"
-
-
-async def subscription_handler(
-    request: str, context: grpc.aio.ServicerContext
-) -> AsyncGenerator[str, None]:
-    for i in range(5):
-        yield f"Subscription message {i} for {request}"
-
-
-async def upload_handler(
-    request: Iterator[str] | AsyncIterator[str], context: Any
-) -> str:
-    uploaded_data = []
-    if isinstance(request, AsyncIterator):
-        async for data in request:
-            uploaded_data.append(data)
-    else:
-        for data in request:
-            uploaded_data.append(data)
-    return f"Uploaded: {', '.join(uploaded_data)}"
-
-
-async def stream_handler(
-    request: Iterator[str] | AsyncIterator[str],
-    context: grpc.aio.ServicerContext,
-) -> AsyncGenerator[str, None]:
-    if isinstance(request, AsyncIterator):
-        async for data in request:
-            yield f"Stream response for {data}"
-    else:
-        for data in request:
-            yield f"Stream response for {data}"
-
-
-async def stream_error_handler(
-    request: Iterator[str] | AsyncIterator[str],
-    context: grpc.aio.ServicerContext,
-) -> AsyncGenerator[str, None]:
-    raise RiverException("INJECTED_ERROR", "test error")
-    yield "test"  # appease the type checker
-
-
 @pytest.fixture
 def transport_options() -> TransportOptions:
     return TransportOptions()
 
 
 @pytest.fixture
-def server(transport_options: TransportOptions) -> Server:
+def server_handlers(handlers: HandlerMapping) -> HandlerMapping:
+    return handlers
+
+
+@pytest.fixture
+def server(
+    transport_options: TransportOptions, server_handlers: HandlerMapping
+) -> Server:
     server = Server(server_id="test_server", transport_options=transport_options)
-    server.add_rpc_handlers(
-        {
-            ("test_service", "rpc_method"): (
-                "rpc",
-                rpc_method_handler(
-                    rpc_handler, deserialize_request, serialize_response
-                ),
-            ),
-            ("test_service", "subscription_method"): (
-                "subscription",
-                subscription_method_handler(
-                    subscription_handler, deserialize_request, serialize_response
-                ),
-            ),
-            ("test_service", "upload_method"): (
-                "upload",
-                upload_method_handler(
-                    upload_handler, deserialize_request, serialize_response
-                ),
-            ),
-            ("test_service", "stream_method"): (
-                "stream",
-                stream_method_handler(
-                    stream_handler, deserialize_request, serialize_response
-                ),
-            ),
-            ("test_service", "stream_method_error"): (
-                "stream",
-                stream_method_handler(
-                    stream_error_handler, deserialize_request, serialize_response
-                ),
-            ),
-        }
-    )
+    server.add_rpc_handlers(server_handlers)
     return server
 
 

@@ -6,10 +6,21 @@ import pytest
 from replit_river.client import Client
 from replit_river.error_schema import RiverError
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
-from tests.conftest import deserialize_error, deserialize_response, serialize_request
+from tests.common_handlers import (
+    basic_rpc_method,
+    basic_stream,
+    basic_subscription,
+    basic_upload,
+)
+from tests.conftest import (
+    deserialize_error,
+    deserialize_response,
+    serialize_request,
+)
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_rpc_method}])
 async def test_rpc_method(client: Client) -> None:
     response = await client.send_rpc(
         "test_service",
@@ -23,6 +34,7 @@ async def test_rpc_method(client: Client) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_upload}])
 async def test_upload_method(client: Client) -> None:
     async def upload_data() -> AsyncGenerator[str, None]:
         yield "Data 1"
@@ -43,6 +55,7 @@ async def test_upload_method(client: Client) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_upload}])
 async def test_upload_more_than_send_buffer_max(client: Client) -> None:
     iterations = MAX_MESSAGE_BUFFER_SIZE * 2
 
@@ -64,6 +77,7 @@ async def test_upload_more_than_send_buffer_max(client: Client) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_upload}])
 async def test_upload_empty(client: Client) -> None:
     async def upload_data(enabled: bool = False) -> AsyncGenerator[str, None]:
         if enabled:
@@ -83,6 +97,7 @@ async def test_upload_empty(client: Client) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_subscription}])
 async def test_subscription_method(client: Client) -> None:
     async for response in client.send_subscription(
         "test_service",
@@ -97,6 +112,7 @@ async def test_subscription_method(client: Client) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_stream}])
 async def test_stream_method(client: Client) -> None:
     async def stream_data() -> AsyncGenerator[str, None]:
         yield "Stream 1"
@@ -125,6 +141,7 @@ async def test_stream_method(client: Client) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_stream}])
 async def test_stream_empty(client: Client) -> None:
     async def stream_data(enabled: bool = False) -> AsyncGenerator[str, None]:
         if enabled:
@@ -147,6 +164,7 @@ async def test_stream_empty(client: Client) -> None:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_upload, **basic_stream}])
 async def test_multiplexing(client: Client) -> None:
     async def upload_data() -> AsyncGenerator[str, None]:
         yield "Upload Data 1"

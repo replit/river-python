@@ -46,6 +46,7 @@ dev-dependencies = [
     "pytest-mock>=3.11.1",
     "ruff>=0.0.278",
     "types-protobuf>=4.24.0.20240311",
+    "types-nanoid>=2.0.0.20240601",
 ]
 
 [tool.ruff]

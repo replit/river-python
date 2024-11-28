@@ -15,6 +15,7 @@ def transport_options() -> TransportOptions:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{}])
 async def test_handshake_timeout(server: Server) -> None:
     async with serve(server.serve, "localhost", 8765):
         start = time()

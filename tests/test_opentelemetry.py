@@ -1,16 +1,33 @@
-from typing import AsyncGenerator
+from typing import AsyncGenerator, AsyncIterator, Iterator
 
+import grpc
+import grpc.aio
 import pytest
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import StatusCode
 
 from replit_river.client import Client
-from replit_river.error_schema import RiverError
-from tests.conftest import deserialize_error, deserialize_response, serialize_request
+from replit_river.error_schema import RiverError, RiverException
+from replit_river.rpc import stream_method_handler
+from tests.common_handlers import (
+    basic_rpc_method,
+    basic_stream,
+    basic_subscription,
+    basic_upload,
+)
+from tests.conftest import (
+    HandlerMapping,
+    deserialize_error,
+    deserialize_request,
+    deserialize_response,
+    serialize_request,
+    serialize_response,
+)
 from tests.river_fixtures.logging import NoErrors
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_rpc_method}])
 async def test_rpc_method_span(
     client: Client, span_exporter: InMemorySpanExporter
 ) -> None:
@@ -29,6 +46,7 @@ async def test_rpc_method_span(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_upload}])
 async def test_upload_method_span(
     client: Client, span_exporter: InMemorySpanExporter
 ) -> None:
@@ -54,6 +72,7 @@ async def test_upload_method_span(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_subscription}])
 async def test_subscription_method_span(
     client: Client, span_exporter: InMemorySpanExporter
 ) -> None:
@@ -74,6 +93,7 @@ async def test_subscription_method_span(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_stream}])
 async def test_stream_method_span(
     client: Client, span_exporter: InMemorySpanExporter
 ) -> None:
@@ -107,7 +127,26 @@ async def test_stream_method_span(
     assert spans[0].name == "river.client.stream.test_service.stream_method"
 
 
+async def stream_error_handler(
+    request: Iterator[str] | AsyncIterator[str],
+    context: grpc.aio.ServicerContext,
+) -> AsyncGenerator[str, None]:
+    raise RiverException("INJECTED_ERROR", "test error")
+    yield "test"  # appease the type checker
+
+
+stream_error_method_handlers: HandlerMapping = {
+    ("test_service", "stream_method_error"): (
+        "stream",
+        stream_method_handler(
+            stream_error_handler, deserialize_request, serialize_response
+        ),
+    )
+}
+
+
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**stream_error_method_handlers}])
 async def test_stream_error_method_span(
     client: Client,
     span_exporter: InMemorySpanExporter,
