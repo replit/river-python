@@ -153,9 +153,16 @@ def transport_options() -> TransportOptions:
 
 
 @pytest.fixture
-def server(transport_options: TransportOptions) -> Server:
+def server_handlers(handlers: HandlerMapping) -> HandlerMapping:
+    return handlers
+
+
+@pytest.fixture
+def server(
+    transport_options: TransportOptions, server_handlers: HandlerMapping
+) -> Server:
     server = Server(server_id="test_server", transport_options=transport_options)
-    server.add_rpc_handlers(common_handlers)
+    server.add_rpc_handlers(server_handlers)
     return server
 
 

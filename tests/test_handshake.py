@@ -7,6 +7,7 @@ from websockets.server import serve
 
 from replit_river.server import Server
 from replit_river.transport_options import TransportOptions
+from tests.conftest import common_handlers
 
 
 @pytest.fixture
@@ -15,6 +16,7 @@ def transport_options() -> TransportOptions:
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [common_handlers])
 async def test_handshake_timeout(server: Server) -> None:
     async with serve(server.serve, "localhost", 8765):
         start = time()

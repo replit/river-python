@@ -6,11 +6,12 @@ from opentelemetry.trace import StatusCode
 
 from replit_river.client import Client
 from replit_river.error_schema import RiverError
-from tests.conftest import deserialize_error, deserialize_response, serialize_request
+from tests.conftest import common_handlers, deserialize_error, deserialize_response, serialize_request
 from tests.river_fixtures.logging import NoErrors
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [common_handlers])
 async def test_rpc_method_span(
     client: Client, span_exporter: InMemorySpanExporter
 ) -> None:
@@ -29,6 +30,7 @@ async def test_rpc_method_span(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [common_handlers])
 async def test_upload_method_span(
     client: Client, span_exporter: InMemorySpanExporter
 ) -> None:
@@ -54,6 +56,7 @@ async def test_upload_method_span(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [common_handlers])
 async def test_subscription_method_span(
     client: Client, span_exporter: InMemorySpanExporter
 ) -> None:
@@ -74,6 +77,7 @@ async def test_subscription_method_span(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [common_handlers])
 async def test_stream_method_span(
     client: Client, span_exporter: InMemorySpanExporter
 ) -> None:
@@ -108,6 +112,7 @@ async def test_stream_method_span(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [common_handlers])
 async def test_stream_error_method_span(
     client: Client,
     span_exporter: InMemorySpanExporter,
