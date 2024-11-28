@@ -11,12 +11,12 @@ def mock_transport_message(seq: int) -> TransportMessage:
         seq=seq,
         id="test",
         ack=0,
-        from_="test",
+        from_="test",  # type: ignore
         to="test",
         streamId="test",
         controlFlags=0,
         payload=0,
-        model_config={},
+        model_config={},  # type: ignore
     )
 
 
