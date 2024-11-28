@@ -831,9 +831,14 @@ def generate_individual_service(
                                 exclude_none=True,
                               )
                             """
-        if isinstance(
-            procedure.input, RiverConcreteType
-        ) and procedure.input.type not in ["object", "array"]:
+        if (
+            (
+                isinstance(procedure.input, RiverConcreteType)
+                and procedure.input.type not in ["object", "array"]
+            )
+            or isinstance(procedure.input, RiverNotType)
+            or procedure.input is None
+        ):
             render_input_method = "lambda x: x"
 
         assert (
@@ -1077,7 +1082,9 @@ def schema_to_river_client_codegen(
         module_path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
         with open(module_path, "w") as f:
             try:
-                popen = subprocess.Popen(["ruff", "format", "-"], stdin=subprocess.PIPE, stdout=f)
+                popen = subprocess.Popen(
+                    ["ruff", "format", "-"], stdin=subprocess.PIPE, stdout=f
+                )
                 popen.communicate(contents.encode())
             except:
                 f.write(contents)
