@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator
-from typing import Any, AsyncGenerator, Iterator, Literal
+from typing import Any, AsyncGenerator, Iterator, Literal, Mapping
 
 import grpc.aio
 import nanoid  # type: ignore
@@ -16,6 +16,7 @@ from replit_river.client import Client
 from replit_river.client_transport import UriAndMetadata
 from replit_river.error_schema import RiverError, RiverException
 from replit_river.rpc import (
+    GenericRpcHandler,
     TransportMessage,
     rpc_method_handler,
     stream_method_handler,
@@ -28,6 +29,8 @@ from tests.river_fixtures.logging import NoErrors
 
 # Modular fixtures
 pytest_plugins = ["tests.river_fixtures.logging"]
+
+HandlerMapping = Mapping[tuple[str, str], tuple[str, GenericRpcHandler]]
 
 
 def transport_message(
@@ -116,6 +119,34 @@ async def stream_error_handler(
     yield "test"  # appease the type checker
 
 
+common_handlers: HandlerMapping = {
+    ("test_service", "rpc_method"): (
+        "rpc",
+        rpc_method_handler(rpc_handler, deserialize_request, serialize_response),
+    ),
+    ("test_service", "subscription_method"): (
+        "subscription",
+        subscription_method_handler(
+            subscription_handler, deserialize_request, serialize_response
+        ),
+    ),
+    ("test_service", "upload_method"): (
+        "upload",
+        upload_method_handler(upload_handler, deserialize_request, serialize_response),
+    ),
+    ("test_service", "stream_method"): (
+        "stream",
+        stream_method_handler(stream_handler, deserialize_request, serialize_response),
+    ),
+    ("test_service", "stream_method_error"): (
+        "stream",
+        stream_method_handler(
+            stream_error_handler, deserialize_request, serialize_response
+        ),
+    ),
+}
+
+
 @pytest.fixture
 def transport_options() -> TransportOptions:
     return TransportOptions()
@@ -124,40 +155,7 @@ def transport_options() -> TransportOptions:
 @pytest.fixture
 def server(transport_options: TransportOptions) -> Server:
     server = Server(server_id="test_server", transport_options=transport_options)
-    server.add_rpc_handlers(
-        {
-            ("test_service", "rpc_method"): (
-                "rpc",
-                rpc_method_handler(
-                    rpc_handler, deserialize_request, serialize_response
-                ),
-            ),
-            ("test_service", "subscription_method"): (
-                "subscription",
-                subscription_method_handler(
-                    subscription_handler, deserialize_request, serialize_response
-                ),
-            ),
-            ("test_service", "upload_method"): (
-                "upload",
-                upload_method_handler(
-                    upload_handler, deserialize_request, serialize_response
-                ),
-            ),
-            ("test_service", "stream_method"): (
-                "stream",
-                stream_method_handler(
-                    stream_handler, deserialize_request, serialize_response
-                ),
-            ),
-            ("test_service", "stream_method_error"): (
-                "stream",
-                stream_method_handler(
-                    stream_error_handler, deserialize_request, serialize_response
-                ),
-            ),
-        }
-    )
+    server.add_rpc_handlers(common_handlers)
     return server
 
 
