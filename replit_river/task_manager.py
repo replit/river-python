@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Coroutine, Optional, Set
+from typing import Coroutine, Optional, Set
 
 from replit_river.error_schema import ERROR_CODE_STREAM_CLOSED, RiverException
 
@@ -11,7 +11,7 @@ class BackgroundTaskManager:
     """Manages background tasks and logs exceptions."""
 
     def __init__(self) -> None:
-        self.background_tasks: Set[asyncio.Task] = set()
+        self.background_tasks: Set[asyncio.Task[None]] = set()
 
     async def cancel_all_tasks(self) -> None:
         """Asynchronously cancels all tasks managed by this instance."""
@@ -21,8 +21,8 @@ class BackgroundTaskManager:
 
     @staticmethod
     async def cancel_task(
-        task_to_remove: asyncio.Task[Any],
-        background_tasks: Set[asyncio.Task],
+        task_to_remove: asyncio.Task[None],
+        background_tasks: Set[asyncio.Task[None]],
     ) -> None:
         """Cancels a given task and ensures it is removed from the set of managed tasks.
 
@@ -50,8 +50,8 @@ class BackgroundTaskManager:
 
     def _task_done_callback(
         self,
-        task_to_remove: asyncio.Task[Any],
-        background_tasks: Set[asyncio.Task],
+        task_to_remove: asyncio.Task[None],
+        background_tasks: Set[asyncio.Task[None]],
     ) -> None:
         """Callback to be executed when a task is done. It removes the task from the set
           and logs any exceptions.
