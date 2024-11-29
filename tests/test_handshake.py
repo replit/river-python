@@ -17,9 +17,12 @@ def transport_options() -> TransportOptions:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("handlers", [{}])
 async def test_handshake_timeout(server: Server) -> None:
-    async with serve(server.serve, "localhost", 8765):
+    async with serve(server.serve, "127.0.0.1") as binding:
+        sockets = list(binding.sockets)
+        assert len(sockets) == 1, "Too many sockets!"
+        socket = sockets[0]
         start = time()
-        ws = await websockets.connect("ws://localhost:8765")
+        ws = await websockets.connect("ws://%s:%d" % socket.getsockname())
         with pytest.raises(ConnectionClosedOK):
             await ws.recv()
         diff = time() - start
