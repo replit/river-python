@@ -64,7 +64,7 @@ class ClientSession(Session):
             try:
                 async with asyncio.timeout(int(timeout.total_seconds())):
                     response = await output.get()
-            except asyncio.CancelledError as e:
+            except asyncio.TimeoutError as e:
                 # TODO(dstewart) After protocol v2, change this to STREAM_CANCEL_BIT
                 await self.send_message(
                     stream_id=stream_id,
