@@ -127,7 +127,7 @@ class TransportMessageTracingSetter(Setter[TransportMessage]):
                 logger.warning("unknown trace propagation key", extra={"key": key})
 
 
-class GrpcContext(grpc.aio.ServicerContext):
+class GrpcContext(grpc.aio.ServicerContext, Generic[RequestType, ResponseType]):
     """Represents a gRPC-compatible ServicerContext for River interop."""
 
     def __init__(self, peer: str) -> None:
@@ -229,9 +229,8 @@ def rpc_method_handler(
         input: Channel[Any],
         output: Channel[Any],
     ) -> None:
-        context = None
+        context: GrpcContext[RequestType, ResponseType] = GrpcContext(peer)
         try:
-            context = GrpcContext(peer)
             request = request_deserializer(await input.get())
             response = method(request, context)
             if isinstance(response, Awaitable):
@@ -287,9 +286,8 @@ def subscription_method_handler(
         input: Channel[Any],
         output: Channel[Any],
     ) -> None:
-        context = None
+        context: GrpcContext[RequestType, ResponseType] = GrpcContext(peer)
         try:
-            context = GrpcContext(peer)
             request = request_deserializer(await input.get())
             iterator = method(request, context)
             if isinstance(iterator, AsyncIterable):
@@ -349,7 +347,7 @@ def upload_method_handler(
     ) -> None:
         task_manager = BackgroundTaskManager()
         try:
-            context = GrpcContext(peer)
+            context: GrpcContext[RequestType, ResponseType] = GrpcContext(peer)
             request: Channel[RequestType] = Channel(MAX_MESSAGE_BUFFER_SIZE)
 
             async def _convert_inputs() -> None:
@@ -426,9 +424,8 @@ def stream_method_handler(
         output: Channel[Any],
     ) -> None:
         task_manager = BackgroundTaskManager()
-        context = None
+        context: GrpcContext[RequestType, ResponseType] = GrpcContext(peer)
         try:
-            context = GrpcContext(peer)
             request: Channel[RequestType] = Channel(MAX_MESSAGE_BUFFER_SIZE)
 
             async def _convert_inputs() -> None:
