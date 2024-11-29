@@ -203,9 +203,14 @@ class Session(object):
                             )
                         await self._add_msg_to_stream(msg, stream)
                     else:
-                        stream = await self._open_stream_and_call_handler(
-                            msg, stream, tg
-                        )
+                        # TODO(dstewart) This looks like it opens a new call to handler
+                        #                on ever ws message, instead of demuxing and
+                        #                routing.
+                        _stream = await self._open_stream_and_call_handler(msg, tg)
+                        if not stream:
+                            async with self._stream_lock:
+                                self._streams[msg.streamId] = _stream
+                        stream = _stream
 
                     if msg.controlFlags & STREAM_CLOSED_BIT != 0:
                         if stream:
@@ -457,7 +462,6 @@ class Session(object):
     async def _open_stream_and_call_handler(
         self,
         msg: TransportMessage,
-        stream: Optional[Channel],
         tg: Optional[asyncio.TaskGroup],
     ) -> Channel:
         if not self._is_server:
@@ -496,9 +500,6 @@ class Session(object):
                 await input_stream.put(msg.payload)
             except (RuntimeError, ChannelClosed) as e:
                 raise InvalidMessageException(e) from e
-        if not stream:
-            async with self._stream_lock:
-                self._streams[msg.streamId] = input_stream
         # Start the handler.
         self._task_manager.create_task(
             handler_func(msg.from_, input_stream, output_stream), tg
