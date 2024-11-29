@@ -22,7 +22,6 @@ classifiers = [
 dependencies = [
     "pydantic==2.9.2",
     "aiochannel>=1.2.1",
-    "black>=23.11,<25.0",
     "grpcio-tools>=1.59.3",
     "grpcio>=1.59.3",
     "msgpack-types>=0.3.0",

@@ -1,10 +1,10 @@
 import collections
 import os.path
+import subprocess
 import tempfile
 from textwrap import dedent
 from typing import DefaultDict, List, Sequence
 
-import black
 import grpc_tools  # type: ignore
 from google.protobuf import descriptor_pb2
 from google.protobuf.descriptor import FieldDescriptor
@@ -412,11 +412,11 @@ def proto_to_river_server_codegen(
         with open(descriptor_path, "rb") as f:
             fds.ParseFromString(f.read())
     pb_module_name = os.path.splitext(os.path.basename(proto_path))[0]
-    contents = black.format_str(
-        "\n".join(generate_river_module(module_name, pb_module_name, fds)),
-        mode=black.FileMode(string_normalization=False),
-    )
+    contents = "\n".join(generate_river_module(module_name, pb_module_name, fds))
     os.makedirs(target_directory, exist_ok=True)
     output_path = f"{target_directory}/{pb_module_name}_river.py"
     with open(output_path, "w") as f:
-        f.write(contents)
+        popen = subprocess.Popen(
+            ["ruff", "format", "-"], stdin=subprocess.PIPE, stdout=f
+        )
+        popen.communicate(contents.encode())
