@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Optional, Set
+from typing import Any, Coroutine, Optional, Set
 
 from replit_river.error_schema import ERROR_CODE_STREAM_CLOSED, RiverException
 
@@ -83,8 +83,8 @@ class BackgroundTaskManager:
                 )
 
     def create_task(
-        self, fn: Any, tg: Optional[asyncio.TaskGroup] = None
-    ) -> asyncio.Task:
+        self, fn: Coroutine[None, None, None], tg: Optional[asyncio.TaskGroup] = None
+    ) -> asyncio.Task[None]:
         """Creates a task from a callable and adds it to the background tasks set.
 
         Args:
