@@ -1,5 +1,6 @@
 import json
 import re
+import subprocess
 from pathlib import Path
 from textwrap import dedent
 from typing import (
@@ -16,7 +17,6 @@ from typing import (
     cast,
 )
 
-import black
 from pydantic import BaseModel, Field, RootModel
 
 from replit_river.codegen.format import reindent
@@ -831,9 +831,14 @@ def generate_individual_service(
                                 exclude_none=True,
                               )
                             """
-        if isinstance(
-            procedure.input, RiverConcreteType
-        ) and procedure.input.type not in ["object", "array"]:
+        if (
+            (
+                isinstance(procedure.input, RiverConcreteType)
+                and procedure.input.type not in ["object", "array"]
+            )
+            or isinstance(procedure.input, RiverNotType)
+            or procedure.input is None
+        ):
             render_input_method = "lambda x: x"
 
         assert (
@@ -1077,11 +1082,10 @@ def schema_to_river_client_codegen(
         module_path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
         with open(module_path, "w") as f:
             try:
-                f.write(
-                    black.format_str(
-                        contents, mode=black.FileMode(string_normalization=False)
-                    )
+                popen = subprocess.Popen(
+                    ["ruff", "format", "-"], stdin=subprocess.PIPE, stdout=f
                 )
+                popen.communicate(contents.encode())
             except:
                 f.write(contents)
                 raise

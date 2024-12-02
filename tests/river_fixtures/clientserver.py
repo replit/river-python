@@ -38,14 +38,18 @@ async def client(
     transport_options: TransportOptions,
     no_logging_error: NoErrors,
 ) -> AsyncGenerator[Client, None]:
-    async def websocket_uri_factory() -> UriAndMetadata[None]:
-        return {
-            "uri": "ws://localhost:8765",
-            "metadata": None,
-        }
-
     try:
-        async with serve(server.serve, "localhost", 8765):
+        async with serve(server.serve, "127.0.0.1") as binding:
+            sockets = list(binding.sockets)
+            assert len(sockets) == 1, "Too many sockets!"
+            socket = sockets[0]
+
+            async def websocket_uri_factory() -> UriAndMetadata[None]:
+                return {
+                    "uri": "ws://%s:%d" % socket.getsockname(),
+                    "metadata": None,
+                }
+
             client: Client[Literal[None]] = Client[None](
                 uri_and_metadata_factory=websocket_uri_factory,
                 client_id="test_client",

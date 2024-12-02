@@ -24,7 +24,7 @@ jobs:
 
       - name: Format check
         run: |
-          uv run black --check .
+          uv run ruff format --check .
 
       - name: Lint check
         run: |
