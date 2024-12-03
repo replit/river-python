@@ -1,5 +1,7 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterable, AsyncIterator
+from datetime import timedelta
 from typing import Any, Callable, Optional, Union
 
 import nanoid  # type: ignore
@@ -8,6 +10,7 @@ from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span
 
 from replit_river.error_schema import (
+    ERROR_CODE_CANCEL,
     ERROR_CODE_STREAM_CLOSED,
     RiverException,
     RiverServiceException,
@@ -39,6 +42,7 @@ class ClientSession(Session):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
         span: Span,
+        timeout: timedelta,
     ) -> ResponseType:
         """Sends a single RPC request to the server.
 
@@ -58,7 +62,19 @@ class ClientSession(Session):
         # Handle potential errors during communication
         try:
             try:
-                response = await output.get()
+                async with asyncio.timeout(int(timeout.total_seconds())):
+                    response = await output.get()
+            except asyncio.TimeoutError as e:
+                # TODO(dstewart) After protocol v2, change this to STREAM_CANCEL_BIT
+                await self.send_message(
+                    stream_id=stream_id,
+                    control_flags=STREAM_CLOSED_BIT,
+                    payload={"type": "CLOSE"},
+                    service_name=service_name,
+                    procedure_name=procedure_name,
+                    span=span,
+                )
+                raise RiverException(ERROR_CODE_CANCEL, str(e)) from e
             except ChannelClosed as e:
                 raise RiverServiceException(
                     ERROR_CODE_STREAM_CLOSED,

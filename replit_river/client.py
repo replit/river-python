@@ -1,6 +1,7 @@
 import logging
 from collections.abc import AsyncIterable, AsyncIterator, Awaitable, Callable
 from contextlib import contextmanager
+from datetime import timedelta
 from typing import Any, Generator, Generic, Literal, Optional, Union
 
 from opentelemetry import trace
@@ -60,6 +61,7 @@ class Client(Generic[HandshakeMetadataType]):
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
+        timeout: timedelta,
     ) -> ResponseType:
         with _trace_procedure("rpc", service_name, procedure_name) as span:
             session = await self._transport.get_or_create_session()
@@ -71,6 +73,7 @@ class Client(Generic[HandshakeMetadataType]):
                 response_deserializer,
                 error_deserializer,
                 span,
+                timeout,
             )
 
     async def send_upload(
