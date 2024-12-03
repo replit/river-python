@@ -1,0 +1,32 @@
+{
+  "services": {
+    "test_service": {
+      "procedures": {
+        "stream_method": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "string"
+              }
+            },
+            "required": ["data"]
+          },
+          "output": {
+            "type": "object",
+            "properties": {
+              "data": {
+                "type": "string"
+              }
+            },
+            "required": ["data"]
+          },
+          "errors": {
+            "not": {}
+          },
+          "type": "stream"
+        }
+      }
+    }
+  }
+}
