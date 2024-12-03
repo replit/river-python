@@ -1,3 +1,4 @@
+import contextlib
 from datetime import timedelta
 from typing import AsyncGenerator, AsyncIterator, Iterator
 
@@ -182,3 +183,39 @@ async def test_stream_error_method_span(
     assert len(spans) == 1
     assert spans[0].name == "river.client.stream.test_service.stream_method_error"
     assert spans[0].status.status_code == StatusCode.ERROR
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_stream}])
+async def test_stream_method_span_generator_exit_not_recorded(
+    client: Client, span_exporter: InMemorySpanExporter
+) -> None:
+    async def stream_data() -> AsyncGenerator[str, None]:
+        yield "Stream 1"
+        yield "Stream 2"
+        yield "Stream 3"
+
+    responses = []
+    stream = client.send_stream(
+        "test_service",
+        "stream_method",
+        "Initial Stream Data",
+        stream_data(),
+        serialize_request,
+        serialize_request,
+        deserialize_response,
+        deserialize_error,
+    )
+    async with contextlib.aclosing(stream) as generator:
+        async for response in generator:
+            responses.append(response)
+            break
+
+    assert responses == [
+        "Stream response for Initial Stream Data",
+    ]
+
+    spans = span_exporter.get_finished_spans()
+    assert len(spans) == 1
+    assert spans[0].name == "river.client.stream.test_service.stream_method"
+    assert spans[0].status.status_code == StatusCode.OK
