@@ -87,3 +87,7 @@ module = [
 	"nanoid.*",
 ]
 ignore_missing_imports = true
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

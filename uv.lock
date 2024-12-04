@@ -558,7 +558,7 @@ wheels = [
 [[package]]
 name = "replit-river"
 version = "0.0.0a0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "aiochannel" },
     { name = "grpcio" },
