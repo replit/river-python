@@ -80,6 +80,7 @@ from typing import (
     Literal,
     Optional,
     Mapping,
+    NotRequired,
     Union,
     Tuple,
     TypedDict,
@@ -610,7 +611,12 @@ def encode_type(
                         if base_model != "TypedDict":
                             value = " = None"
                         current_chunks.append(
-                            f"  {name}: Optional[{render_type_expr(type_name)}]{value}"
+                            reindent(
+                                "  ",
+                                f"""\
+                    {name}: NotRequired[Optional[{render_type_expr(type_name)}]]{value}
+                            """,
+                            )
                         )
                     else:
                         current_chunks.append(
