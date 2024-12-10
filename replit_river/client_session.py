@@ -62,7 +62,7 @@ class ClientSession(Session):
         # Handle potential errors during communication
         try:
             try:
-                async with asyncio.timeout(int(timeout.total_seconds())):
+                async with asyncio.timeout(timeout.total_seconds()):
                     response = await output.get()
             except asyncio.TimeoutError as e:
                 # TODO(dstewart) After protocol v2, change this to STREAM_CANCEL_BIT
