@@ -1,4 +1,4 @@
-from typing import Any, Mapping
+from typing import Any, Literal, Mapping
 
 import nanoid
 import pytest
@@ -16,7 +16,8 @@ from replit_river.rpc import (
 # Modular fixtures
 pytest_plugins = ["tests.river_fixtures.logging", "tests.river_fixtures.clientserver"]
 
-HandlerMapping = Mapping[tuple[str, str], tuple[str, GenericRpcHandler]]
+HandlerKind = Literal["rpc", "subscription-stream", "upload-stream", "stream"]
+HandlerMapping = Mapping[tuple[str, str], tuple[HandlerKind, GenericRpcHandler]]
 
 
 def transport_message(
