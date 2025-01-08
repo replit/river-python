@@ -234,6 +234,8 @@ class ClientSession(Session):
             ) from e
         except Exception as e:
             raise e
+        finally:
+            output.close()
 
     async def send_stream(
         self,
@@ -335,6 +337,8 @@ class ClientSession(Session):
             ) from e
         except Exception as e:
             raise e
+        finally:
+            output.close()
 
     async def send_close_stream(
         self,

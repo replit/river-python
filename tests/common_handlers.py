@@ -39,7 +39,7 @@ async def upload_handler(
 
 basic_upload: HandlerMapping = {
     ("test_service", "upload_method"): (
-        "upload",
+        "upload-stream",
         upload_method_handler(upload_handler, deserialize_request, serialize_response),
     ),
 }
@@ -54,7 +54,7 @@ async def subscription_handler(
 
 basic_subscription: HandlerMapping = {
     ("test_service", "subscription_method"): (
-        "subscription",
+        "subscription-stream",
         subscription_method_handler(
             subscription_handler, deserialize_request, serialize_response
         ),

@@ -3,9 +3,11 @@ from datetime import timedelta
 from typing import AsyncGenerator
 
 import pytest
+from grpc.aio import grpc
 
 from replit_river.client import Client
 from replit_river.error_schema import RiverError
+from replit_river.rpc import subscription_method_handler
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
 from tests.common_handlers import (
     basic_rpc_method,
@@ -14,9 +16,12 @@ from tests.common_handlers import (
     basic_upload,
 )
 from tests.conftest import (
+    HandlerMapping,
     deserialize_error,
+    deserialize_request,
     deserialize_response,
     serialize_request,
+    serialize_response,
 )
 
 
@@ -101,6 +106,7 @@ async def test_upload_empty(client: Client) -> None:
 @pytest.mark.asyncio
 @pytest.mark.parametrize("handlers", [{**basic_subscription}])
 async def test_subscription_method(client: Client) -> None:
+    messages = []
     async for response in client.send_subscription(
         "test_service",
         "subscription_method",
@@ -110,7 +116,8 @@ async def test_subscription_method(client: Client) -> None:
         deserialize_error,
     ):
         assert isinstance(response, str)
-        assert "Subscription message" in response
+        messages.append(response)
+    assert messages == [f"Subscription message {i} for Bob" for i in range(5)]
 
 
 @pytest.mark.asyncio
@@ -213,3 +220,51 @@ async def test_multiplexing(client: Client) -> None:
         "Stream response for Stream Data 1",
         "Stream response for Stream Data 2",
     ]
+
+
+async def flood_subscription_handler(
+    request: str, context: grpc.aio.ServicerContext
+) -> AsyncGenerator[str, None]:
+    for i in range(1024):
+        yield f"Subscription message {i} for {request}"
+
+
+flood_subscription: HandlerMapping = {
+    ("test_service", "flood_subscription_method"): (
+        "subscription-stream",
+        subscription_method_handler(
+            flood_subscription_handler, deserialize_request, serialize_response
+        ),
+    ),
+}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_rpc_method, **flood_subscription}])
+async def test_ignore_flood_subscription(client: Client) -> None:
+    sub = client.send_subscription(
+        "test_service",
+        "flood_subscription_method",
+        "Initial Subscription Data",
+        serialize_request,
+        deserialize_response,
+        deserialize_error,
+    )
+
+    # read one entry to start the subscription
+    await sub.__anext__()
+    # close the subscription so we can signal that we're not
+    # interested in the rest of the subscription.
+    await sub.aclose()
+
+    # ensure that subsequent RPCs still work
+    response = await client.send_rpc(
+        "test_service",
+        "rpc_method",
+        "Alice",
+        serialize_request,
+        deserialize_response,
+        deserialize_error,
+        timedelta(seconds=20),
+    )
+    assert response == "Hello, Alice!"

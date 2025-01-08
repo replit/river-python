@@ -525,7 +525,11 @@ class Session(object):
             return
         try:
             await stream.put(msg.payload)
-        except (RuntimeError, ChannelClosed) as e:
+        except ChannelClosed:
+            # The client is no longer interested in this stream,
+            # just drop the message.
+            pass
+        except RuntimeError as e:
             raise InvalidMessageException(e) from e
 
     async def _remove_acked_messages_in_buffer(self) -> None:
