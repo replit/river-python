@@ -48,11 +48,12 @@ dev-dependencies = [
     "types-protobuf>=4.24.0.20240311",
     "types-nanoid>=2.0.0.20240601",
     "pyright>=1.1.389",
+    "pytest-snapshot>=0.9.0",
 ]
 
 [tool.ruff]
 lint.select = ["F", "E", "W", "I001"]
-exclude = ["*/generated/*"]
+exclude = ["*/generated/*", "*/snapshots/*"]
 
 # Should be kept in sync with mypy.ini in the project root.
 # The VSCode mypy extension can only read /mypy.ini.
