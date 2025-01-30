@@ -1,6 +1,7 @@
 import importlib
 import shutil
-from typing import AsyncIterable
+from pathlib import Path
+from typing import AsyncIterable, TextIO
 
 import pytest
 
@@ -18,11 +19,16 @@ def generate_stream_client() -> None:
     import tests.codegen.stream.generated
 
     shutil.rmtree("tests/codegen/stream/generated")
+
+    def file_opener(path: Path) -> TextIO:
+        return open(path, "w")
+
     schema_to_river_client_codegen(
         "tests/codegen/stream/schema.json",
         "tests/codegen/stream/generated",
         "StreamClient",
         True,
+        file_opener,
     )
     importlib.reload(tests.codegen.stream.generated)
 

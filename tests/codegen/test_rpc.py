@@ -2,6 +2,8 @@ import asyncio
 import importlib
 import shutil
 from datetime import timedelta
+from pathlib import Path
+from typing import TextIO
 
 import grpc
 import grpc.aio
@@ -20,11 +22,16 @@ def generate_rpc_client() -> None:
     import tests.codegen.rpc.generated
 
     shutil.rmtree("tests/codegen/rpc/generated")
+
+    def file_opener(path: Path) -> TextIO:
+        return open(path, "w")
+
     schema_to_river_client_codegen(
         "tests/codegen/rpc/schema.json",
         "tests/codegen/rpc/generated",
         "RpcClient",
         True,
+        file_opener,
     )
     importlib.reload(tests.codegen.rpc.generated)
 

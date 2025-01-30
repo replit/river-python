@@ -1,5 +1,7 @@
 import argparse
 import os.path
+from pathlib import Path
+from typing import TextIO
 
 from .client import schema_to_river_client_codegen
 from .schema import proto_to_river_schema_codegen
@@ -50,8 +52,16 @@ def main() -> None:
     elif args.command == "client":
         schema_path = os.path.abspath(args.schema)
         target_path = os.path.abspath(args.output)
+
+        def file_opener(path: Path) -> TextIO:
+            return open(path, "w")
+
         schema_to_river_client_codegen(
-            schema_path, target_path, args.client_name, args.typed_dict_inputs
+            schema_path,
+            target_path,
+            args.client_name,
+            args.typed_dict_inputs,
+            file_opener,
         )
     else:
         raise NotImplementedError(f"Unknown command {args.command}")

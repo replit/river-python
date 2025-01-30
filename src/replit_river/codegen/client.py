@@ -5,6 +5,7 @@ from pathlib import Path
 from textwrap import dedent
 from typing import (
     Any,
+    Callable,
     Dict,
     List,
     Literal,
@@ -12,6 +13,7 @@ from typing import (
     OrderedDict,
     Sequence,
     Set,
+    TextIO,
     Tuple,
     Union,
     cast,
@@ -1094,6 +1096,7 @@ def schema_to_river_client_codegen(
     target_path: str,
     client_name: str,
     typed_dict_inputs: bool,
+    file_opener: Callable[[Path], TextIO],
 ) -> None:
     """Generates the lines of a River module."""
     with open(schema_path) as f:
@@ -1103,7 +1106,7 @@ def schema_to_river_client_codegen(
     ).items():
         module_path = Path(target_path).joinpath(subpath)
         module_path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-        with open(module_path, "w") as f:
+        with file_opener(module_path) as f:
             try:
                 popen = subprocess.Popen(
                     ["ruff", "format", "-"], stdin=subprocess.PIPE, stdout=f
