@@ -162,6 +162,7 @@ def encode_type(
     prefix: TypeName,
     base_model: str,
     in_module: list[ModuleName],
+    permit_unknown_members: bool,
 ) -> Tuple[TypeExpression, list[ModuleName], list[FileContents], set[TypeName]]:
     encoder_name: Optional[str] = None  # defining this up here to placate mypy
     chunks: List[FileContents] = []
@@ -258,6 +259,7 @@ def encode_type(
                                 TypeName(f"{pfx}{i}"),
                                 base_model,
                                 in_module,
+                                permit_unknown_members=permit_unknown_members,
                             )
                             one_of.append(type_name)
                             chunks.extend(contents)
@@ -285,7 +287,11 @@ def encode_type(
                     else:
                         oneof_t = oneof_ts[0]
                         type_name, _, contents, _ = encode_type(
-                            oneof_t, TypeName(pfx), base_model, in_module
+                            oneof_t,
+                            TypeName(pfx),
+                            base_model,
+                            in_module,
+                            permit_unknown_members=permit_unknown_members,
                         )
                         one_of.append(type_name)
                         chunks.extend(contents)
@@ -338,7 +344,11 @@ def encode_type(
         typeddict_encoder = []
         for i, t in enumerate(type.anyOf):
             type_name, _, contents, _ = encode_type(
-                t, TypeName(f"{prefix}AnyOf_{i}"), base_model, in_module
+                t,
+                TypeName(f"{prefix}AnyOf_{i}"),
+                base_model,
+                in_module,
+                permit_unknown_members=permit_unknown_members,
             )
             any_of.append(type_name)
             chunks.extend(contents)
@@ -406,6 +416,7 @@ def encode_type(
             prefix,
             base_model,
             in_module,
+            permit_unknown_members=permit_unknown_members,
         )
     elif isinstance(type, RiverConcreteType):
         typeddict_encoder = list[str]()
@@ -448,7 +459,11 @@ def encode_type(
             return (TypeName("datetime.datetime"), [], [], set())
         elif type.type == "array" and type.items:
             type_name, module_info, type_chunks, encoder_names = encode_type(
-                type.items, prefix, base_model, in_module
+                type.items,
+                prefix,
+                base_model,
+                in_module,
+                permit_unknown_members=permit_unknown_members,
             )
             typeddict_encoder.append("TODO: dstewart")
             return (ListTypeExpr(type_name), module_info, type_chunks, encoder_names)
@@ -462,6 +477,7 @@ def encode_type(
                 prefix,
                 base_model,
                 in_module,
+                permit_unknown_members=permit_unknown_members,
             )
             # TODO(dstewart): This structure changed since we were incorrectly leaking
             #                 ListTypeExprs into codegen. This generated code is
@@ -496,7 +512,11 @@ def encode_type(
             ) in sorted(list(type.properties.items()), key=lambda xs: xs[0]):
                 typeddict_encoder.append(f"{repr(name)}:")
                 type_name, _, contents, _ = encode_type(
-                    prop, TypeName(prefix + name.title()), base_model, in_module
+                    prop,
+                    TypeName(prefix + name.title()),
+                    base_model,
+                    in_module,
+                    permit_unknown_members=permit_unknown_members,
                 )
                 encoder_name = None
                 chunks.extend(contents)
@@ -734,6 +754,7 @@ def generate_individual_service(
                 TypeName(f"{name.title()}Init"),
                 input_base_class,
                 module_names,
+                permit_unknown_members=False,
             )
             serdes.append(
                 (
@@ -747,6 +768,7 @@ def generate_individual_service(
             TypeName(f"{name.title()}Input"),
             input_base_class,
             module_names,
+            permit_unknown_members=False,
         )
         serdes.append(
             (
@@ -760,6 +782,7 @@ def generate_individual_service(
             TypeName(f"{name.title()}Output"),
             "BaseModel",
             module_names,
+            permit_unknown_members=True,
         )
         serdes.append(
             (
@@ -774,6 +797,7 @@ def generate_individual_service(
                 TypeName(f"{name.title()}Errors"),
                 "RiverError",
                 module_names,
+                permit_unknown_members=True,
             )
             if error_type == "None":
                 error_type = TypeName("RiverError")
@@ -1065,7 +1089,11 @@ def generate_river_client_module(
     handshake_chunks: list[str] = []
     if schema_root.handshakeSchema is not None:
         _handshake_type, _, contents, _ = encode_type(
-            schema_root.handshakeSchema, TypeName("HandshakeSchema"), "BaseModel", []
+            schema_root.handshakeSchema,
+            TypeName("HandshakeSchema"),
+            "BaseModel",
+            [],
+            permit_unknown_members=False,
         )
         handshake_chunks.extend(contents)
         handshake_type = HandshakeType(render_type_expr(_handshake_type))
