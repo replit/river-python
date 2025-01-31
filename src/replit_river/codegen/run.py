@@ -57,7 +57,7 @@ def main() -> None:
             return open(path, "w")
 
         schema_to_river_client_codegen(
-            schema_path,
+            lambda: open(schema_path),
             target_path,
             args.client_name,
             args.typed_dict_inputs,

@@ -1092,14 +1092,14 @@ def generate_river_client_module(
 
 
 def schema_to_river_client_codegen(
-    schema_path: str,
+    read_schema: Callable[[], TextIO],
     target_path: str,
     client_name: str,
     typed_dict_inputs: bool,
     file_opener: Callable[[Path], TextIO],
 ) -> None:
     """Generates the lines of a River module."""
-    with open(schema_path) as f:
+    with read_schema() as f:
         schemas = RiverSchemaFile(json.load(f))
     for subpath, contents in generate_river_client_module(
         client_name, schemas.root, typed_dict_inputs

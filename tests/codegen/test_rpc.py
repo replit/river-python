@@ -27,7 +27,7 @@ def generate_rpc_client() -> None:
         return open(path, "w")
 
     schema_to_river_client_codegen(
-        "tests/codegen/rpc/schema.json",
+        lambda: open("tests/codegen/rpc/schema.json"),
         "tests/codegen/rpc/generated",
         "RpcClient",
         True,

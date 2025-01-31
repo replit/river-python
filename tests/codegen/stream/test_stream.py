@@ -24,7 +24,7 @@ def generate_stream_client() -> None:
         return open(path, "w")
 
     schema_to_river_client_codegen(
-        "tests/codegen/stream/schema.json",
+        lambda: open("tests/codegen/stream/schema.json"),
         "tests/codegen/stream/generated",
         "StreamClient",
         True,
