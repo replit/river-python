@@ -10,6 +10,7 @@ from typing import (
     Literal,
     Optional,
     Mapping,
+    NewType,
     NotRequired,
     Union,
     Tuple,
@@ -24,5 +25,11 @@ import replit_river as river
 
 NeedsenumInput = Literal["in_first"] | Literal["in_second"]
 encode_NeedsenumInput: Callable[["NeedsenumInput"], Any] = lambda x: x
-NeedsenumOutput = Literal["out_first"] | Literal["out_second"]
-NeedsenumErrors = Literal["err_first"] | Literal["err_second"]
+NeedsenumOutputAnyOf__Unknown = NewType("NeedsenumOutputAnyOf__Unknown", object)
+NeedsenumOutput = (
+    Literal["out_first"] | Literal["out_second"] | NeedsenumOutputAnyOf__Unknown
+)
+NeedsenumErrorsAnyOf__Unknown = NewType("NeedsenumErrorsAnyOf__Unknown", object)
+NeedsenumErrors = (
+    Literal["err_first"] | Literal["err_second"] | NeedsenumErrorsAnyOf__Unknown
+)

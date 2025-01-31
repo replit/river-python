@@ -6,7 +6,7 @@ from pytest_snapshot.plugin import Snapshot
 
 from replit_river.codegen.client import schema_to_river_client_codegen
 
-test_unknown_enum_schema: str = """
+test_unknown_enum_schema = """
 {
   "services": {
     "enumService": {
@@ -49,12 +49,107 @@ test_unknown_enum_schema: str = """
               }
             ]
           }
+        },
+        "needsEnumObject": {
+          "type": "rpc",
+          "input": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "$kind": {
+                    "const": "in_first",
+                    "type": "string"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "required": ["$kind", "value"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "$kind": {
+                    "const": "in_second",
+                    "type": "string"
+                  },
+                  "bleep": {
+                    "type": "integer"
+                  }
+                },
+                "required": ["$kind", "bleep"]
+              }
+            ]
+          },
+          "output": {
+            "type": "object",
+            "properties": {
+              "foo": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "$kind": {
+                        "const": "out_first",
+                        "type": "string"
+                      },
+                      "foo": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["$kind", "foo"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "$kind": {
+                        "const": "out_second",
+                        "type": "string"
+                      },
+                      "bar": {
+                        "type": "integer"
+                      }
+                    },
+                    "required": ["$kind", "bar"]
+                  }
+                ]
+              }
+            }
+          },
+          "errors": {
+            "type": "object",
+            "properties": {
+              "foo": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "beep": {
+                        "type": "string",
+                        "const": "err_first"
+                      }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "borp": {
+                        "type": "string",
+                        "const": "err_second"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
         }
       }
     }
   }
 }
-    """
+"""
 
 
 class UnclosableStringIO(StringIO):

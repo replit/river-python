@@ -15,6 +15,12 @@ from .needsEnum import (
     NeedsenumInput,
     NeedsenumOutput,
 )
+from .needsEnumObject import (
+    encode_NeedsenumobjectInput,
+    NeedsenumobjectOutput,
+    NeedsenumobjectInput,
+    NeedsenumobjectErrors,
+)
 
 
 class EnumserviceService:
@@ -35,6 +41,25 @@ class EnumserviceService:
                 x  # type: ignore[arg-type]
             ),
             lambda x: TypeAdapter(NeedsenumErrors).validate_python(
+                x  # type: ignore[arg-type]
+            ),
+            timeout,
+        )
+
+    async def needsEnumObject(
+        self,
+        input: NeedsenumobjectInput,
+        timeout: datetime.timedelta,
+    ) -> NeedsenumobjectOutput:
+        return await self.client.send_rpc(
+            "enumService",
+            "needsEnumObject",
+            input,
+            encode_NeedsenumobjectInput,
+            lambda x: TypeAdapter(NeedsenumobjectOutput).validate_python(
+                x  # type: ignore[arg-type]
+            ),
+            lambda x: TypeAdapter(NeedsenumobjectErrors).validate_python(
                 x  # type: ignore[arg-type]
             ),
             timeout,
