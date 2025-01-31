@@ -1109,9 +1109,12 @@ def schema_to_river_client_codegen(
         with file_opener(module_path) as f:
             try:
                 popen = subprocess.Popen(
-                    ["ruff", "format", "-"], stdin=subprocess.PIPE, stdout=f
+                    ["ruff", "format", "-"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
                 )
-                popen.communicate(contents.encode())
+                stdout, _ = popen.communicate(contents.encode())
+                f.write(stdout.decode("utf-8"))
             except:
                 f.write(contents)
                 raise
