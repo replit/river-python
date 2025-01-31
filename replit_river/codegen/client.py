@@ -822,9 +822,9 @@ def generate_individual_service(
                                   .validate_python
                 """
 
-        assert (
-            init_type is None or render_init_method
-        ), f"Unable to derive the init encoder from: {input_type}"
+        assert init_type is None or render_init_method, (
+            f"Unable to derive the init encoder from: {input_type}"
+        )
 
         # Input renderer
         render_input_method: Optional[str] = None
@@ -862,9 +862,9 @@ def generate_individual_service(
         ):
             render_input_method = "lambda x: x"
 
-        assert (
-            render_input_method
-        ), f"Unable to derive the input encoder from: {input_type}"
+        assert render_input_method, (
+            f"Unable to derive the input encoder from: {input_type}"
+        )
 
         if output_type == "None":
             parse_output_method = "lambda x: None"
