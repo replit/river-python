@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import NewType
+from typing import NewType, assert_never
 
 TypeName = NewType("TypeName", str)
 ModuleName = NewType("ModuleName", str)
@@ -45,8 +45,10 @@ def render_type_expr(value: TypeExpression) -> str:
             return f"Literal[{repr(inner)}]"
         case UnionTypeExpr(inner):
             return " | ".join(render_type_expr(x) for x in inner)
+        case str(name):
+            return TypeName(name)
         case other:
-            return other
+            assert_never(other)
 
 
 def extract_inner_type(value: TypeExpression) -> TypeName:
@@ -61,8 +63,10 @@ def extract_inner_type(value: TypeExpression) -> TypeName:
             raise ValueError(
                 f"Attempting to extract from a union, currently not possible: {value}"
             )
+        case str(name):
+            return TypeName(name)
         case other:
-            return other
+            assert_never(other)
 
 
 def ensure_literal_type(value: TypeExpression) -> TypeName:
@@ -83,5 +87,7 @@ def ensure_literal_type(value: TypeExpression) -> TypeName:
             raise ValueError(
                 f"Unexpected expression when expecting a type name: {value}"
             )
+        case str(name):
+            return TypeName(name)
         case other:
-            return other
+            assert_never(other)
