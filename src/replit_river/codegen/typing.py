@@ -30,8 +30,18 @@ class UnionTypeExpr:
     nested: list["TypeExpression"]
 
 
+@dataclass
+class UnknownTypeExpr:
+    name: TypeName
+
+
 TypeExpression = (
-    TypeName | DictTypeExpr | ListTypeExpr | LiteralTypeExpr | UnionTypeExpr
+    TypeName
+    | DictTypeExpr
+    | ListTypeExpr
+    | LiteralTypeExpr
+    | UnionTypeExpr
+    | UnknownTypeExpr
 )
 
 
@@ -46,6 +56,8 @@ def render_type_expr(value: TypeExpression) -> str:
         case UnionTypeExpr(inner):
             return " | ".join(render_type_expr(x) for x in inner)
         case str(name):
+            return TypeName(name)
+        case UnknownTypeExpr(name):
             return TypeName(name)
         case other:
             assert_never(other)
@@ -65,6 +77,8 @@ def extract_inner_type(value: TypeExpression) -> TypeName:
             )
         case str(name):
             return TypeName(name)
+        case UnknownTypeExpr(name):
+            return name
         case other:
             assert_never(other)
 
@@ -89,5 +103,7 @@ def ensure_literal_type(value: TypeExpression) -> TypeName:
             )
         case str(name):
             return TypeName(name)
+        case UnknownTypeExpr(name):
+            return name
         case other:
             assert_never(other)
