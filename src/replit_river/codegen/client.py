@@ -34,6 +34,7 @@ from replit_river.codegen.typing import (
     TypeExpression,
     TypeName,
     UnionTypeExpr,
+    UnknownTypeExpr,
     ensure_literal_type,
     extract_inner_type,
     render_type_expr,
@@ -82,6 +83,7 @@ from typing import (
     Literal,
     Optional,
     Mapping,
+    NewType,
     NotRequired,
     Union,
     Tuple,
@@ -309,6 +311,14 @@ def encode_type(
                             else
                         """,
                     )
+                if permit_unknown_members:
+                    unknown_name = TypeName(f"{prefix}AnyOf__Unknown")
+                    chunks.append(
+                        FileContents(
+                            f"{unknown_name} = NewType({repr(unknown_name)}, object)"
+                        )
+                    )
+                    one_of.append(UnknownTypeExpr(unknown_name))
                 chunks.append(
                     FileContents(
                         f"{prefix} = {render_type_expr(UnionTypeExpr(one_of))}"
@@ -375,6 +385,12 @@ def encode_type(
                             typeddict_encoder.append(
                                 f"encode_{ensure_literal_type(other)}(x)"
                             )
+        if permit_unknown_members:
+            unknown_name = TypeName(f"{prefix}AnyOf__Unknown")
+            chunks.append(
+                FileContents(f"{unknown_name} = NewType({repr(unknown_name)}, object)")
+            )
+            any_of.append(UnknownTypeExpr(unknown_name))
         if is_literal(type):
             typeddict_encoder = ["x"]
         chunks.append(
