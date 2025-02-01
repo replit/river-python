@@ -723,7 +723,7 @@ def generate_common_client(
     chunks.extend(
         [
             f"from .{model_name} import {class_name}"
-            for model_name, class_name in modules
+            for model_name, class_name in sorted(modules, key=lambda kv: kv[1])
         ]
     )
     chunks.extend(handshake_chunks)
