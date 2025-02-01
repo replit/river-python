@@ -11,15 +11,15 @@ import replit_river as river
 
 from .needsEnum import (
     NeedsenumErrors,
-    encode_NeedsenumInput,
     NeedsenumInput,
     NeedsenumOutput,
+    encode_NeedsenumInput,
 )
 from .needsEnumObject import (
-    encode_NeedsenumobjectInput,
-    NeedsenumobjectOutput,
-    NeedsenumobjectInput,
     NeedsenumobjectErrors,
+    NeedsenumobjectInput,
+    NeedsenumobjectOutput,
+    encode_NeedsenumobjectInput,
 )
 
 

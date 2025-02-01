@@ -1080,7 +1080,7 @@ def generate_individual_service(
         emitted_files[file_path] = FileContents("\n".join([existing] + contents))
 
     rendered_imports = [
-        f"from .{dotted_modules} import {', '.join(names)}"
+        f"from .{dotted_modules} import {', '.join(sorted(names))}"
         for dotted_modules, names in imports.items()
     ]
 
