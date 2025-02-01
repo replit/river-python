@@ -10,6 +10,8 @@ from typing import (
     Literal,
     Optional,
     Mapping,
+    NewType,
+    NotRequired,
     Union,
     Tuple,
     TypedDict,

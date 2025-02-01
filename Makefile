@@ -1,10 +1,10 @@
 lint:
-	uv run ruff format --check .
-	uv run ruff check .
-	uv run mypy .
-	uv run pyright-python .
-	uv run deptry .
+	uv run ruff format --check src tests
+	uv run ruff check src tests
+	uv run mypy src tests
+	uv run pyright-python src tests
+	uv run deptry src tests
 
 format:
-	uv run ruff format .
-	uv run ruff check . --fix
+	uv run ruff format src tests
+	uv run ruff check src tests --fix

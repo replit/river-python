@@ -474,7 +474,7 @@ class Session(object):
         handler = self._handlers.get(key, None)
         if not handler:
             raise IgnoreMessageException(
-                f"No handler for {key} handlers : " f"{self._handlers.keys()}"
+                f"No handler for {key} handlers : {self._handlers.keys()}"
             )
         method_type, handler_func = handler
         is_streaming_output = method_type in (

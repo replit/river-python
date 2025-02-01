@@ -5,6 +5,7 @@ from pathlib import Path
 from textwrap import dedent
 from typing import (
     Any,
+    Callable,
     Dict,
     List,
     Literal,
@@ -12,6 +13,7 @@ from typing import (
     OrderedDict,
     Sequence,
     Set,
+    TextIO,
     Tuple,
     Union,
     cast,
@@ -32,6 +34,7 @@ from replit_river.codegen.typing import (
     TypeExpression,
     TypeName,
     UnionTypeExpr,
+    UnknownTypeExpr,
     ensure_literal_type,
     extract_inner_type,
     render_type_expr,
@@ -80,6 +83,7 @@ from typing import (
     Literal,
     Optional,
     Mapping,
+    NewType,
     NotRequired,
     Union,
     Tuple,
@@ -160,6 +164,7 @@ def encode_type(
     prefix: TypeName,
     base_model: str,
     in_module: list[ModuleName],
+    permit_unknown_members: bool,
 ) -> Tuple[TypeExpression, list[ModuleName], list[FileContents], set[TypeName]]:
     encoder_name: Optional[str] = None  # defining this up here to placate mypy
     chunks: List[FileContents] = []
@@ -256,6 +261,7 @@ def encode_type(
                                 TypeName(f"{pfx}{i}"),
                                 base_model,
                                 in_module,
+                                permit_unknown_members=permit_unknown_members,
                             )
                             one_of.append(type_name)
                             chunks.extend(contents)
@@ -283,7 +289,11 @@ def encode_type(
                     else:
                         oneof_t = oneof_ts[0]
                         type_name, _, contents, _ = encode_type(
-                            oneof_t, TypeName(pfx), base_model, in_module
+                            oneof_t,
+                            TypeName(pfx),
+                            base_model,
+                            in_module,
+                            permit_unknown_members=permit_unknown_members,
                         )
                         one_of.append(type_name)
                         chunks.extend(contents)
@@ -301,6 +311,14 @@ def encode_type(
                             else
                         """,
                     )
+                if permit_unknown_members:
+                    unknown_name = TypeName(f"{prefix}AnyOf__Unknown")
+                    chunks.append(
+                        FileContents(
+                            f"{unknown_name} = NewType({repr(unknown_name)}, object)"
+                        )
+                    )
+                    one_of.append(UnknownTypeExpr(unknown_name))
                 chunks.append(
                     FileContents(
                         f"{prefix} = {render_type_expr(UnionTypeExpr(one_of))}"
@@ -336,7 +354,11 @@ def encode_type(
         typeddict_encoder = []
         for i, t in enumerate(type.anyOf):
             type_name, _, contents, _ = encode_type(
-                t, TypeName(f"{prefix}AnyOf_{i}"), base_model, in_module
+                t,
+                TypeName(f"{prefix}AnyOf_{i}"),
+                base_model,
+                in_module,
+                permit_unknown_members=permit_unknown_members,
             )
             any_of.append(type_name)
             chunks.extend(contents)
@@ -363,6 +385,12 @@ def encode_type(
                             typeddict_encoder.append(
                                 f"encode_{ensure_literal_type(other)}(x)"
                             )
+        if permit_unknown_members:
+            unknown_name = TypeName(f"{prefix}AnyOf__Unknown")
+            chunks.append(
+                FileContents(f"{unknown_name} = NewType({repr(unknown_name)}, object)")
+            )
+            any_of.append(UnknownTypeExpr(unknown_name))
         if is_literal(type):
             typeddict_encoder = ["x"]
         chunks.append(
@@ -404,6 +432,7 @@ def encode_type(
             prefix,
             base_model,
             in_module,
+            permit_unknown_members=permit_unknown_members,
         )
     elif isinstance(type, RiverConcreteType):
         typeddict_encoder = list[str]()
@@ -446,7 +475,11 @@ def encode_type(
             return (TypeName("datetime.datetime"), [], [], set())
         elif type.type == "array" and type.items:
             type_name, module_info, type_chunks, encoder_names = encode_type(
-                type.items, prefix, base_model, in_module
+                type.items,
+                prefix,
+                base_model,
+                in_module,
+                permit_unknown_members=permit_unknown_members,
             )
             typeddict_encoder.append("TODO: dstewart")
             return (ListTypeExpr(type_name), module_info, type_chunks, encoder_names)
@@ -460,6 +493,7 @@ def encode_type(
                 prefix,
                 base_model,
                 in_module,
+                permit_unknown_members=permit_unknown_members,
             )
             # TODO(dstewart): This structure changed since we were incorrectly leaking
             #                 ListTypeExprs into codegen. This generated code is
@@ -494,7 +528,11 @@ def encode_type(
             ) in sorted(list(type.properties.items()), key=lambda xs: xs[0]):
                 typeddict_encoder.append(f"{repr(name)}:")
                 type_name, _, contents, _ = encode_type(
-                    prop, TypeName(prefix + name.title()), base_model, in_module
+                    prop,
+                    TypeName(prefix + name.title()),
+                    base_model,
+                    in_module,
+                    permit_unknown_members=permit_unknown_members,
                 )
                 encoder_name = None
                 chunks.extend(contents)
@@ -685,7 +723,7 @@ def generate_common_client(
     chunks.extend(
         [
             f"from .{model_name} import {class_name}"
-            for model_name, class_name in modules
+            for model_name, class_name in sorted(modules, key=lambda kv: kv[1])
         ]
     )
     chunks.extend(handshake_chunks)
@@ -732,6 +770,7 @@ def generate_individual_service(
                 TypeName(f"{name.title()}Init"),
                 input_base_class,
                 module_names,
+                permit_unknown_members=False,
             )
             serdes.append(
                 (
@@ -745,6 +784,7 @@ def generate_individual_service(
             TypeName(f"{name.title()}Input"),
             input_base_class,
             module_names,
+            permit_unknown_members=False,
         )
         serdes.append(
             (
@@ -758,6 +798,7 @@ def generate_individual_service(
             TypeName(f"{name.title()}Output"),
             "BaseModel",
             module_names,
+            permit_unknown_members=True,
         )
         serdes.append(
             (
@@ -772,6 +813,7 @@ def generate_individual_service(
                 TypeName(f"{name.title()}Errors"),
                 "RiverError",
                 module_names,
+                permit_unknown_members=True,
             )
             if error_type == "None":
                 error_type = TypeName("RiverError")
@@ -822,9 +864,9 @@ def generate_individual_service(
                                   .validate_python
                 """
 
-        assert (
-            init_type is None or render_init_method
-        ), f"Unable to derive the init encoder from: {input_type}"
+        assert init_type is None or render_init_method, (
+            f"Unable to derive the init encoder from: {input_type}"
+        )
 
         # Input renderer
         render_input_method: Optional[str] = None
@@ -862,9 +904,9 @@ def generate_individual_service(
         ):
             render_input_method = "lambda x: x"
 
-        assert (
-            render_input_method
-        ), f"Unable to derive the input encoder from: {input_type}"
+        assert render_input_method, (
+            f"Unable to derive the input encoder from: {input_type}"
+        )
 
         if output_type == "None":
             parse_output_method = "lambda x: None"
@@ -1038,7 +1080,7 @@ def generate_individual_service(
         emitted_files[file_path] = FileContents("\n".join([existing] + contents))
 
     rendered_imports = [
-        f"from .{dotted_modules} import {', '.join(names)}"
+        f"from .{dotted_modules} import {', '.join(sorted(names))}"
         for dotted_modules, names in imports.items()
     ]
 
@@ -1063,7 +1105,11 @@ def generate_river_client_module(
     handshake_chunks: list[str] = []
     if schema_root.handshakeSchema is not None:
         _handshake_type, _, contents, _ = encode_type(
-            schema_root.handshakeSchema, TypeName("HandshakeSchema"), "BaseModel", []
+            schema_root.handshakeSchema,
+            TypeName("HandshakeSchema"),
+            "BaseModel",
+            [],
+            permit_unknown_members=False,
         )
         handshake_chunks.extend(contents)
         handshake_type = HandshakeType(render_type_expr(_handshake_type))
@@ -1090,25 +1136,29 @@ def generate_river_client_module(
 
 
 def schema_to_river_client_codegen(
-    schema_path: str,
+    read_schema: Callable[[], TextIO],
     target_path: str,
     client_name: str,
     typed_dict_inputs: bool,
+    file_opener: Callable[[Path], TextIO],
 ) -> None:
     """Generates the lines of a River module."""
-    with open(schema_path) as f:
+    with read_schema() as f:
         schemas = RiverSchemaFile(json.load(f))
     for subpath, contents in generate_river_client_module(
         client_name, schemas.root, typed_dict_inputs
     ).items():
         module_path = Path(target_path).joinpath(subpath)
         module_path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
-        with open(module_path, "w") as f:
+        with file_opener(module_path) as f:
             try:
                 popen = subprocess.Popen(
-                    ["ruff", "format", "-"], stdin=subprocess.PIPE, stdout=f
+                    ["ruff", "format", "-"],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
                 )
-                popen.communicate(contents.encode())
+                stdout, _ = popen.communicate(contents.encode())
+                f.write(stdout.decode("utf-8"))
             except:
                 f.write(contents)
                 raise

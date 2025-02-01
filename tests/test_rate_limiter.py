@@ -32,9 +32,9 @@ async def test_initial_budget(rate_limiter: LeakyBucketRateLimit) -> None:
 async def test_consume_budget(rate_limiter: LeakyBucketRateLimit) -> None:
     user: str = "user2"
     rate_limiter.consume_budget(user)
-    assert (
-        rate_limiter.get_budget_consumed(user) == 1
-    ), "Budget consumed should be incremented"
+    assert rate_limiter.get_budget_consumed(user) == 1, (
+        "Budget consumed should be incremented"
+    )
 
 
 @pytest.mark.asyncio
@@ -43,9 +43,9 @@ async def test_restore_budget(rate_limiter: LeakyBucketRateLimit) -> None:
     rate_limiter.consume_budget(user)
     rate_limiter.start_restoring_budget(user)
     await asyncio.sleep(0.3)  # Wait more than budget restore interval
-    assert (
-        rate_limiter.get_budget_consumed(user) == 0
-    ), "Budget should be restored after interval"
+    assert rate_limiter.get_budget_consumed(user) == 0, (
+        "Budget should be restored after interval"
+    )
 
 
 @pytest.mark.asyncio
@@ -58,9 +58,9 @@ async def test_concurrent_access(rate_limiter: LeakyBucketRateLimit) -> None:
             await asyncio.sleep(0.01)  # simulate some delay
 
     await asyncio.gather(consume_budget(), consume_budget())
-    assert (
-        rate_limiter.get_budget_consumed(user) == 10
-    ), "Concurrent access should be handled correctly"
+    assert rate_limiter.get_budget_consumed(user) == 10, (
+        "Concurrent access should be handled correctly"
+    )
 
 
 def test_close(rate_limiter: LeakyBucketRateLimit) -> None:

@@ -65,10 +65,10 @@ async def test_concurrent_access_to_sequence(no_logging_error: NoErrors) -> None
     manager = SeqManager()
     tasks = [manager.get_seq_and_increment() for _ in range(10)]
     results = await asyncio.gather(*tasks)
-    assert (
-        len(set(results)) == 10
-    ), "Each increment call should return a unique sequence number"
-    assert (
-        await manager.get_seq() == 10
-    ), "Final sequence number should be 10 after 10 increments"
+    assert len(set(results)) == 10, (
+        "Each increment call should return a unique sequence number"
+    )
+    assert await manager.get_seq() == 10, (
+        "Final sequence number should be 10 after 10 increments"
+    )
     no_logging_error()
