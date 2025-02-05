@@ -7,6 +7,10 @@ from typing import Any, AsyncGenerator, Generator, Generic, Literal, Optional, U
 
 from opentelemetry import trace
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
+from pydantic import (
+    BaseModel,
+    ValidationInfo,
+)
 
 from replit_river.client_transport import ClientTransport
 from replit_river.error_schema import RiverError, RiverException
@@ -25,6 +29,21 @@ from .rpc import (
 
 logger = logging.getLogger(__name__)
 tracer = trace.get_tracer(__name__)
+
+
+@dataclass(frozen=True)
+class RiverUnknownValue(BaseModel):
+    tag: Literal["RiverUnknownValue"]
+    value: Any
+
+
+def raise_unknown(
+    value: Any, handler: Callable[[Any], Any], info: ValidationInfo
+) -> Any | RiverUnknownValue:
+    try:
+        return handler(value)
+    except Exception:
+        return RiverUnknownValue(tag="RiverUnknownValue", value=value)
 
 
 class Client(Generic[HandshakeMetadataType]):
