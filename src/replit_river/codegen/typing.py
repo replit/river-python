@@ -31,8 +31,8 @@ class UnionTypeExpr:
 
 
 @dataclass
-class UnknownTypeExpr:
-    name: TypeName
+class OpenUnionTypeExpr:
+    union: UnionTypeExpr
 
 
 TypeExpression = (
@@ -41,7 +41,7 @@ TypeExpression = (
     | ListTypeExpr
     | LiteralTypeExpr
     | UnionTypeExpr
-    | UnknownTypeExpr
+    | OpenUnionTypeExpr
 )
 
 
@@ -55,9 +55,14 @@ def render_type_expr(value: TypeExpression) -> str:
             return f"Literal[{repr(inner)}]"
         case UnionTypeExpr(inner):
             return " | ".join(render_type_expr(x) for x in inner)
+        case OpenUnionTypeExpr(inner):
+            return (
+                "Annotated["
+                f"{render_type_expr(inner)} | RiverUnknownValue,"
+                "WrapValidator(raise_unknown)"
+                "]"
+            )
         case str(name):
-            return TypeName(name)
-        case UnknownTypeExpr(name):
             return TypeName(name)
         case other:
             assert_never(other)
@@ -75,10 +80,12 @@ def extract_inner_type(value: TypeExpression) -> TypeName:
             raise ValueError(
                 f"Attempting to extract from a union, currently not possible: {value}"
             )
+        case OpenUnionTypeExpr(_):
+            raise ValueError(
+                f"Attempting to extract from a union, currently not possible: {value}"
+            )
         case str(name):
             return TypeName(name)
-        case UnknownTypeExpr(name):
-            return name
         case other:
             assert_never(other)
 
@@ -101,9 +108,11 @@ def ensure_literal_type(value: TypeExpression) -> TypeName:
             raise ValueError(
                 f"Unexpected expression when expecting a type name: {value}"
             )
+        case OpenUnionTypeExpr(_):
+            raise ValueError(
+                f"Unexpected expression when expecting a type name: {value}"
+            )
         case str(name):
             return TypeName(name)
-        case UnknownTypeExpr(name):
-            return name
         case other:
             assert_never(other)
