@@ -30,7 +30,7 @@ def main() -> None:
     client = subparsers.add_parser(
         "client", help="Codegen a River client from JSON schema"
     )
-    client.add_argument("--output", help="output file", required=True)
+    client.add_argument("--output", help="output path", required=True)
     client.add_argument("--client-name", help="name of the class", required=True)
     client.add_argument(
         "--typed-dict-inputs",
