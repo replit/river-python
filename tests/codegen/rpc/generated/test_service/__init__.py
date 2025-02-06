@@ -9,7 +9,7 @@ from replit_river.error_schema import RiverError
 import replit_river as river
 
 
-from .rpc_method import encode_Rpc_MethodInput, Rpc_MethodInput, Rpc_MethodOutput
+from .rpc_method import Rpc_MethodInput, Rpc_MethodOutput, encode_Rpc_MethodInput
 
 
 class Test_ServiceService:

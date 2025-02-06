@@ -10,15 +10,16 @@ from typing import (
     Literal,
     Optional,
     Mapping,
-    NewType,
     NotRequired,
     Union,
     Tuple,
     TypedDict,
 )
+from typing_extensions import Annotated
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
+from replit_river.client import RiverUnknownValue, raise_unknown
 
 import replit_river as river
 
