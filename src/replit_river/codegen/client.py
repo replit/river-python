@@ -30,11 +30,11 @@ from replit_river.codegen.typing import (
     ListTypeExpr,
     LiteralTypeExpr,
     ModuleName,
+    OpenUnionTypeExpr,
     RenderedPath,
     TypeExpression,
     TypeName,
     UnionTypeExpr,
-    UnknownTypeExpr,
     ensure_literal_type,
     extract_inner_type,
     render_type_expr,
@@ -83,15 +83,16 @@ from typing import (
     Literal,
     Optional,
     Mapping,
-    NewType,
     NotRequired,
     Union,
     Tuple,
     TypedDict,
 )
+from typing_extensions import Annotated
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
+from replit_river.client import RiverUnknownValue, translate_unknown_value
 
 import replit_river as river
 
@@ -311,19 +312,12 @@ def encode_type(
                             else
                         """,
                     )
+                union: TypeExpression
                 if permit_unknown_members:
-                    unknown_name = TypeName(f"{prefix}AnyOf__Unknown")
-                    chunks.append(
-                        FileContents(
-                            f"{unknown_name} = NewType({repr(unknown_name)}, object)"
-                        )
-                    )
-                    one_of.append(UnknownTypeExpr(unknown_name))
-                chunks.append(
-                    FileContents(
-                        f"{prefix} = {render_type_expr(UnionTypeExpr(one_of))}"
-                    )
-                )
+                    union = OpenUnionTypeExpr(UnionTypeExpr(one_of))
+                else:
+                    union = UnionTypeExpr(one_of)
+                chunks.append(FileContents(f"{prefix} = {render_type_expr(union)}"))
                 chunks.append(FileContents(""))
 
                 if base_model == "TypedDict":
@@ -386,16 +380,12 @@ def encode_type(
                                 f"encode_{ensure_literal_type(other)}(x)"
                             )
         if permit_unknown_members:
-            unknown_name = TypeName(f"{prefix}AnyOf__Unknown")
-            chunks.append(
-                FileContents(f"{unknown_name} = NewType({repr(unknown_name)}, object)")
-            )
-            any_of.append(UnknownTypeExpr(unknown_name))
+            union = OpenUnionTypeExpr(UnionTypeExpr(any_of))
+        else:
+            union = UnionTypeExpr(any_of)
         if is_literal(type):
             typeddict_encoder = ["x"]
-        chunks.append(
-            FileContents(f"{prefix} = {render_type_expr(UnionTypeExpr(any_of))}")
-        )
+        chunks.append(FileContents(f"{prefix} = {render_type_expr(union)}"))
         if base_model == "TypedDict":
             encoder_name = TypeName(f"encode_{prefix}")
             encoder_names.add(encoder_name)

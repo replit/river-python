@@ -10,9 +10,9 @@ import replit_river as river
 
 
 from .stream_method import (
-    encode_Stream_MethodInput,
-    Stream_MethodOutput,
     Stream_MethodInput,
+    Stream_MethodOutput,
+    encode_Stream_MethodInput,
 )
 
 

@@ -10,15 +10,16 @@ from typing import (
     Literal,
     Optional,
     Mapping,
-    NewType,
     NotRequired,
     Union,
     Tuple,
     TypedDict,
 )
+from typing_extensions import Annotated
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
+from replit_river.client import RiverUnknownValue, translate_unknown_value
 
 import replit_river as river
 
@@ -90,14 +91,12 @@ class NeedsenumobjectOutputFooOneOf_out_second(BaseModel):
     bar: int
 
 
-NeedsenumobjectOutputFooAnyOf__Unknown = NewType(
-    "NeedsenumobjectOutputFooAnyOf__Unknown", object
-)
-NeedsenumobjectOutputFoo = (
+NeedsenumobjectOutputFoo = Annotated[
     NeedsenumobjectOutputFooOneOf_out_first
     | NeedsenumobjectOutputFooOneOf_out_second
-    | NeedsenumobjectOutputFooAnyOf__Unknown
-)
+    | RiverUnknownValue,
+    WrapValidator(translate_unknown_value),
+]
 
 
 class NeedsenumobjectOutput(BaseModel):
@@ -112,14 +111,12 @@ class NeedsenumobjectErrorsFooAnyOf_1(RiverError):
     borp: Optional[Literal["err_second"]] = None
 
 
-NeedsenumobjectErrorsFooAnyOf__Unknown = NewType(
-    "NeedsenumobjectErrorsFooAnyOf__Unknown", object
-)
-NeedsenumobjectErrorsFoo = (
+NeedsenumobjectErrorsFoo = Annotated[
     NeedsenumobjectErrorsFooAnyOf_0
     | NeedsenumobjectErrorsFooAnyOf_1
-    | NeedsenumobjectErrorsFooAnyOf__Unknown
-)
+    | RiverUnknownValue,
+    WrapValidator(translate_unknown_value),
+]
 
 
 class NeedsenumobjectErrors(RiverError):

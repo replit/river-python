@@ -10,26 +10,27 @@ from typing import (
     Literal,
     Optional,
     Mapping,
-    NewType,
     NotRequired,
     Union,
     Tuple,
     TypedDict,
 )
+from typing_extensions import Annotated
 
-from pydantic import BaseModel, Field, TypeAdapter
+from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
+from replit_river.client import RiverUnknownValue, translate_unknown_value
 
 import replit_river as river
 
 
 NeedsenumInput = Literal["in_first"] | Literal["in_second"]
 encode_NeedsenumInput: Callable[["NeedsenumInput"], Any] = lambda x: x
-NeedsenumOutputAnyOf__Unknown = NewType("NeedsenumOutputAnyOf__Unknown", object)
-NeedsenumOutput = (
-    Literal["out_first"] | Literal["out_second"] | NeedsenumOutputAnyOf__Unknown
-)
-NeedsenumErrorsAnyOf__Unknown = NewType("NeedsenumErrorsAnyOf__Unknown", object)
-NeedsenumErrors = (
-    Literal["err_first"] | Literal["err_second"] | NeedsenumErrorsAnyOf__Unknown
-)
+NeedsenumOutput = Annotated[
+    Literal["out_first"] | Literal["out_second"] | RiverUnknownValue,
+    WrapValidator(translate_unknown_value),
+]
+NeedsenumErrors = Annotated[
+    Literal["err_first"] | Literal["err_second"] | RiverUnknownValue,
+    WrapValidator(translate_unknown_value),
+]
