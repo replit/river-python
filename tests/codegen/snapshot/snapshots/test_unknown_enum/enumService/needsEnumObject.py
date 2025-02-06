@@ -19,7 +19,7 @@ from typing_extensions import Annotated
 
 from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
-from replit_river.client import RiverUnknownValue, raise_unknown
+from replit_river.client import RiverUnknownValue, translate_unknown_value
 
 import replit_river as river
 
@@ -95,7 +95,7 @@ NeedsenumobjectOutputFoo = Annotated[
     NeedsenumobjectOutputFooOneOf_out_first
     | NeedsenumobjectOutputFooOneOf_out_second
     | RiverUnknownValue,
-    WrapValidator(raise_unknown),
+    WrapValidator(translate_unknown_value),
 ]
 
 
@@ -115,7 +115,7 @@ NeedsenumobjectErrorsFoo = Annotated[
     NeedsenumobjectErrorsFooAnyOf_0
     | NeedsenumobjectErrorsFooAnyOf_1
     | RiverUnknownValue,
-    WrapValidator(raise_unknown),
+    WrapValidator(translate_unknown_value),
 ]
 
 

@@ -59,7 +59,7 @@ def render_type_expr(value: TypeExpression) -> str:
             return (
                 "Annotated["
                 f"{render_type_expr(inner)} | RiverUnknownValue,"
-                "WrapValidator(raise_unknown)"
+                "WrapValidator(translate_unknown_value)"
                 "]"
             )
         case str(name):

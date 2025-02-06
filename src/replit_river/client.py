@@ -37,7 +37,7 @@ class RiverUnknownValue(BaseModel):
     value: Any
 
 
-def raise_unknown(
+def translate_unknown_value(
     value: Any, handler: Callable[[Any], Any], info: ValidationInfo
 ) -> Any | RiverUnknownValue:
     try:

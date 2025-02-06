@@ -19,7 +19,7 @@ from typing_extensions import Annotated
 
 from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
-from replit_river.client import RiverUnknownValue, raise_unknown
+from replit_river.client import RiverUnknownValue, translate_unknown_value
 
 import replit_river as river
 
