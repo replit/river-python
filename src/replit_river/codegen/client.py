@@ -30,6 +30,7 @@ from replit_river.codegen.typing import (
     ListTypeExpr,
     LiteralTypeExpr,
     ModuleName,
+    NoneTypeExpr,
     OpenUnionTypeExpr,
     RenderedPath,
     TypeExpression,
@@ -170,7 +171,7 @@ def encode_type(
     encoder_name: TypeName | None = None  # defining this up here to placate mypy
     chunks: List[FileContents] = []
     if isinstance(type, RiverNotType):
-        return (TypeName("None"), [], [], set())
+        return (NoneTypeExpr(), [], [], set())
     elif isinstance(type, RiverUnionType):
         typeddict_encoder = list[str]()
         encoder_names: set[TypeName] = set()
@@ -379,17 +380,17 @@ def encode_type(
                             typeddict_encoder.append(
                                 f"encode_{render_literal_type(inner_type_name)}(x)"
                             )
-                        case DictTypeExpr(_):
-                            raise ValueError(
-                                "What does it mean to try and encode a dict in"
-                                " this position?"
-                            )
                         case LiteralTypeExpr(const):
                             typeddict_encoder.append(repr(const))
+                        case TypeName(value):
+                            typeddict_encoder.append(f"encode_{value}(x)")
+                        case NoneTypeExpr():
+                            typeddict_encoder.append("None")
                         case other:
-                            typeddict_encoder.append(
-                                f"encode_{render_literal_type(other)}(x)"
+                            _o2: DictTypeExpr | OpenUnionTypeExpr | UnionTypeExpr = (
+                                other
                             )
+                            raise ValueError(f"What does it mean to have {_o2} here?")
         if permit_unknown_members:
             union = OpenUnionTypeExpr(UnionTypeExpr(any_of))
         else:
@@ -471,7 +472,7 @@ def encode_type(
             return (TypeName("bool"), [], [], set())
         elif type.type == "null" or type.type == "undefined":
             typeddict_encoder.append("None")
-            return (TypeName("None"), [], [], set())
+            return (NoneTypeExpr(), [], [], set())
         elif type.type == "Date":
             typeddict_encoder.append("TODO: dstewart")
             return (TypeName("datetime.datetime"), [], [], set())
@@ -511,8 +512,11 @@ def encode_type(
                     )
                 case LiteralTypeExpr(const):
                     typeddict_encoder.append(repr(const))
+                case TypeName(value):
+                    typeddict_encoder.append(f"encode_{value}(x)")
                 case other:
-                    typeddict_encoder.append(f"encode_{render_literal_type(other)}(x)")
+                    _o1: NoneTypeExpr | OpenUnionTypeExpr | UnionTypeExpr = other
+                    raise ValueError(f"What does it mean to have {_o1} here?")
             return (DictTypeExpr(type_name), module_info, type_chunks, encoder_names)
         assert type.type == "object", type.type
 
@@ -823,7 +827,7 @@ def generate_individual_service(
                 module_names,
                 permit_unknown_members=True,
             )
-            if error_type == "None":
+            if isinstance(error_type, NoneTypeExpr):
                 error_type = TypeName("RiverError")
             else:
                 serdes.append(
@@ -916,7 +920,7 @@ def generate_individual_service(
             f"Unable to derive the input encoder from: {input_type}"
         )
 
-        if output_type == "None":
+        if isinstance(output_type, NoneTypeExpr):
             parse_output_method = "lambda x: None"
 
         if procedure.type == "rpc":
