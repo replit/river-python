@@ -14,25 +14,40 @@ RenderedPath = NewType("RenderedPath", str)
 class DictTypeExpr:
     nested: "TypeExpression"
 
+    def __str__(self) -> str:
+        raise Exception("Complex type must be put through render_type_expr!")
+
 
 @dataclass
 class ListTypeExpr:
     nested: "TypeExpression"
+
+    def __str__(self) -> str:
+        raise Exception("Complex type must be put through render_type_expr!")
 
 
 @dataclass
 class LiteralTypeExpr:
     nested: int | str
 
+    def __str__(self) -> str:
+        raise Exception("Complex type must be put through render_type_expr!")
+
 
 @dataclass
 class UnionTypeExpr:
     nested: list["TypeExpression"]
 
+    def __str__(self) -> str:
+        raise Exception("Complex type must be put through render_type_expr!")
+
 
 @dataclass
 class OpenUnionTypeExpr:
     union: UnionTypeExpr
+
+    def __str__(self) -> str:
+        raise Exception("Complex type must be put through render_type_expr!")
 
 
 TypeExpression = (
