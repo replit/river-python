@@ -1,13 +1,20 @@
 from dataclasses import dataclass
 from typing import NewType, assert_never
 
-TypeName = NewType("TypeName", str)
 ModuleName = NewType("ModuleName", str)
 ClassName = NewType("ClassName", str)
 FileContents = NewType("FileContents", str)
 HandshakeType = NewType("HandshakeType", str)
 
 RenderedPath = NewType("RenderedPath", str)
+
+
+@dataclass(frozen=True)
+class TypeName:
+    value: str
+
+    def __str__(self) -> str:
+        raise Exception("Complex type must be put through render_type_expr!")
 
 
 @dataclass(frozen=True)
@@ -77,10 +84,14 @@ def render_type_expr(value: TypeExpression) -> str:
                 "WrapValidator(translate_unknown_value)"
                 "]"
             )
-        case str(name):
-            return TypeName(name)
+        case TypeName(name):
+            return name
         case other:
             assert_never(other)
+
+
+def render_literal_type(value: TypeExpression) -> str:
+    return render_type_expr(ensure_literal_type(value))
 
 
 def extract_inner_type(value: TypeExpression) -> TypeName:
@@ -99,7 +110,7 @@ def extract_inner_type(value: TypeExpression) -> TypeName:
             raise ValueError(
                 f"Attempting to extract from a union, currently not possible: {value}"
             )
-        case str(name):
+        case TypeName(name):
             return TypeName(name)
         case other:
             assert_never(other)
@@ -127,7 +138,7 @@ def ensure_literal_type(value: TypeExpression) -> TypeName:
             raise ValueError(
                 f"Unexpected expression when expecting a type name: {value}"
             )
-        case str(name):
+        case TypeName(name):
             return TypeName(name)
         case other:
             assert_never(other)
