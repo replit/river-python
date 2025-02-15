@@ -957,7 +957,7 @@ def generate_individual_service(
                             f"""\
             async def {name}(
               self,
-              init: {init_type},
+              init: {render_type_expr(init_type)},
               inputStream: AsyncIterable[{render_type_expr(input_type)}],
             ) -> {render_type_expr(output_type)}:
               return await self.client.send_upload(
