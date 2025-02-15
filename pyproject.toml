@@ -33,10 +33,6 @@ dependencies = [
     "opentelemetry-api>=1.28.2",
 ]
 
-[project.scripts]
-lint = "lint:main"
-format = "lint:main"
-
 [tool.uv]
 dev-dependencies = [
     "deptry>=0.14.0",
