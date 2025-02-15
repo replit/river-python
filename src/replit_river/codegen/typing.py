@@ -10,7 +10,7 @@ HandshakeType = NewType("HandshakeType", str)
 RenderedPath = NewType("RenderedPath", str)
 
 
-@dataclass
+@dataclass(frozen=True)
 class DictTypeExpr:
     nested: "TypeExpression"
 
@@ -18,7 +18,7 @@ class DictTypeExpr:
         raise Exception("Complex type must be put through render_type_expr!")
 
 
-@dataclass
+@dataclass(frozen=True)
 class ListTypeExpr:
     nested: "TypeExpression"
 
@@ -26,7 +26,7 @@ class ListTypeExpr:
         raise Exception("Complex type must be put through render_type_expr!")
 
 
-@dataclass
+@dataclass(frozen=True)
 class LiteralTypeExpr:
     nested: int | str
 
@@ -34,7 +34,7 @@ class LiteralTypeExpr:
         raise Exception("Complex type must be put through render_type_expr!")
 
 
-@dataclass
+@dataclass(frozen=True)
 class UnionTypeExpr:
     nested: list["TypeExpression"]
 
@@ -42,7 +42,7 @@ class UnionTypeExpr:
         raise Exception("Complex type must be put through render_type_expr!")
 
 
-@dataclass
+@dataclass(frozen=True)
 class OpenUnionTypeExpr:
     union: UnionTypeExpr
 
