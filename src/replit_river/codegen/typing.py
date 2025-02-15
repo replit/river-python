@@ -18,6 +18,12 @@ class TypeName:
 
 
 @dataclass(frozen=True)
+class NoneTypeExpr:
+    def __str__(self) -> str:
+        raise Exception("Complex type must be put through render_type_expr!")
+
+
+@dataclass(frozen=True)
 class DictTypeExpr:
     nested: "TypeExpression"
 
@@ -59,6 +65,7 @@ class OpenUnionTypeExpr:
 
 TypeExpression = (
     TypeName
+    | NoneTypeExpr
     | DictTypeExpr
     | ListTypeExpr
     | LiteralTypeExpr
@@ -86,6 +93,8 @@ def render_type_expr(value: TypeExpression) -> str:
             )
         case TypeName(name):
             return name
+        case NoneTypeExpr():
+            return "None"
         case other:
             assert_never(other)
 
@@ -112,33 +121,17 @@ def extract_inner_type(value: TypeExpression) -> TypeName:
             )
         case TypeName(name):
             return TypeName(name)
+        case NoneTypeExpr():
+            raise ValueError(f"Attempting to extract from a literal 'None': {value}")
         case other:
             assert_never(other)
 
 
 def ensure_literal_type(value: TypeExpression) -> TypeName:
     match value:
-        case DictTypeExpr(_):
-            raise ValueError(
-                f"Unexpected expression when expecting a type name: {value}"
-            )
-        case ListTypeExpr(_):
-            raise ValueError(
-                f"Unexpected expression when expecting a type name: {value}"
-            )
-        case LiteralTypeExpr(_):
-            raise ValueError(
-                f"Unexpected expression when expecting a type name: {value}"
-            )
-        case UnionTypeExpr(_):
-            raise ValueError(
-                f"Unexpected expression when expecting a type name: {value}"
-            )
-        case OpenUnionTypeExpr(_):
-            raise ValueError(
-                f"Unexpected expression when expecting a type name: {value}"
-            )
         case TypeName(name):
             return TypeName(name)
         case other:
-            assert_never(other)
+            raise ValueError(
+                f"Unexpected expression when expecting a type name: {other}"
+            )
