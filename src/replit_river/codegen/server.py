@@ -269,7 +269,7 @@ def message_encoder(
         chunks.append(f"  match e.WhichOneof({repr(oneof.name)}):")
         for field in oneofs[index]:
             if field.type_name == ".google.protobuf.Timestamp":
-                value = f"e.{field.name}.ToDatetime()"
+                value = f"e.{field.name}.ToDatetime(tzinfo=datetime.timezone.utc)"
             elif field.type == descriptor_pb2.FieldDescriptorProto.TYPE_MESSAGE:
                 encode_method_name = get_encoder_name(field)
                 value = f"{encode_method_name}(e.{field.name})"
