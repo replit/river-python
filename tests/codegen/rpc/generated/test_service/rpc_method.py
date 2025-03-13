@@ -39,5 +39,11 @@ class Rpc_MethodInput(TypedDict):
     data: str
 
 
+Rpc_MethodInputTypeAdapter = TypeAdapter(Rpc_MethodInput)  # type: ignore
+
+
 class Rpc_MethodOutput(BaseModel):
     data: str
+
+
+Rpc_MethodOutputTypeAdapter = TypeAdapter(Rpc_MethodOutput)  # type: ignore
