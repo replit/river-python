@@ -768,15 +768,15 @@ def generate_individual_service(
         _type: TypeExpression,
         module_info: list[ModuleName],
     ) -> None:
+        rendered_type_expr = render_type_expr(_type)
         serdes.append(
             (
                 [type_adapter_name],
                 module_info,
                 [
                     FileContents(
-                        f"{type_adapter_name.value} = "
-                        f"TypeAdapter({render_type_expr(_type)})"
-                        "  # type: ignore"
+                        f"{type_adapter_name.value}: Any = "
+                        f"TypeAdapter({rendered_type_expr})"
                     )
                 ],
             )
