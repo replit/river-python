@@ -18,7 +18,7 @@
         LD_LIBRARY_PATH = "${pkgs.stdenv.cc.cc.lib}/lib";
       };
       packages = replitNixDeps ++ [
-        pkgs.python311
+        pkgs.python312
         pkgs.uv
       ];
     };
