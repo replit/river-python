@@ -64,8 +64,7 @@ import datetime
 
 from pydantic import TypeAdapter
 
-from replit_river.error_schema import RiverError
-RiverErrorTypeAdapter = TypeAdapter(RiverError)
+from replit_river.error_schema import RiverError, RiverErrorTypeAdapter
 import replit_river as river
 
 """
@@ -763,26 +762,25 @@ def generate_individual_service(
     schema: RiverService,
     input_base_class: Literal["TypedDict"] | Literal["BaseModel"],
 ) -> Tuple[ModuleName, ClassName, dict[RenderedPath, FileContents]]:
+    serdes: list[Tuple[list[TypeName], list[ModuleName], list[FileContents]]] = []
+
     def append_type_adapter_definition(
         type_adapter_name: TypeName,
         _type: TypeExpression,
         module_info: list[ModuleName],
     ) -> None:
         rendered_type_expr = render_type_expr(_type)
+        var_name = render_type_expr(type_adapter_name)
+        var_type = f"TypeAdapter[{rendered_type_expr}]"
+        var_value = f"TypeAdapter({rendered_type_expr})"
         serdes.append(
             (
                 [type_adapter_name],
                 module_info,
-                [
-                    FileContents(
-                        f"{type_adapter_name.value}: TypeAdapter[{rendered_type_expr}] = "
-                        f"TypeAdapter({rendered_type_expr})"
-                    )
-                ],
+                [FileContents(f"{var_name}: {var_type} = {var_value}")],
             )
         )
 
-    serdes: list[Tuple[list[TypeName], list[ModuleName], list[FileContents]]] = []
     class_name = ClassName(f"{schema_name.title()}Service")
     current_chunks: List[str] = [
         dedent(
@@ -819,7 +817,9 @@ def generate_individual_service(
             permit_unknown_members=False,
         )
         input_type_name = extract_inner_type(input_type)
-        input_type_type_adapter_name = TypeName(f"{input_type_name.value}TypeAdapter")
+        input_type_type_adapter_name = TypeName(
+            f"{render_literal_type(input_type_name)}TypeAdapter"
+        )
         serdes.append(
             (
                 [extract_inner_type(input_type), *encoder_names],
@@ -845,7 +845,9 @@ def generate_individual_service(
                 output_chunks,
             )
         )
-        output_type_type_adapter_name = TypeName(f"{output_type_name.value}TypeAdapter")
+        output_type_type_adapter_name = TypeName(
+            f"{render_literal_type(output_type_name)}TypeAdapter"
+        )
         append_type_adapter_definition(
             output_type_type_adapter_name, output_type, module_info
         )
@@ -869,7 +871,9 @@ def generate_individual_service(
             error_type_name = TypeName("RiverError")
             error_type = error_type_name
 
-        error_type_type_adapter_name = TypeName(f"{error_type_name.value}TypeAdapter")
+        error_type_type_adapter_name = TypeName(
+            f"{render_literal_type(error_type_name)}TypeAdapter"
+        )
         if error_type_type_adapter_name.value != "RiverErrorTypeAdapter":
             if len(module_info) == 0:
                 module_info = output_module_info
@@ -882,14 +886,16 @@ def generate_individual_service(
         #     the function strings in the branches below, otherwise `dedent`
         #     will pick our indentation level for normalization, which will
         #     break the "def" indentation presuppositions.
+        ottd_name = render_literal_type(output_type_type_adapter_name)
         parse_output_method = f"""\
-                            lambda x: {output_type_type_adapter_name.value}
+                            lambda x: {ottd_name}
                                 .validate_python(
                                     x # type: ignore[arg-type]
                                 )
                             """
+        ettd_name = render_literal_type(error_type_type_adapter_name)
         parse_error_method = f"""\
-                            lambda x: {error_type_type_adapter_name.value}
+                            lambda x: {ettd_name}
                                 .validate_python(
                                     x # type: ignore[arg-type]
                                 )
@@ -920,8 +926,8 @@ def generate_individual_service(
                     init_type_type_adapter_name, init_type, module_info
                 )
                 render_init_method = f"""\
-                                lambda x: {init_type_type_adapter_name.value})
-                                  .validate_python
+                    lambda x: {render_type_expr(init_type_type_adapter_name)}
+                        .validate_python
                 """
 
         assert init_type is None or render_init_method, (
@@ -947,7 +953,7 @@ def generate_individual_service(
                 render_input_method = f"encode_{render_literal_type(input_type)}"
         else:
             render_input_method = f"""\
-                            lambda x: {input_type_type_adapter_name.value}
+                            lambda x: {render_type_expr(input_type_type_adapter_name)}
                               .dump_python(
                                 x, # type: ignore[arg-type]
                                 by_alias=True,

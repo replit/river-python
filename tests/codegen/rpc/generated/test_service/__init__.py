@@ -5,9 +5,7 @@ import datetime
 
 from pydantic import TypeAdapter
 
-from replit_river.error_schema import RiverError
-
-RiverErrorTypeAdapter = TypeAdapter(RiverError)
+from replit_river.error_schema import RiverError, RiverErrorTypeAdapter
 import replit_river as river
 
 
