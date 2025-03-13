@@ -858,7 +858,6 @@ def generate_individual_service(
                 module_names,
                 permit_unknown_members=True,
             )
-            # print('error type module_info: %r' % module_info)
             if isinstance(error_type, NoneTypeExpr):
                 error_type_name = TypeName("RiverError")
                 error_type = error_type_name
