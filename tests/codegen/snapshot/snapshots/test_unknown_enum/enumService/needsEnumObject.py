@@ -71,7 +71,9 @@ encode_NeedsenumobjectInput: Callable[["NeedsenumobjectInput"], Any] = (
     if x["kind"] == "in_first"
     else encode_NeedsenumobjectInputOneOf_in_second(x)
 )
-NeedsenumobjectInputTypeAdapter = TypeAdapter(NeedsenumobjectInput)  # type: ignore
+NeedsenumobjectInputTypeAdapter: TypeAdapter[NeedsenumobjectInput] = TypeAdapter(
+    NeedsenumobjectInput
+)
 
 
 class NeedsenumobjectOutputFooOneOf_out_first(BaseModel):
@@ -104,7 +106,9 @@ class NeedsenumobjectOutput(BaseModel):
     foo: Optional[NeedsenumobjectOutputFoo] = None
 
 
-NeedsenumobjectOutputTypeAdapter = TypeAdapter(NeedsenumobjectOutput)  # type: ignore
+NeedsenumobjectOutputTypeAdapter: TypeAdapter[NeedsenumobjectOutput] = TypeAdapter(
+    NeedsenumobjectOutput
+)
 
 
 class NeedsenumobjectErrorsFooAnyOf_0(RiverError):
@@ -127,4 +131,6 @@ class NeedsenumobjectErrors(RiverError):
     foo: Optional[NeedsenumobjectErrorsFoo] = None
 
 
-NeedsenumobjectErrorsTypeAdapter = TypeAdapter(NeedsenumobjectErrors)  # type: ignore
+NeedsenumobjectErrorsTypeAdapter: TypeAdapter[NeedsenumobjectErrors] = TypeAdapter(
+    NeedsenumobjectErrors
+)
