@@ -775,7 +775,7 @@ def generate_individual_service(
                 module_info,
                 [
                     FileContents(
-                        f"{type_adapter_name.value}: Any = "
+                        f"{type_adapter_name.value}: TypeAdapter[{rendered_type_expr}] = "
                         f"TypeAdapter({rendered_type_expr})"
                     )
                 ],

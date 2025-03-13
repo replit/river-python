@@ -80,7 +80,7 @@ class Client(Generic[HandshakeMetadataType]):
         request: RequestType,
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
-        error_deserializer: Callable[[Any], ErrorType],
+        error_deserializer: Callable[[Any], Any],
         timeout: timedelta,
     ) -> ResponseType:
         with _trace_procedure("rpc", service_name, procedure_name) as span_handle:
@@ -105,7 +105,7 @@ class Client(Generic[HandshakeMetadataType]):
         init_serializer: Optional[Callable[[InitType], Any]],
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
-        error_deserializer: Callable[[Any], ErrorType],
+        error_deserializer: Callable[[Any], Any],
     ) -> ResponseType:
         with _trace_procedure("upload", service_name, procedure_name) as span_handle:
             session = await self._transport.get_or_create_session()
@@ -128,7 +128,7 @@ class Client(Generic[HandshakeMetadataType]):
         request: RequestType,
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
-        error_deserializer: Callable[[Any], ErrorType],
+        error_deserializer: Callable[[Any], Any],
     ) -> AsyncGenerator[Union[ResponseType, ErrorType], None]:
         with _trace_procedure(
             "subscription", service_name, procedure_name
@@ -156,7 +156,7 @@ class Client(Generic[HandshakeMetadataType]):
         init_serializer: Optional[Callable[[InitType], Any]],
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
-        error_deserializer: Callable[[Any], ErrorType],
+        error_deserializer: Callable[[Any], Any],
     ) -> AsyncGenerator[Union[ResponseType, ErrorType], None]:
         with _trace_procedure("stream", service_name, procedure_name) as span_handle:
             session = await self._transport.get_or_create_session()
