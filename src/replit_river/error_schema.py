@@ -1,6 +1,6 @@
 from typing import Any, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, TypeAdapter
 
 ERROR_CODE_STREAM_CLOSED = "stream_closed"
 ERROR_HANDSHAKE = "handshake_failed"
@@ -23,6 +23,9 @@ class RiverError(BaseModel):
 
     code: Any
     message: str
+
+
+RiverErrorTypeAdapter = TypeAdapter(RiverError)
 
 
 class RiverException(Exception):

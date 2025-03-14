@@ -5,13 +5,15 @@ import datetime
 
 from pydantic import TypeAdapter
 
-from replit_river.error_schema import RiverError
+from replit_river.error_schema import RiverError, RiverErrorTypeAdapter
 import replit_river as river
 
 
 from .stream_method import (
     Stream_MethodInput,
+    Stream_MethodInputTypeAdapter,
     Stream_MethodOutput,
+    Stream_MethodOutputTypeAdapter,
     encode_Stream_MethodInput,
 )
 
@@ -31,10 +33,10 @@ class Test_ServiceService:
             inputStream,
             None,
             encode_Stream_MethodInput,
-            lambda x: TypeAdapter(Stream_MethodOutput).validate_python(
+            lambda x: Stream_MethodOutputTypeAdapter.validate_python(
                 x  # type: ignore[arg-type]
             ),
-            lambda x: TypeAdapter(RiverError).validate_python(
+            lambda x: RiverErrorTypeAdapter.validate_python(
                 x  # type: ignore[arg-type]
             ),
         )

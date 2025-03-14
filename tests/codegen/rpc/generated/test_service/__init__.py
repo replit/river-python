@@ -5,11 +5,17 @@ import datetime
 
 from pydantic import TypeAdapter
 
-from replit_river.error_schema import RiverError
+from replit_river.error_schema import RiverError, RiverErrorTypeAdapter
 import replit_river as river
 
 
-from .rpc_method import Rpc_MethodInput, Rpc_MethodOutput, encode_Rpc_MethodInput
+from .rpc_method import (
+    Rpc_MethodInput,
+    Rpc_MethodInputTypeAdapter,
+    Rpc_MethodOutput,
+    Rpc_MethodOutputTypeAdapter,
+    encode_Rpc_MethodInput,
+)
 
 
 class Test_ServiceService:
@@ -26,10 +32,10 @@ class Test_ServiceService:
             "rpc_method",
             input,
             encode_Rpc_MethodInput,
-            lambda x: TypeAdapter(Rpc_MethodOutput).validate_python(
+            lambda x: Rpc_MethodOutputTypeAdapter.validate_python(
                 x  # type: ignore[arg-type]
             ),
-            lambda x: TypeAdapter(RiverError).validate_python(
+            lambda x: RiverErrorTypeAdapter.validate_python(
                 x  # type: ignore[arg-type]
             ),
             timeout,

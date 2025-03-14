@@ -5,20 +5,26 @@ import datetime
 
 from pydantic import TypeAdapter
 
-from replit_river.error_schema import RiverError
+from replit_river.error_schema import RiverError, RiverErrorTypeAdapter
 import replit_river as river
 
 
 from .needsEnum import (
     NeedsenumErrors,
+    NeedsenumErrorsTypeAdapter,
     NeedsenumInput,
+    NeedsenumInputTypeAdapter,
     NeedsenumOutput,
+    NeedsenumOutputTypeAdapter,
     encode_NeedsenumInput,
 )
 from .needsEnumObject import (
     NeedsenumobjectErrors,
+    NeedsenumobjectErrorsTypeAdapter,
     NeedsenumobjectInput,
+    NeedsenumobjectInputTypeAdapter,
     NeedsenumobjectOutput,
+    NeedsenumobjectOutputTypeAdapter,
     encode_NeedsenumobjectInput,
 )
 
@@ -37,10 +43,10 @@ class EnumserviceService:
             "needsEnum",
             input,
             lambda x: x,
-            lambda x: TypeAdapter(NeedsenumOutput).validate_python(
+            lambda x: NeedsenumOutputTypeAdapter.validate_python(
                 x  # type: ignore[arg-type]
             ),
-            lambda x: TypeAdapter(NeedsenumErrors).validate_python(
+            lambda x: NeedsenumErrorsTypeAdapter.validate_python(
                 x  # type: ignore[arg-type]
             ),
             timeout,
@@ -56,10 +62,10 @@ class EnumserviceService:
             "needsEnumObject",
             input,
             encode_NeedsenumobjectInput,
-            lambda x: TypeAdapter(NeedsenumobjectOutput).validate_python(
+            lambda x: NeedsenumobjectOutputTypeAdapter.validate_python(
                 x  # type: ignore[arg-type]
             ),
-            lambda x: TypeAdapter(NeedsenumobjectErrors).validate_python(
+            lambda x: NeedsenumobjectErrorsTypeAdapter.validate_python(
                 x  # type: ignore[arg-type]
             ),
             timeout,

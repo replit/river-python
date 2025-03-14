@@ -129,7 +129,7 @@ class Client(Generic[HandshakeMetadataType]):
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
-    ) -> AsyncGenerator[Union[ResponseType, ErrorType], None]:
+    ) -> AsyncGenerator[Union[ResponseType, RiverError], None]:
         with _trace_procedure(
             "subscription", service_name, procedure_name
         ) as span_handle:
@@ -157,7 +157,7 @@ class Client(Generic[HandshakeMetadataType]):
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
-    ) -> AsyncGenerator[Union[ResponseType, ErrorType], None]:
+    ) -> AsyncGenerator[Union[ResponseType, RiverError], None]:
         with _trace_procedure("stream", service_name, procedure_name) as span_handle:
             session = await self._transport.get_or_create_session()
             async for msg in session.send_stream(
