@@ -6,7 +6,6 @@ from typing import (
     Awaitable,
     Callable,
     Coroutine,
-    Dict,
     Generic,
     Iterable,
     Iterator,
@@ -15,7 +14,6 @@ from typing import (
     NoReturn,
     Optional,
     Sequence,
-    Tuple,
     TypeVar,
     Union,
 )
@@ -45,7 +43,7 @@ RequestType = TypeVar("RequestType")
 ResponseType = TypeVar("ResponseType")
 ErrorType = TypeVar("ErrorType", bound=RiverError)
 
-_MetadataType = Union[grpc.aio.Metadata, Sequence[Tuple[str, Union[str, bytes]]]]
+_MetadataType = Union[grpc.aio.Metadata, Sequence[tuple[str, Union[str, bytes]]]]
 
 GenericRpcHandler = Callable[
     [str, Channel[Any], Channel[Any]], Coroutine[None, None, None]
@@ -202,7 +200,7 @@ class GrpcContext(grpc.aio.ServicerContext, Generic[RequestType, ResponseType]):
 
 def get_response_or_error_payload(
     response: Any, response_serializer: Callable[[ResponseType], Any]
-) -> Dict:
+) -> dict[Any, Any]:
     if isinstance(response, RiverError):
         return {
             "ok": False,

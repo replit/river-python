@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Optional, Tuple
+from typing import Any, Optional
 
 import nanoid  # type: ignore  # type: ignore
 from pydantic import ValidationError
@@ -192,7 +192,7 @@ class ServerTransport(Transport):
 
     async def _establish_handshake(
         self, request_message: TransportMessage, websocket: WebSocketCommonProtocol
-    ) -> Tuple[
+    ) -> tuple[
         ControlMessageHandshakeRequest[Any],
         ControlMessageHandshakeResponse,
     ]:
