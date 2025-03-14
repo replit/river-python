@@ -768,9 +768,9 @@ def generate_individual_service(
         type_adapter_name: TypeName,
         _type: TypeExpression,
         module_info: list[ModuleName],
-    ) -> None:
+    ) -> tuple[list[TypeName], list[ModuleName], list[FileContents]]:
         rendered_type_expr = render_type_expr(_type)
-        serdes.append(
+        return (
             (
                 [type_adapter_name],
                 module_info,
