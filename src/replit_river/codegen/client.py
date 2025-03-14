@@ -7,7 +7,6 @@ from typing import (
     Any,
     Callable,
     Literal,
-    Optional,
     OrderedDict,
     Sequence,
     Set,
@@ -75,7 +74,6 @@ import datetime
 from typing import (
     Any,
     Literal,
-    Optional,
     Mapping,
     NotRequired,
     TypedDict,
@@ -93,11 +91,11 @@ import replit_river as river
 
 
 class RiverConcreteType(BaseModel):
-    type: Optional[str] = Field(default=None)
+    type: str | None = Field(default=None)
     properties: dict[str, "RiverType"] = Field(default_factory=lambda: dict())
     required: Set[str] = Field(default=set())
-    items: Optional["RiverType"] = Field(default=None)
-    const: Optional[str | int] = Field(default=None)
+    items: "RiverType | None" = Field(default=None)
+    const: str | int | None = Field(default=None)
     patternProperties: dict[str, "RiverType"] = Field(default_factory=lambda: dict())
 
 
@@ -119,14 +117,14 @@ RiverType = RiverConcreteType | RiverUnionType | RiverNotType | RiverIntersectio
 
 
 class RiverProcedure(BaseModel):
-    init: Optional[RiverType] = Field(default=None)
+    init: RiverType | None = Field(default=None)
     input: RiverType
     output: RiverType
-    errors: Optional[RiverType] = Field(default=None)
+    errors: RiverType | None = Field(default=None)
     type: (
         Literal["rpc"] | Literal["stream"] | Literal["subscription"] | Literal["upload"]
     )
-    description: Optional[str] = Field(default=None)
+    description: str | None = Field(default=None)
 
 
 class RiverService(BaseModel):
@@ -135,7 +133,7 @@ class RiverService(BaseModel):
 
 class RiverSchema(BaseModel):
     services: dict[str, RiverService]
-    handshakeSchema: Optional[RiverConcreteType] = Field(default=None)
+    handshakeSchema: RiverConcreteType | None = Field(default=None)
 
 
 RiverSchemaFile = RootModel[RiverSchema]
@@ -645,7 +643,7 @@ def encode_type(
                                 """
                             )
                         current_chunks.append(
-                            f"  kind: Optional[{render_type_expr(type_name)}]{value}"
+                            f"  kind: {render_type_expr(type_name)} | None{value}"
                         )
                     else:
                         value = ""
@@ -668,7 +666,7 @@ def encode_type(
                                 reindent(
                                     "  ",
                                     f"""\
-                        {name}: NotRequired[Optional[{render_type_expr(type_name)}]]
+                        {name}: NotRequired[{render_type_expr(type_name)}] | None
                                 """,
                                 )
                             )
@@ -677,7 +675,7 @@ def encode_type(
                                 reindent(
                                     "  ",
                                     f"""\
-                        {name}: Optional[{render_type_expr(type_name)}] = None
+                        {name}: {render_type_expr(type_name)} | None = None
                                 """,
                                 )
                             )
@@ -803,7 +801,7 @@ def generate_individual_service(
     ]
     for name, procedure in schema.procedures.items():
         module_names = [ModuleName(name)]
-        init_type: Optional[TypeExpression] = None
+        init_type: TypeExpression | None = None
         if procedure.init:
             init_type, module_info, init_chunks, encoder_names = encode_type(
                 procedure.init,
@@ -918,7 +916,7 @@ def generate_individual_service(
                             """
 
         # Init renderer
-        render_init_method: Optional[str] = None
+        render_init_method: str | None = None
         if init_type and procedure.init is not None:
             if input_base_class == "TypedDict":
                 if is_literal(procedure.init):
@@ -953,7 +951,7 @@ def generate_individual_service(
         )
 
         # Input renderer
-        render_input_method: Optional[str] = None
+        render_input_method: str | None = None
         if input_base_class == "TypedDict":
             if is_literal(procedure.input):
                 render_input_method = "lambda x: x"

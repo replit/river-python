@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable
 from datetime import timedelta
-from typing import Any, AsyncGenerator, Callable, Optional
+from typing import Any, AsyncGenerator, Callable
 
 import nanoid  # type: ignore
 from aiochannel import Channel
@@ -102,9 +102,9 @@ class ClientSession(Session):
         self,
         service_name: str,
         procedure_name: str,
-        init: Optional[InitType],
+        init: InitType | None,
         request: AsyncIterable[RequestType],
-        init_serializer: Optional[Callable[[InitType], Any]],
+        init_serializer: Callable[[InitType], Any] | None,
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
@@ -241,9 +241,9 @@ class ClientSession(Session):
         self,
         service_name: str,
         procedure_name: str,
-        init: Optional[InitType],
+        init: InitType | None,
         request: AsyncIterable[RequestType],
-        init_serializer: Optional[Callable[[InitType], Any]],
+        init_serializer: Callable[[InitType], Any] | None,
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],

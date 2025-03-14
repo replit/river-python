@@ -3,7 +3,7 @@ from collections.abc import AsyncIterable, Awaitable, Callable
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Any, AsyncGenerator, Generator, Generic, Literal, Optional
+from typing import Any, AsyncGenerator, Generator, Generic, Literal
 
 from opentelemetry import trace
 from opentelemetry.trace import Span, SpanKind, Status, StatusCode
@@ -100,9 +100,9 @@ class Client(Generic[HandshakeMetadataType]):
         self,
         service_name: str,
         procedure_name: str,
-        init: Optional[InitType],
+        init: InitType | None,
         request: AsyncIterable[RequestType],
-        init_serializer: Optional[Callable[[InitType], Any]],
+        init_serializer: Callable[[InitType], Any] | None,
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
@@ -151,9 +151,9 @@ class Client(Generic[HandshakeMetadataType]):
         self,
         service_name: str,
         procedure_name: str,
-        init: Optional[InitType],
+        init: InitType | None,
         request: AsyncIterable[RequestType],
-        init_serializer: Optional[Callable[[InitType], Any]],
+        init_serializer: Callable[[InitType], Any] | None,
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
@@ -186,7 +186,7 @@ class _SpanHandle:
     def set_status(
         self,
         status: Status | StatusCode,
-        description: Optional[str] = None,
+        description: str | None = None,
     ) -> None:
         if self.did_set_status:
             return
