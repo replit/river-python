@@ -36,9 +36,23 @@ NeedsenumOutput = Annotated[
 
 NeedsenumOutputTypeAdapter: TypeAdapter[NeedsenumOutput] = TypeAdapter(NeedsenumOutput)
 
+
+class NeedsenumErrorsOneOf_err_first(RiverError):
+    code: Literal["err_first"]
+    message: str
+
+
+class NeedsenumErrorsOneOf_err_second(RiverError):
+    code: Literal["err_second"]
+    message: str
+
+
 NeedsenumErrors = Annotated[
-    Literal["err_first"] | Literal["err_second"] | RiverUnknownError,
+    NeedsenumErrorsOneOf_err_first
+    | NeedsenumErrorsOneOf_err_second
+    | RiverUnknownError,
     WrapValidator(translate_unknown_error),
 ]
+
 
 NeedsenumErrorsTypeAdapter: TypeAdapter[NeedsenumErrors] = TypeAdapter(NeedsenumErrors)

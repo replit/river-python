@@ -40,12 +40,30 @@ test_unknown_enum_schema = """
           "errors": {
             "anyOf": [
               {
-                "type": "string",
-                "const": "err_first"
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "const": "err_first",
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": ["code", "message"]
               },
               {
-                "type": "string",
-                "const": "err_second"
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "const": "err_second",
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": ["code", "message"]
               }
             ]
           }
