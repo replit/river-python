@@ -13,7 +13,7 @@ from pydantic import (
 )
 
 from replit_river.client_transport import ClientTransport
-from replit_river.error_schema import RiverError, RiverException
+from replit_river.error_schema import ERROR_CODE_UNKNOWN, RiverError, RiverException
 from replit_river.transport_options import (
     HandshakeMetadataType,
     TransportOptions,
@@ -36,7 +36,6 @@ class RiverUnknownValue(BaseModel):
     value: Any
 
 
-@dataclass(frozen=True)
 class RiverUnknownError(RiverError):
     pass
 
@@ -56,7 +55,7 @@ def translate_unknown_error(
     try:
         return handler(value)
     except Exception:
-        return RiverUnknownError()
+        return RiverUnknownError(code=ERROR_CODE_UNKNOWN, message="Unknown error")
 
 
 class Client(Generic[HandshakeMetadataType]):
