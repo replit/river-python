@@ -770,14 +770,19 @@ def generate_individual_service(
         module_info: list[ModuleName],
     ) -> None:
         rendered_type_expr = render_type_expr(_type)
-        var_name = render_type_expr(type_adapter_name)
-        var_type = f"TypeAdapter[{rendered_type_expr}]"
-        var_value = f"TypeAdapter({rendered_type_expr})"
         serdes.append(
             (
                 [type_adapter_name],
                 module_info,
-                [FileContents(f"{var_name}: {var_type} = {var_value}")],
+                [
+                    FileContents(
+                        dedent(f"""
+                    {render_type_expr(type_adapter_name)}: TypeAdapter[Any] = (
+                        TypeAdapter({rendered_type_expr})
+                    )
+                """)
+                    )
+                ],
             )
         )
 
