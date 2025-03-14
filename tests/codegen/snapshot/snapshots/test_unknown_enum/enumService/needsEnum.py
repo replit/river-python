@@ -26,14 +26,19 @@ import replit_river as river
 
 NeedsenumInput = Literal["in_first"] | Literal["in_second"]
 encode_NeedsenumInput: Callable[["NeedsenumInput"], Any] = lambda x: x
-NeedsenumInputTypeAdapter: TypeAdapter[NeedsenumInput] = TypeAdapter(NeedsenumInput)
+
+NeedsenumInputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumInput)
+
 NeedsenumOutput = Annotated[
     Literal["out_first"] | Literal["out_second"] | RiverUnknownValue,
     WrapValidator(translate_unknown_value),
 ]
-NeedsenumOutputTypeAdapter: TypeAdapter[NeedsenumOutput] = TypeAdapter(NeedsenumOutput)
+
+NeedsenumOutputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumOutput)
+
 NeedsenumErrors = Annotated[
     Literal["err_first"] | Literal["err_second"] | RiverUnknownValue,
     WrapValidator(translate_unknown_value),
 ]
-NeedsenumErrorsTypeAdapter: TypeAdapter[NeedsenumErrors] = TypeAdapter(NeedsenumErrors)
+
+NeedsenumErrorsTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumErrors)
