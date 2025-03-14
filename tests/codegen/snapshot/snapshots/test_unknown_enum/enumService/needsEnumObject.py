@@ -6,7 +6,6 @@ from typing import (
     Any,
     Callable,
     Literal,
-    Optional,
     Mapping,
     NotRequired,
     TypedDict,
@@ -98,18 +97,18 @@ NeedsenumobjectOutputFoo = Annotated[
 
 
 class NeedsenumobjectOutput(BaseModel):
-    foo: Optional[NeedsenumobjectOutputFoo] = None
+    foo: NeedsenumobjectOutputFoo | None = None
 
 
 NeedsenumobjectOutputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumobjectOutput)
 
 
 class NeedsenumobjectErrorsFooAnyOf_0(RiverError):
-    beep: Optional[Literal["err_first"]] = None
+    beep: Literal["err_first"] | None = None
 
 
 class NeedsenumobjectErrorsFooAnyOf_1(RiverError):
-    borp: Optional[Literal["err_second"]] = None
+    borp: Literal["err_second"] | None = None
 
 
 NeedsenumobjectErrorsFoo = Annotated[
@@ -121,7 +120,7 @@ NeedsenumobjectErrorsFoo = Annotated[
 
 
 class NeedsenumobjectErrors(RiverError):
-    foo: Optional[NeedsenumobjectErrorsFoo] = None
+    foo: NeedsenumobjectErrorsFoo | None = None
 
 
 NeedsenumobjectErrorsTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumobjectErrors)

@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import Optional
 
 from replit_river.rpc import TransportMessage
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
@@ -41,7 +40,7 @@ class MessageBuffer:
                 raise MessageBufferClosedError("message buffer is closed")
             self.buffer.append(message)
 
-    async def peek(self) -> Optional[TransportMessage]:
+    async def peek(self) -> TransportMessage | None:
         """Peek the first message in the buffer, returns None if the buffer is empty."""
         async with self._lock:
             if len(self.buffer) == 0:

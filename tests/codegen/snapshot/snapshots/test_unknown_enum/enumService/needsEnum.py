@@ -6,7 +6,6 @@ from typing import (
     Any,
     Callable,
     Literal,
-    Optional,
     Mapping,
     NotRequired,
     TypedDict,
