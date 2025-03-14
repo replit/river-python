@@ -891,16 +891,16 @@ def generate_individual_service(
         #     the function strings in the branches below, otherwise `dedent`
         #     will pick our indentation level for normalization, which will
         #     break the "def" indentation presuppositions.
-        ottd_name = render_literal_type(output_type_type_adapter_name)
+        output_type_adapter = render_literal_type(output_type_type_adapter_name)
         parse_output_method = f"""\
-                            lambda x: {ottd_name}
+                            lambda x: {output_type_adapter}
                                 .validate_python(
                                     x # type: ignore[arg-type]
                                 )
                             """
-        ettd_name = render_literal_type(error_type_type_adapter_name)
+        error_type_adapter = render_literal_type(error_type_type_adapter_name)
         parse_error_method = f"""\
-                            lambda x: {ettd_name}
+                            lambda x: {error_type_adapter}
                                 .validate_python(
                                     x # type: ignore[arg-type]
                                 )
