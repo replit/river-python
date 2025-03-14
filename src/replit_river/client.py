@@ -35,6 +35,9 @@ class RiverUnknownValue(BaseModel):
     tag: Literal["RiverUnknownValue"]
     value: Any
 
+@dataclass(frozen=True)
+class RiverUnknownError(RiverError):
+    pass
 
 def translate_unknown_value(
     value: Any, handler: Callable[[Any], Any], info: ValidationInfo
@@ -44,6 +47,13 @@ def translate_unknown_value(
     except Exception:
         return RiverUnknownValue(tag="RiverUnknownValue", value=value)
 
+def translate_unknown_error(
+    value: Any, handler: Callable[[Any], Any], info: ValidationInfo
+) -> Any | RiverUnknownError:
+    try:
+        return handler(value)
+    except Exception:
+        return RiverUnknownError()
 
 class Client(Generic[HandshakeMetadataType]):
     def __init__(

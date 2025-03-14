@@ -19,7 +19,7 @@ from typing_extensions import Annotated
 
 from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
-from replit_river.client import RiverUnknownValue, translate_unknown_value
+from replit_river.client import RiverUnknownError, translate_unknown_error
 
 import replit_river as river
 
@@ -39,11 +39,13 @@ class Rpc_MethodInput(TypedDict):
     data: str
 
 
-Rpc_MethodInputTypeAdapter: TypeAdapter[Any] = TypeAdapter(Rpc_MethodInput)
+Rpc_MethodInputTypeAdapter: TypeAdapter[Rpc_MethodInput] = TypeAdapter(Rpc_MethodInput)
 
 
 class Rpc_MethodOutput(BaseModel):
     data: str
 
 
-Rpc_MethodOutputTypeAdapter: TypeAdapter[Any] = TypeAdapter(Rpc_MethodOutput)
+Rpc_MethodOutputTypeAdapter: TypeAdapter[Rpc_MethodOutput] = TypeAdapter(
+    Rpc_MethodOutput
+)

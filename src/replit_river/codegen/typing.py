@@ -87,8 +87,8 @@ def render_type_expr(value: TypeExpression) -> str:
         case OpenUnionTypeExpr(inner):
             return (
                 "Annotated["
-                f"{render_type_expr(inner)} | RiverUnknownValue,"
-                "WrapValidator(translate_unknown_value)"
+                f"{render_type_expr(inner)} | RiverUnknownError,"
+                "WrapValidator(translate_unknown_error)"
                 "]"
             )
         case TypeName(name):
