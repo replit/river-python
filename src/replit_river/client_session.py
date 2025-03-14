@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable
 from datetime import timedelta
-from typing import Any, AsyncGenerator, Callable, Optional, Union
+from typing import Any, AsyncGenerator, Callable
 
 import nanoid  # type: ignore
 from aiochannel import Channel
@@ -102,9 +102,9 @@ class ClientSession(Session):
         self,
         service_name: str,
         procedure_name: str,
-        init: Optional[InitType],
+        init: InitType | None,
         request: AsyncIterable[RequestType],
-        init_serializer: Optional[Callable[[InitType], Any]],
+        init_serializer: Callable[[InitType], Any] | None,
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
@@ -194,7 +194,7 @@ class ClientSession(Session):
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
         span: Span,
-    ) -> AsyncGenerator[Union[ResponseType, ErrorType], None]:
+    ) -> AsyncGenerator[ResponseType | ErrorType, None]:
         """Sends a subscription request to the server.
 
         Expects the input and output be messages that will be msgpacked.
@@ -241,14 +241,14 @@ class ClientSession(Session):
         self,
         service_name: str,
         procedure_name: str,
-        init: Optional[InitType],
+        init: InitType | None,
         request: AsyncIterable[RequestType],
-        init_serializer: Optional[Callable[[InitType], Any]],
+        init_serializer: Callable[[InitType], Any] | None,
         request_serializer: Callable[[RequestType], Any],
         response_deserializer: Callable[[Any], ResponseType],
         error_deserializer: Callable[[Any], ErrorType],
         span: Span,
-    ) -> AsyncGenerator[Union[ResponseType, ErrorType], None]:
+    ) -> AsyncGenerator[ResponseType | ErrorType, None]:
         """Sends a subscription request to the server.
 
         Expects the input and output be messages that will be msgpacked.

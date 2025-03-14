@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Mapping, Optional, Tuple
+from typing import Mapping
 
 import websockets
 from websockets.exceptions import ConnectionClosed
@@ -35,13 +35,13 @@ class Server(object):
 
     def add_rpc_handlers(
         self,
-        rpc_handlers: Mapping[Tuple[str, str], Tuple[str, GenericRpcHandler]],
+        rpc_handlers: Mapping[tuple[str, str], tuple[str, GenericRpcHandler]],
     ) -> None:
         self._transport._handlers.update(rpc_handlers)
 
     async def _handshake_to_get_session(
         self, websocket: WebSocketServerProtocol
-    ) -> Optional[Session]:
+    ) -> Session | None:
         """This is a wrapper to make sentry happy, sentry doesn't recognize the
         exception handling outside of a task or asyncio.wait_for. So we need to catch
         the errors specifically here.

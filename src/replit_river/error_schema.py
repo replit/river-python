@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, TypeAdapter
 
@@ -41,7 +41,7 @@ class RiverServiceException(RiverException):
     """Exception raised by river as a result of a fault in the service running river."""
 
     def __init__(
-        self, code: str, message: str, service: Optional[str], procedure: Optional[str]
+        self, code: str, message: str, service: str | None, procedure: str | None
     ) -> None:
         self.code = code
         self.message = message
@@ -94,8 +94,8 @@ def stringify_exception(e: BaseException, limit: int = 10) -> str:
     if e.__cause__ is None:
         # If there are no causes, just fall back to stringifying the exception.
         return str(e)
-    causes: List[str] = []
-    cause: Optional[BaseException] = e
+    causes: list[str] = []
+    cause: BaseException | None = e
     while cause and limit:
         causes.append(str(cause))
         cause = cause.__cause__

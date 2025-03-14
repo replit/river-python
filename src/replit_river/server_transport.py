@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Optional, Tuple
+from typing import Any
 
 import nanoid  # type: ignore  # type: ignore
 from pydantic import ValidationError
@@ -98,8 +98,8 @@ class ServerTransport(Transport):
         websocket: WebSocketCommonProtocol,
     ) -> Session:
         async with self._session_lock:
-            session_to_close: Optional[Session] = None
-            new_session: Optional[Session] = None
+            session_to_close: Session | None = None
+            new_session: Session | None = None
             if to_id not in self._sessions:
                 logger.info(
                     'Creating new session with "%s" using ws: %s', to_id, websocket.id
@@ -192,7 +192,7 @@ class ServerTransport(Transport):
 
     async def _establish_handshake(
         self, request_message: TransportMessage, websocket: WebSocketCommonProtocol
-    ) -> Tuple[
+    ) -> tuple[
         ControlMessageHandshakeRequest[Any],
         ControlMessageHandshakeResponse,
     ]:

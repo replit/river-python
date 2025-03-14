@@ -1,7 +1,7 @@
 import asyncio
 import enum
 import logging
-from typing import Any, Callable, Coroutine, Dict, Optional, Tuple
+from typing import Any, Callable, Coroutine
 
 import nanoid  # type: ignore
 import websockets
@@ -64,14 +64,15 @@ class Session(object):
         websocket: websockets.WebSocketCommonProtocol,
         transport_options: TransportOptions,
         is_server: bool,
-        handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]],
+        handlers: dict[tuple[str, str], tuple[str, GenericRpcHandler]],
         close_session_callback: Callable[["Session"], Coroutine[Any, Any, Any]],
-        retry_connection_callback: Optional[
+        retry_connection_callback: (
             Callable[
                 [],
                 Coroutine[Any, Any, Any],
             ]
-        ] = None,
+            | None
+        ) = None,
     ) -> None:
         self._transport_id = transport_id
         self._to_id = to_id
@@ -84,7 +85,7 @@ class Session(object):
         self._state = SessionState.ACTIVE
         self._state_lock = asyncio.Lock()
         self._close_session_callback = close_session_callback
-        self._close_session_after_time_secs: Optional[float] = None
+        self._close_session_after_time_secs: float | None = None
 
         # ws state
         self._ws_lock = asyncio.Lock()
@@ -94,7 +95,7 @@ class Session(object):
 
         # stream for tasks
         self._stream_lock = asyncio.Lock()
-        self._streams: Dict[str, Channel[Any]] = {}
+        self._streams: dict[str, Channel[Any]] = {}
 
         # book keeping
         self._seq_manager = SeqManager()
@@ -172,7 +173,7 @@ class Session(object):
         self._reset_session_close_countdown()
 
     async def _handle_messages_from_ws(
-        self, tg: Optional[asyncio.TaskGroup] = None
+        self, tg: asyncio.TaskGroup | None = None
     ) -> None:
         logger.debug(
             "%s start handling messages from ws %s",
@@ -370,7 +371,7 @@ class Session(object):
     async def send_message(
         self,
         stream_id: str,
-        payload: Dict | str,
+        payload: dict[Any, Any] | str,
         control_flags: int = 0,
         service_name: str | None = None,
         procedure_name: str | None = None,
@@ -462,7 +463,7 @@ class Session(object):
     async def _open_stream_and_call_handler(
         self,
         msg: TransportMessage,
-        tg: Optional[asyncio.TaskGroup],
+        tg: asyncio.TaskGroup | None,
     ) -> Channel:
         if not self._is_server:
             raise InvalidMessageException("Client should not receive stream open bit")
