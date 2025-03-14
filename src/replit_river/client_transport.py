@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Generic, Optional, Tuple
+from typing import Generic, Optional
 
 import websockets
 from pydantic import ValidationError
@@ -118,7 +118,7 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
     async def _establish_new_connection(
         self,
         old_session: Optional[ClientSession] = None,
-    ) -> Tuple[
+    ) -> tuple[
         WebSocketCommonProtocol,
         ControlMessageHandshakeRequest[HandshakeMetadataType],
         ControlMessageHandshakeResponse,
@@ -292,7 +292,7 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
         handshake_metadata: HandshakeMetadataType,
         websocket: WebSocketCommonProtocol,
         old_session: Optional[ClientSession],
-    ) -> Tuple[
+    ) -> tuple[
         ControlMessageHandshakeRequest[HandshakeMetadataType],
         ControlMessageHandshakeResponse,
     ]:

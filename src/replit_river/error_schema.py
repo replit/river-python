@@ -1,4 +1,4 @@
-from typing import Any, List, Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, TypeAdapter
 
@@ -94,7 +94,7 @@ def stringify_exception(e: BaseException, limit: int = 10) -> str:
     if e.__cause__ is None:
         # If there are no causes, just fall back to stringifying the exception.
         return str(e)
-    causes: List[str] = []
+    causes: list[str] = []
     cause: Optional[BaseException] = e
     while cause and limit:
         causes.append(str(cause))

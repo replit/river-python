@@ -6,15 +6,12 @@ from textwrap import dedent
 from typing import (
     Any,
     Callable,
-    Dict,
-    List,
     Literal,
     Optional,
     OrderedDict,
     Sequence,
     Set,
     TextIO,
-    Tuple,
     Union,
     cast,
 )
@@ -78,14 +75,11 @@ from collections.abc import AsyncIterable, AsyncIterator
 import datetime
 from typing import (
     Any,
-    Dict,
-    List,
     Literal,
     Optional,
     Mapping,
     NotRequired,
     Union,
-    Tuple,
     TypedDict,
 )
 from typing_extensions import Annotated
@@ -102,19 +96,19 @@ import replit_river as river
 
 class RiverConcreteType(BaseModel):
     type: Optional[str] = Field(default=None)
-    properties: Dict[str, "RiverType"] = Field(default_factory=lambda: dict())
+    properties: dict[str, "RiverType"] = Field(default_factory=lambda: dict())
     required: Set[str] = Field(default=set())
     items: Optional["RiverType"] = Field(default=None)
     const: Optional[Union[str, int]] = Field(default=None)
-    patternProperties: Dict[str, "RiverType"] = Field(default_factory=lambda: dict())
+    patternProperties: dict[str, "RiverType"] = Field(default_factory=lambda: dict())
 
 
 class RiverUnionType(BaseModel):
-    anyOf: List["RiverType"]
+    anyOf: list["RiverType"]
 
 
 class RiverIntersectionType(BaseModel):
-    allOf: List["RiverType"]
+    allOf: list["RiverType"]
 
 
 class RiverNotType(BaseModel):
@@ -140,11 +134,11 @@ class RiverProcedure(BaseModel):
 
 
 class RiverService(BaseModel):
-    procedures: Dict[str, RiverProcedure]
+    procedures: dict[str, RiverProcedure]
 
 
 class RiverSchema(BaseModel):
-    services: Dict[str, RiverService]
+    services: dict[str, RiverService]
     handshakeSchema: Optional[RiverConcreteType] = Field(default=None)
 
 
@@ -166,9 +160,9 @@ def encode_type(
     base_model: str,
     in_module: list[ModuleName],
     permit_unknown_members: bool,
-) -> Tuple[TypeExpression, list[ModuleName], list[FileContents], set[TypeName]]:
+) -> tuple[TypeExpression, list[ModuleName], list[FileContents], set[TypeName]]:
     encoder_name: TypeName | None = None  # defining this up here to placate mypy
-    chunks: List[FileContents] = []
+    chunks: list[FileContents] = []
     if isinstance(type, RiverNotType):
         return (NoneTypeExpr(), [], [], set())
     elif isinstance(type, RiverUnionType):
@@ -190,7 +184,7 @@ def encode_type(
 
         type = RiverUnionType(anyOf=flatten_union(type))
 
-        one_of_candidate_types: List[RiverConcreteType] = [
+        one_of_candidate_types: list[RiverConcreteType] = [
             t
             for _t in type.anyOf
             for t in (_t.anyOf if isinstance(_t, RiverUnionType) else [_t])
@@ -238,7 +232,7 @@ def encode_type(
                         (discriminator_value, []),
                     )[1].append(oneof_t)
 
-                one_of: List[TypeExpression] = []
+                one_of: list[TypeExpression] = []
                 if discriminator_name == "$kind":
                     discriminator_name = "kind"
                 for pfx, (discriminator_value, oneof_ts) in one_of_pending.items():
@@ -359,7 +353,7 @@ def encode_type(
             # End of stable union detection
         # Restore the non-flattened union type
         type = original_type
-        any_of: List[TypeExpression] = []
+        any_of: list[TypeExpression] = []
 
         typeddict_encoder = []
         for i, t in enumerate(type.anyOf):
@@ -531,7 +525,7 @@ def encode_type(
             return (DictTypeExpr(type_name), module_info, type_chunks, encoder_names)
         assert type.type == "object", type.type
 
-        current_chunks: List[str] = [
+        current_chunks: list[str] = [
             f"class {render_literal_type(prefix)}({base_model}):"
         ]
         # For the encoder path, do we need "x" to be bound?
@@ -746,7 +740,7 @@ def generate_common_client(
     client_name: str,
     handshake_type: HandshakeType,
     handshake_chunks: Sequence[str],
-    modules: list[Tuple[ModuleName, ClassName]],
+    modules: list[tuple[ModuleName, ClassName]],
 ) -> FileContents:
     chunks: list[str] = [ROOT_FILE_HEADER]
     chunks.extend(
@@ -778,8 +772,8 @@ def generate_individual_service(
     schema_name: str,
     schema: RiverService,
     input_base_class: Literal["TypedDict"] | Literal["BaseModel"],
-) -> Tuple[ModuleName, ClassName, dict[RenderedPath, FileContents]]:
-    serdes: list[Tuple[list[TypeName], list[ModuleName], list[FileContents]]] = []
+) -> tuple[ModuleName, ClassName, dict[RenderedPath, FileContents]]:
+    serdes: list[tuple[list[TypeName], list[ModuleName], list[FileContents]]] = []
 
     def _type_adapter_definition(
         type_adapter_name: TypeName,
@@ -802,7 +796,7 @@ def generate_individual_service(
         )
 
     class_name = ClassName(f"{schema_name.title()}Service")
-    current_chunks: List[str] = [
+    current_chunks: list[str] = [
         dedent(
             f"""\
               class {class_name}:
@@ -1216,7 +1210,7 @@ def generate_river_client_module(
     else:
         handshake_type = HandshakeType("Literal[None]")
 
-    modules: list[Tuple[ModuleName, ClassName]] = []
+    modules: list[tuple[ModuleName, ClassName]] = []
     input_base_class: Literal["TypedDict"] | Literal["BaseModel"] = (
         "TypedDict" if typed_dict_inputs else "BaseModel"
     )

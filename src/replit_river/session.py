@@ -1,7 +1,7 @@
 import asyncio
 import enum
 import logging
-from typing import Any, Callable, Coroutine, Dict, Optional, Tuple
+from typing import Any, Callable, Coroutine, Optional
 
 import nanoid  # type: ignore
 import websockets
@@ -64,7 +64,7 @@ class Session(object):
         websocket: websockets.WebSocketCommonProtocol,
         transport_options: TransportOptions,
         is_server: bool,
-        handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]],
+        handlers: dict[tuple[str, str], tuple[str, GenericRpcHandler]],
         close_session_callback: Callable[["Session"], Coroutine[Any, Any, Any]],
         retry_connection_callback: Optional[
             Callable[
@@ -94,7 +94,7 @@ class Session(object):
 
         # stream for tasks
         self._stream_lock = asyncio.Lock()
-        self._streams: Dict[str, Channel[Any]] = {}
+        self._streams: dict[str, Channel[Any]] = {}
 
         # book keeping
         self._seq_manager = SeqManager()
@@ -370,7 +370,7 @@ class Session(object):
     async def send_message(
         self,
         stream_id: str,
-        payload: Dict | str,
+        payload: dict[Any, Any] | str,
         control_flags: int = 0,
         service_name: str | None = None,
         procedure_name: str | None = None,

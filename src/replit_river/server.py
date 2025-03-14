@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Mapping, Optional, Tuple
+from typing import Mapping, Optional
 
 import websockets
 from websockets.exceptions import ConnectionClosed
@@ -35,7 +35,7 @@ class Server(object):
 
     def add_rpc_handlers(
         self,
-        rpc_handlers: Mapping[Tuple[str, str], Tuple[str, GenericRpcHandler]],
+        rpc_handlers: Mapping[tuple[str, str], tuple[str, GenericRpcHandler]],
     ) -> None:
         self._transport._handlers.update(rpc_handlers)
 
