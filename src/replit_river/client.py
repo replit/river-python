@@ -56,7 +56,13 @@ def translate_unknown_error(
     try:
         return handler(value)
     except Exception:
-        return RiverUnknownError(code=ERROR_CODE_UNKNOWN, message="Unknown error")
+        if isinstance(value, dict) and "code" in value and "message" in value:
+            return RiverUnknownError(
+                code=value["code"],
+                message=value["message"],
+            )
+        else:
+            return RiverUnknownError(code=ERROR_CODE_UNKNOWN, message="Unknown error")
 
 
 class Client(Generic[HandshakeMetadataType]):
