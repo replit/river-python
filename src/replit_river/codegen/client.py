@@ -93,7 +93,7 @@ from typing_extensions import Annotated
 
 from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
-from replit_river.client import RiverUnknownValue, translate_unknown_value
+from replit_river.client import RiverUnknownError, translate_unknown_error
 
 import replit_river as river
 
@@ -769,6 +769,7 @@ def generate_individual_service(
         _type: TypeExpression,
         module_info: list[ModuleName],
     ) -> tuple[list[TypeName], list[ModuleName], list[FileContents]]:
+        varname = render_type_expr(type_adapter_name)
         rendered_type_expr = render_type_expr(_type)
         return (
             [type_adapter_name],
@@ -776,10 +777,10 @@ def generate_individual_service(
             [
                 FileContents(
                     dedent(f"""
-                    {render_type_expr(type_adapter_name)}: TypeAdapter[Any] = (
-                        TypeAdapter({rendered_type_expr})
-                    )
-                """)
+                {varname}: TypeAdapter[{rendered_type_expr}] = (
+                    TypeAdapter({rendered_type_expr})
+                )
+            """)
                 )
             ],
         )

@@ -19,7 +19,7 @@ from typing_extensions import Annotated
 
 from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
-from replit_river.client import RiverUnknownValue, translate_unknown_value
+from replit_river.client import RiverUnknownError, translate_unknown_error
 
 import replit_river as river
 
@@ -72,7 +72,9 @@ encode_NeedsenumobjectInput: Callable[["NeedsenumobjectInput"], Any] = (
     else encode_NeedsenumobjectInputOneOf_in_second(x)
 )
 
-NeedsenumobjectInputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumobjectInput)
+NeedsenumobjectInputTypeAdapter: TypeAdapter[NeedsenumobjectInput] = TypeAdapter(
+    NeedsenumobjectInput
+)
 
 
 class NeedsenumobjectOutputFooOneOf_out_first(BaseModel):
@@ -96,8 +98,8 @@ class NeedsenumobjectOutputFooOneOf_out_second(BaseModel):
 NeedsenumobjectOutputFoo = Annotated[
     NeedsenumobjectOutputFooOneOf_out_first
     | NeedsenumobjectOutputFooOneOf_out_second
-    | RiverUnknownValue,
-    WrapValidator(translate_unknown_value),
+    | RiverUnknownError,
+    WrapValidator(translate_unknown_error),
 ]
 
 
@@ -105,7 +107,9 @@ class NeedsenumobjectOutput(BaseModel):
     foo: Optional[NeedsenumobjectOutputFoo] = None
 
 
-NeedsenumobjectOutputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumobjectOutput)
+NeedsenumobjectOutputTypeAdapter: TypeAdapter[NeedsenumobjectOutput] = TypeAdapter(
+    NeedsenumobjectOutput
+)
 
 
 class NeedsenumobjectErrorsFooAnyOf_0(RiverError):
@@ -119,8 +123,8 @@ class NeedsenumobjectErrorsFooAnyOf_1(RiverError):
 NeedsenumobjectErrorsFoo = Annotated[
     NeedsenumobjectErrorsFooAnyOf_0
     | NeedsenumobjectErrorsFooAnyOf_1
-    | RiverUnknownValue,
-    WrapValidator(translate_unknown_value),
+    | RiverUnknownError,
+    WrapValidator(translate_unknown_error),
 ]
 
 
@@ -128,4 +132,6 @@ class NeedsenumobjectErrors(RiverError):
     foo: Optional[NeedsenumobjectErrorsFoo] = None
 
 
-NeedsenumobjectErrorsTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumobjectErrors)
+NeedsenumobjectErrorsTypeAdapter: TypeAdapter[NeedsenumobjectErrors] = TypeAdapter(
+    NeedsenumobjectErrors
+)

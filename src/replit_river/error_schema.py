@@ -17,6 +17,9 @@ ERROR_CODE_INVALID_REQUEST = "INVALID_REQUEST"
 # ERROR_CODE_CANCEL is the code used when either server or client cancels the stream.
 ERROR_CODE_CANCEL = "CANCEL"
 
+# ERROR_CODE_UNKNOWN is the code for the RiverUnknownError
+ERROR_CODE_UNKNOWN = "UNKNOWN"
+
 
 class RiverError(BaseModel):
     """Error message from the server."""
