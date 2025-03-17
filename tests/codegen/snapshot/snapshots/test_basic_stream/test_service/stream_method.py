@@ -4,15 +4,9 @@ from collections.abc import AsyncIterable, AsyncIterator
 import datetime
 from typing import (
     Any,
-    Callable,
-    Dict,
-    List,
     Literal,
-    Optional,
     Mapping,
     NotRequired,
-    Union,
-    Tuple,
     TypedDict,
 )
 from typing_extensions import Annotated
@@ -24,15 +18,18 @@ from replit_river.client import RiverUnknownValue, translate_unknown_value
 import replit_river as river
 
 
-encode_Stream_MethodInput: Callable[["Stream_MethodInput"], Any] = lambda x: {
-    k: v
-    for (k, v) in (
-        {
-            "data": x.get("data"),
-        }
-    ).items()
-    if v is not None
-}
+def encode_Stream_MethodInput(
+    x: "Stream_MethodInput",
+) -> Any:
+    return {
+        k: v
+        for (k, v) in (
+            {
+                "data": x.get("data"),
+            }
+        ).items()
+        if v is not None
+    }
 
 
 class Stream_MethodInput(TypedDict):

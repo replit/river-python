@@ -4,15 +4,9 @@ from collections.abc import AsyncIterable, AsyncIterator
 import datetime
 from typing import (
     Any,
-    Callable,
-    Dict,
-    List,
     Literal,
-    Optional,
     Mapping,
     NotRequired,
-    Union,
-    Tuple,
     TypedDict,
 )
 from typing_extensions import Annotated
@@ -24,20 +18,24 @@ from replit_river.client import RiverUnknownValue, translate_unknown_value
 import replit_river as river
 
 
-NeedsenumInput = Literal["in_first"] | Literal["in_second"]
-encode_NeedsenumInput: Callable[["NeedsenumInput"], Any] = lambda x: x
+NeedsenumInput = Literal["in_first", "in_second"]
+
+
+def encode_NeedsenumInput(x: "NeedsenumInput") -> Any:
+    return x
+
 
 NeedsenumInputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumInput)
 
 NeedsenumOutput = Annotated[
-    Literal["out_first"] | Literal["out_second"] | RiverUnknownValue,
+    Literal["out_first", "out_second"] | RiverUnknownValue,
     WrapValidator(translate_unknown_value),
 ]
 
 NeedsenumOutputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumOutput)
 
 NeedsenumErrors = Annotated[
-    Literal["err_first"] | Literal["err_second"] | RiverUnknownValue,
+    Literal["err_first", "err_second"] | RiverUnknownValue,
     WrapValidator(translate_unknown_value),
 ]
 
