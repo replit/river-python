@@ -1013,6 +1013,12 @@ def generate_individual_service(
                 ]
             )
         elif procedure.type == "subscription":
+            output_or_error_type = UnionTypeExpr(
+                [
+                    output_or_error_type,
+                    TypeName("RiverError"),
+                ]
+            )
             current_chunks.extend(
                 [
                     reindent(
@@ -1086,6 +1092,12 @@ def generate_individual_service(
                     ]
                 )
         elif procedure.type == "stream":
+            output_or_error_type = UnionTypeExpr(
+                [
+                    output_or_error_type,
+                    TypeName("RiverError"),
+                ]
+            )
             if init_type:
                 assert render_init_method, "Expected an init renderer!"
                 current_chunks.extend(
