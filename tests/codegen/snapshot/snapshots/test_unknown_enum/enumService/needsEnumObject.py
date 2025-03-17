@@ -4,15 +4,9 @@ from collections.abc import AsyncIterable, AsyncIterator
 import datetime
 from typing import (
     Any,
-    Callable,
-    Dict,
-    List,
     Literal,
-    Optional,
     Mapping,
     NotRequired,
-    Union,
-    Tuple,
     TypedDict,
 )
 from typing_extensions import Annotated
@@ -24,18 +18,19 @@ from replit_river.client import RiverUnknownValue, translate_unknown_value
 import replit_river as river
 
 
-encode_NeedsenumobjectInputOneOf_in_first: Callable[
-    ["NeedsenumobjectInputOneOf_in_first"], Any
-] = lambda x: {
-    k: v
-    for (k, v) in (
-        {
-            "$kind": x.get("kind"),
-            "value": x.get("value"),
-        }
-    ).items()
-    if v is not None
-}
+def encode_NeedsenumobjectInputOneOf_in_first(
+    x: "NeedsenumobjectInputOneOf_in_first",
+) -> Any:
+    return {
+        k: v
+        for (k, v) in (
+            {
+                "$kind": x.get("kind"),
+                "value": x.get("value"),
+            }
+        ).items()
+        if v is not None
+    }
 
 
 class NeedsenumobjectInputOneOf_in_first(TypedDict):
@@ -43,18 +38,19 @@ class NeedsenumobjectInputOneOf_in_first(TypedDict):
     value: str
 
 
-encode_NeedsenumobjectInputOneOf_in_second: Callable[
-    ["NeedsenumobjectInputOneOf_in_second"], Any
-] = lambda x: {
-    k: v
-    for (k, v) in (
-        {
-            "$kind": x.get("kind"),
-            "bleep": x.get("bleep"),
-        }
-    ).items()
-    if v is not None
-}
+def encode_NeedsenumobjectInputOneOf_in_second(
+    x: "NeedsenumobjectInputOneOf_in_second",
+) -> Any:
+    return {
+        k: v
+        for (k, v) in (
+            {
+                "$kind": x.get("kind"),
+                "bleep": x.get("bleep"),
+            }
+        ).items()
+        if v is not None
+    }
 
 
 class NeedsenumobjectInputOneOf_in_second(TypedDict):
@@ -66,11 +62,16 @@ NeedsenumobjectInput = (
     NeedsenumobjectInputOneOf_in_first | NeedsenumobjectInputOneOf_in_second
 )
 
-encode_NeedsenumobjectInput: Callable[["NeedsenumobjectInput"], Any] = (
-    lambda x: encode_NeedsenumobjectInputOneOf_in_first(x)
-    if x["kind"] == "in_first"
-    else encode_NeedsenumobjectInputOneOf_in_second(x)
-)
+
+def encode_NeedsenumobjectInput(
+    x: "NeedsenumobjectInput",
+) -> Any:
+    return (
+        encode_NeedsenumobjectInputOneOf_in_first(x)
+        if x["kind"] == "in_first"
+        else encode_NeedsenumobjectInputOneOf_in_second(x)
+    )
+
 
 NeedsenumobjectInputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumobjectInput)
 
@@ -102,18 +103,18 @@ NeedsenumobjectOutputFoo = Annotated[
 
 
 class NeedsenumobjectOutput(BaseModel):
-    foo: Optional[NeedsenumobjectOutputFoo] = None
+    foo: NeedsenumobjectOutputFoo | None = None
 
 
 NeedsenumobjectOutputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumobjectOutput)
 
 
 class NeedsenumobjectErrorsFooAnyOf_0(RiverError):
-    beep: Optional[Literal["err_first"]] = None
+    beep: Literal["err_first"] | None = None
 
 
 class NeedsenumobjectErrorsFooAnyOf_1(RiverError):
-    borp: Optional[Literal["err_second"]] = None
+    borp: Literal["err_second"] | None = None
 
 
 NeedsenumobjectErrorsFoo = Annotated[
@@ -125,7 +126,7 @@ NeedsenumobjectErrorsFoo = Annotated[
 
 
 class NeedsenumobjectErrors(RiverError):
-    foo: Optional[NeedsenumobjectErrorsFoo] = None
+    foo: NeedsenumobjectErrorsFoo | None = None
 
 
 NeedsenumobjectErrorsTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumobjectErrors)

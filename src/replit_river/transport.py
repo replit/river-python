@@ -1,6 +1,5 @@
 import asyncio
 import logging
-from typing import Dict, Tuple
 
 import nanoid  # type: ignore
 
@@ -23,8 +22,8 @@ class Transport:
         self._transport_id = transport_id
         self._transport_options = transport_options
         self._is_server = is_server
-        self._sessions: Dict[str, Session] = {}
-        self._handlers: Dict[Tuple[str, str], Tuple[str, GenericRpcHandler]] = {}
+        self._sessions: dict[str, Session] = {}
+        self._handlers: dict[tuple[str, str], tuple[str, GenericRpcHandler]] = {}
         self._session_lock = asyncio.Lock()
 
     async def _close_all_sessions(self) -> None:

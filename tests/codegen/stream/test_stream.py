@@ -1,42 +1,49 @@
 import importlib
-import shutil
 from pathlib import Path
 from typing import AsyncIterable, TextIO
 
 import pytest
+from pytest_snapshot.plugin import Snapshot
 
 from replit_river.client import Client
 from replit_river.codegen.client import schema_to_river_client_codegen
-from tests.codegen.stream.generated.test_service.stream_method import (
-    Stream_MethodInput,
-    Stream_MethodOutput,
-)
+from tests.codegen.snapshot.test_enum import UnclosableStringIO
 from tests.common_handlers import basic_stream
 
 
-@pytest.fixture(scope="session", autouse=True)
-def generate_stream_client() -> None:
-    import tests.codegen.stream.generated
-
-    shutil.rmtree("tests/codegen/stream/generated")
+@pytest.mark.parametrize("handlers", [{**basic_stream}])
+async def test_basic_stream(snapshot: Snapshot, client: Client) -> None:
+    snapshot.snapshot_dir = "tests/codegen/snapshot/snapshots"
+    files: dict[Path, UnclosableStringIO] = {}
 
     def file_opener(path: Path) -> TextIO:
-        return open(path, "w")
+        buffer = UnclosableStringIO()
+        assert path not in files, "Codegen attempted to write to the same file twice!"
+        files[path] = buffer
+        return buffer
 
     schema_to_river_client_codegen(
-        lambda: open("tests/codegen/stream/schema.json"),
-        "tests/codegen/stream/generated",
-        "StreamClient",
-        True,
-        file_opener,
+        read_schema=lambda: open("tests/codegen/stream/schema.json"),
+        target_path="test_basic_stream",
+        client_name="StreamClient",
+        file_opener=file_opener,
+        typed_dict_inputs=True,
     )
-    importlib.reload(tests.codegen.stream.generated)
 
+    for path, file in files.items():
+        file.seek(0)
+        snapshot.assert_match(file.read(), Path(snapshot.snapshot_dir, path))
 
-@pytest.mark.asyncio
-@pytest.mark.parametrize("handlers", [{**basic_stream}])
-async def test_basic_stream(client: Client) -> None:
-    from tests.codegen.stream.generated import StreamClient
+    import tests.codegen.snapshot.snapshots.test_basic_stream
+
+    importlib.reload(tests.codegen.snapshot.snapshots.test_basic_stream)
+    from tests.codegen.snapshot.snapshots.test_basic_stream import (
+        StreamClient,  # noqa: E501
+    )
+    from tests.codegen.snapshot.snapshots.test_basic_stream.test_service.stream_method import (  # noqa: E501
+        Stream_MethodInput,
+        Stream_MethodOutput,
+    )
 
     async def emit() -> AsyncIterable[Stream_MethodInput]:
         for i in range(5):

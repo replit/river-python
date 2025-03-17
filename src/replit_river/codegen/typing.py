@@ -74,8 +74,33 @@ TypeExpression = (
 )
 
 
+def _flatten_nested_unions(value: TypeExpression) -> TypeExpression:
+    def work(
+        value: TypeExpression,
+    ) -> tuple[list[TypeExpression], TypeExpression | None]:
+        match value:
+            case UnionTypeExpr(inner):
+                flattened: list[TypeExpression] = []
+                for tpe in inner:
+                    _union, _nonunion = work(tpe)
+                    flattened.extend(_union)
+                    if _nonunion is not None:
+                        flattened.append(_nonunion)
+                return (flattened, None)
+            case other:
+                return ([], other)
+
+    _inner, nonunion = work(value)
+    if nonunion and not _inner:
+        return nonunion
+    elif _inner and nonunion is None:
+        return UnionTypeExpr(_inner)
+    else:
+        raise ValueError("Incoherent state when trying to flatten unions")
+
+
 def render_type_expr(value: TypeExpression) -> str:
-    match value:
+    match _flatten_nested_unions(value):
         case DictTypeExpr(nested):
             return f"dict[str, {render_type_expr(nested)}]"
         case ListTypeExpr(nested):
@@ -83,7 +108,23 @@ def render_type_expr(value: TypeExpression) -> str:
         case LiteralTypeExpr(inner):
             return f"Literal[{repr(inner)}]"
         case UnionTypeExpr(inner):
-            return " | ".join(render_type_expr(x) for x in inner)
+            literals: list[LiteralTypeExpr] = []
+            _other: list[TypeExpression] = []
+            for tpe in inner:
+                if isinstance(tpe, UnionTypeExpr):
+                    raise ValueError("These should have been flattened")
+                elif isinstance(tpe, LiteralTypeExpr):
+                    literals.append(tpe)
+                else:
+                    _other.append(tpe)
+            retval: str = " | ".join(render_type_expr(x) for x in _other)
+            if literals:
+                _rendered: str = ", ".join(repr(x.nested) for x in literals)
+                if retval:
+                    retval = f"Literal[{_rendered}] | {retval}"
+                else:
+                    retval = f"Literal[{_rendered}]"
+            return retval
         case OpenUnionTypeExpr(inner):
             return (
                 "Annotated["

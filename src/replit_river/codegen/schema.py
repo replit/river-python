@@ -4,7 +4,7 @@ import collections
 import json
 import os.path
 import tempfile
-from typing import Any, DefaultDict, Dict, List
+from typing import Any, DefaultDict
 
 import grpc_tools  # type: ignore
 from google.protobuf import descriptor_pb2
@@ -29,15 +29,15 @@ def message_type(
     module_name: str,
     m: descriptor_pb2.DescriptorProto,
     sender: bool,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Generates the type of a protobuf message into Typebox descriptions."""
-    type: Dict[str, Any] = {
+    type: dict[str, Any] = {
         "type": "object",
         "properties": {},
         "required": [],
     }
     # Non-oneof fields.
-    oneofs: DefaultDict[int, List[descriptor_pb2.FieldDescriptorProto]] = (
+    oneofs: DefaultDict[int, list[descriptor_pb2.FieldDescriptorProto]] = (
         collections.defaultdict(list)
     )
     for field in m.field:
@@ -63,11 +63,11 @@ def message_type(
 def generate_river_schema(
     module_name: str,
     fds: descriptor_pb2.FileDescriptorSet,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Generates the JSON schema of a River module."""
-    service_schemas: List[Dict[str, Any]] = []
+    service_schemas: list[dict[str, Any]] = []
 
-    message_types: Dict[str, descriptor_pb2.DescriptorProto] = {}
+    message_types: dict[str, descriptor_pb2.DescriptorProto] = {}
 
     for pd in fds.file:
         for message in pd.message_type:
@@ -80,7 +80,7 @@ def generate_river_schema(
 
         # Generate the service stubs.
         for service in pd.service:
-            service_schema: Dict[str, Any] = {
+            service_schema: dict[str, Any] = {
                 "name": "".join([service.name[0].lower(), service.name[1:]]),
                 "state": {},
                 "procedures": {},

@@ -1,6 +1,6 @@
 import random
 import string
-from typing import Callable, Optional, TypeVar
+from typing import Callable, TypeVar
 
 A = TypeVar("A")
 
@@ -37,7 +37,7 @@ def gen_choice(choices: list[A]) -> Callable[[], A]:
     return lambda: random.choice(choices)
 
 
-def gen_opt(gen_x: Callable[[], A]) -> Callable[[], Optional[A]]:
+def gen_opt(gen_x: Callable[[], A]) -> Callable[[], A | None]:
     return lambda: gen_x() if gen_bool() else None
 
 
