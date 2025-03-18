@@ -97,9 +97,9 @@ class ServerTransport(Transport):
         session_id: str,
         websocket: WebSocketCommonProtocol,
     ) -> Session:
+        session_to_close: Optional[Session] = None
+        new_session: Optional[Session] = None
         async with self._session_lock:
-            session_to_close: Optional[Session] = None
-            new_session: Optional[Session] = None
             if to_id not in self._sessions:
                 logger.info(
                     'Creating new session with "%s" using ws: %s', to_id, websocket.id
@@ -149,10 +149,12 @@ class ServerTransport(Transport):
                     except FailedSendingMessageException as e:
                         raise e
 
-            if session_to_close:
-                logger.info("Closing stale session %s", session_to_close.session_id)
-                await session_to_close.close()
             self._set_session(new_session)
+
+        if session_to_close:
+            logger.info("Closing stale session %s", session_to_close.session_id)
+            await session_to_close.close()
+
         return new_session
 
     async def _send_handshake_response(
