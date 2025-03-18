@@ -3,6 +3,7 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Generic, Mapping
 
+import nanoid
 import websockets
 from pydantic import ValidationError
 from websockets import (
@@ -37,7 +38,6 @@ from replit_river.seq_manager import (
     InvalidMessageException,
 )
 from replit_river.session import Session
-from replit_river.transport import Transport
 from replit_river.transport_options import (
     HandshakeMetadataType,
     TransportOptions,
@@ -47,7 +47,7 @@ from replit_river.transport_options import (
 logger = logging.getLogger(__name__)
 
 
-class ClientTransport(Transport, Generic[HandshakeMetadataType]):
+class ClientTransport(Generic[HandshakeMetadataType]):
     _sessions: dict[str, ClientSession]
 
     def __init__(
@@ -57,12 +57,11 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
         server_id: str,
         transport_options: TransportOptions,
     ):
-        super().__init__(
-            transport_id=client_id,
-            transport_options=transport_options,
-            is_server=False,
-        )
         self._sessions = {}
+        self._transport_id = client_id
+        self._transport_options = transport_options
+        self._session_lock = asyncio.Lock()
+
         self._uri_and_metadata_factory = uri_and_metadata_factory
         self._client_id = client_id
         self._server_id = server_id
@@ -71,6 +70,27 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
         )
         # We want to make sure there's only one session creation at a time
         self._create_session_lock = asyncio.Lock()
+
+    async def _close_all_sessions(
+        self,
+        get_all_sessions: Callable[[], Mapping[str, Session]],
+    ) -> None:
+        sessions = get_all_sessions().values()
+        logger.info(
+            f"start closing sessions {self._transport_id}, number sessions : "
+            f"{len(sessions)}"
+        )
+        sessions_to_close = list(sessions)
+
+        # closing sessions requires access to the session lock, so we need to close
+        # them one by one to be safe
+        for session in sessions_to_close:
+            await session.close()
+
+        logger.info(f"Transport closed {self._transport_id}")
+
+    def generate_nanoid(self) -> str:
+        return str(nanoid.generate())
 
     async def close(self) -> None:
         self._rate_limiter.close()
