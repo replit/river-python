@@ -236,9 +236,7 @@ class ServerTransport(Transport):
         client_next_expected_seq = (
             handshake_request.expectedSessionState.nextExpectedSeq
         )
-        client_next_sent_seq = (
-            handshake_request.expectedSessionState.nextSentSeq or 0
-        )
+        client_next_sent_seq = handshake_request.expectedSessionState.nextSentSeq or 0
         if old_session and old_session.session_id == handshake_request.sessionId:
             # check invariants
             # ordering must be correct
@@ -274,7 +272,6 @@ class ServerTransport(Transport):
             # just delete the old session
             await old_session.close()
             old_session = None
-
 
         if not old_session and (
             client_next_sent_seq > 0 or client_next_expected_seq > 0
