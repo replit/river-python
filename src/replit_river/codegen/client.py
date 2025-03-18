@@ -1268,6 +1268,8 @@ def schema_to_river_client_codegen(
                     stdout=subprocess.PIPE,
                 )
                 stdout, _ = popen.communicate(contents.encode())
+                if popen.returncode != 0:
+                    f.write(contents)
                 f.write(stdout.decode("utf-8"))
             except:
                 f.write(contents)
