@@ -643,7 +643,16 @@ def encode_type(
                                 """
                             )
                         current_chunks.append(
-                            f"  kind: {render_type_expr(type_name)} | None{value}"
+                            f"  kind: {
+                                render_type_expr(
+                                    UnionTypeExpr(
+                                        [
+                                            type_name,
+                                            NoneTypeExpr(),
+                                        ]
+                                    )
+                                )
+                            }{value}"
                         )
                     else:
                         value = ""
@@ -666,7 +675,11 @@ def encode_type(
                                 reindent(
                                     "  ",
                                     f"""\
-                        {name}: NotRequired[{render_type_expr(type_name)}] | None
+                        {name}: NotRequired[{
+                                        render_type_expr(
+                                            UnionTypeExpr([type_name, NoneTypeExpr()])
+                                        )
+                                    }]
                                 """,
                                 )
                             )
@@ -675,7 +688,16 @@ def encode_type(
                                 reindent(
                                     "  ",
                                     f"""\
-                        {name}: {render_type_expr(type_name)} | None = None
+                        {name}: {
+                                        render_type_expr(
+                                            UnionTypeExpr(
+                                                [
+                                                    type_name,
+                                                    NoneTypeExpr(),
+                                                ]
+                                            )
+                                        )
+                                    } = None
                                 """,
                                 )
                             )
