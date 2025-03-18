@@ -8,3 +8,6 @@ lint:
 format:
 	uv run ruff format src tests
 	uv run ruff check src tests --fix
+
+test:
+	uv run pytest tests
