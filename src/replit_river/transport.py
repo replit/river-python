@@ -1,5 +1,6 @@
 import asyncio
 import logging
+from typing import Callable, Mapping
 
 import nanoid  # type: ignore
 
@@ -22,12 +23,14 @@ class Transport:
         self._transport_id = transport_id
         self._transport_options = transport_options
         self._is_server = is_server
-        self._sessions: dict[str, Session] = {}
         self._handlers: dict[tuple[str, str], tuple[str, GenericRpcHandler]] = {}
         self._session_lock = asyncio.Lock()
 
-    async def _close_all_sessions(self) -> None:
-        sessions = self._sessions.values()
+    async def _close_all_sessions(
+        self,
+        get_all_sessions: Callable[[], Mapping[str, Session]],
+    ) -> None:
+        sessions = get_all_sessions().values()
         logger.info(
             f"start closing sessions {self._transport_id}, number sessions : "
             f"{len(sessions)}"
@@ -40,14 +43,6 @@ class Transport:
             await session.close()
 
         logger.info(f"Transport closed {self._transport_id}")
-
-    async def _delete_session(self, session: Session) -> None:
-        async with self._session_lock:
-            if session._to_id in self._sessions:
-                del self._sessions[session._to_id]
-
-    def _set_session(self, session: Session) -> None:
-        self._sessions[session._to_id] = session
 
     def generate_nanoid(self) -> str:
         return str(nanoid.generate())

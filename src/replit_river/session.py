@@ -43,7 +43,7 @@ trace_setter = TransportMessageTracingSetter()
 
 
 class Session:
-    """A transport object that handles the websocket connection with a client."""
+    """Common functionality shared between client_session and server_session"""
 
     def __init__(
         self,
@@ -253,9 +253,6 @@ class Session:
                 await old_wrapper.close()
             self._ws_wrapper = WebsocketWrapper(new_ws)
         await self._send_buffered_messages(new_ws)
-        # Server will call serve itself.
-        if not self._is_server:
-            await self.start_serve_responses()
 
     async def _get_current_time(self) -> float:
         return asyncio.get_event_loop().time()
