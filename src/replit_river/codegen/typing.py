@@ -16,11 +16,23 @@ class TypeName:
     def __str__(self) -> str:
         raise Exception("Complex type must be put through render_type_expr!")
 
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, TypeName) and other.value == self.value
+
+    def __lt__(self, other: object) -> bool:
+        return hash(self) < hash(other)
+
 
 @dataclass(frozen=True)
 class NoneTypeExpr:
     def __str__(self) -> str:
         raise Exception("Complex type must be put through render_type_expr!")
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, NoneTypeExpr)
+
+    def __lt__(self, other: object) -> bool:
+        return hash(self) < hash(other)
 
 
 @dataclass(frozen=True)
@@ -30,6 +42,12 @@ class DictTypeExpr:
     def __str__(self) -> str:
         raise Exception("Complex type must be put through render_type_expr!")
 
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, DictTypeExpr) and other.nested == self.nested
+
+    def __lt__(self, other: object) -> bool:
+        return hash(self) < hash(other)
+
 
 @dataclass(frozen=True)
 class ListTypeExpr:
@@ -37,6 +55,12 @@ class ListTypeExpr:
 
     def __str__(self) -> str:
         raise Exception("Complex type must be put through render_type_expr!")
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, ListTypeExpr) and other.nested == self.nested
+
+    def __lt__(self, other: object) -> bool:
+        return hash(self) < hash(other)
 
 
 @dataclass(frozen=True)
@@ -46,6 +70,12 @@ class LiteralTypeExpr:
     def __str__(self) -> str:
         raise Exception("Complex type must be put through render_type_expr!")
 
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, LiteralTypeExpr) and other.nested == self.nested
+
+    def __lt__(self, other: object) -> bool:
+        return hash(self) < hash(other)
+
 
 @dataclass(frozen=True)
 class UnionTypeExpr:
@@ -54,6 +84,14 @@ class UnionTypeExpr:
     def __str__(self) -> str:
         raise Exception("Complex type must be put through render_type_expr!")
 
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, UnionTypeExpr) and set(other.nested) == set(
+            self.nested
+        )
+
+    def __lt__(self, other: object) -> bool:
+        return hash(self) < hash(other)
+
 
 @dataclass(frozen=True)
 class OpenUnionTypeExpr:
@@ -61,6 +99,12 @@ class OpenUnionTypeExpr:
 
     def __str__(self) -> str:
         raise Exception("Complex type must be put through render_type_expr!")
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, OpenUnionTypeExpr) and other.union == self.union
+
+    def __lt__(self, other: object) -> bool:
+        return hash(self) < hash(other)
 
 
 TypeExpression = (
@@ -117,6 +161,13 @@ def render_type_expr(value: TypeExpression) -> str:
                     literals.append(tpe)
                 else:
                     _other.append(tpe)
+
+            without_none: list[TypeExpression] = [
+                x for x in _other if not isinstance(x, NoneTypeExpr)
+            ]
+            has_none = len(_other) > len(without_none)
+            _other = without_none
+
             retval: str = " | ".join(render_type_expr(x) for x in _other)
             if literals:
                 _rendered: str = ", ".join(repr(x.nested) for x in literals)
@@ -124,6 +175,11 @@ def render_type_expr(value: TypeExpression) -> str:
                     retval = f"Literal[{_rendered}] | {retval}"
                 else:
                     retval = f"Literal[{_rendered}]"
+            if has_none:
+                if retval:
+                    retval = f"{retval} | None"
+                else:
+                    retval = "None"
             return retval
         case OpenUnionTypeExpr(inner):
             return (
