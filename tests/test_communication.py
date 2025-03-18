@@ -269,6 +269,7 @@ async def test_ignore_flood_subscription(client: Client) -> None:
     )
     assert response == "Hello, Alice!"
 
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("handlers", [{**basic_rpc_method}])
 async def test_rpc_method_reconnect(client: Client) -> None:
