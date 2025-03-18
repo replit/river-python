@@ -17,6 +17,7 @@ from replit_river.error_schema import (
     ERROR_SESSION,
     RiverException,
 )
+from replit_river.lock import AcquiredLock, assert_correct_lock
 from replit_river.messages import (
     PROTOCOL_VERSION,
     FailedSendingMessageException,
@@ -70,50 +71,65 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
 
     async def close(self) -> None:
         self._rate_limiter.close()
-        await self._close_all_sessions()
+        async with self._session_lock() as session_lock:
+            await self._close_all_sessions(session_lock)
 
+    # get a session, ensuring its in connected state
     async def get_or_create_session(self) -> ClientSession:
-        async with self._create_session_lock:
-            existing_session = await self._get_existing_session()
+        async with self._session_lock() as session_lock:
+            existing_session = await self._get_existing_session(session_lock)
             if not existing_session:
-                return await self._create_new_session()
+                # create a new session
+                return await self._create_new_session(session_lock)
             is_session_open = await existing_session.is_session_open()
             if not is_session_open:
-                return await self._create_new_session()
-            is_ws_open = await existing_session.is_websocket_open()
-            if is_ws_open:
-                return existing_session
-            new_ws, _, hs_response = await self._establish_new_connection(
-                existing_session
-            )
-            if hs_response.status.sessionId == existing_session.session_id:
-                logger.info(
-                    "Replacing ws connection in session id %s",
-                    existing_session.session_id,
-                )
-                await existing_session.replace_with_new_websocket(new_ws)
-                return existing_session
-            else:
-                logger.info("Closing stale session %s", existing_session.session_id)
+                # replace the session with a new one
                 await existing_session.close()
-                return await self._create_new_session()
+                return await self._create_new_session(session_lock)
 
-    async def _get_existing_session(self) -> Optional[ClientSession]:
-        async with self._session_lock:
-            if not self._sessions:
-                return None
-            if len(self._sessions) > 1:
-                raise RiverException(
-                    "session_error",
-                    "More than one session found in client, should only be one",
+            # we have a websocket, check if its open
+            is_ws_open = await existing_session.is_websocket_open()
+            if not is_ws_open:
+                # dial a new connection
+                new_ws, _, hs_response = await self._establish_new_connection(
+                    existing_session
                 )
-            session = list(self._sessions.values())[0]
-            if isinstance(session, ClientSession):
-                return session
-            else:
-                raise RiverException(
-                    "session_error", f"Client session type wrong, got {type(session)}"
-                )
+
+                # session id is the same, it was a transparent reconnect
+                if hs_response.status.sessionId == existing_session.session_id:
+                    logger.info(
+                        "Replacing ws connection in session id %s",
+                        existing_session.session_id,
+                    )
+                    await existing_session.replace_with_new_websocket(new_ws)
+                    return existing_session
+                else:
+                    # session id is different, we need to close the old session
+                    logger.info("Closing stale session %s", existing_session.session_id)
+                    await existing_session.close()
+                    return await self._create_new_session(session_lock)
+
+            # happy path, we have a session and its open
+            return existing_session
+
+    async def _get_existing_session(
+        self, session_lock: AcquiredLock
+    ) -> Optional[ClientSession]:
+        assert_correct_lock(session_lock, self._session_lock)
+        if not self._sessions:
+            return None
+        if len(self._sessions) > 1:
+            raise RiverException(
+                "session_error",
+                "More than one session found in client, should only be one",
+            )
+        session = list(self._sessions.values())[0]
+        if isinstance(session, ClientSession):
+            return session
+        else:
+            raise RiverException(
+                "session_error", f"Client session type wrong, got {type(session)}"
+            )
 
     async def _establish_new_connection(
         self,
@@ -186,35 +202,39 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
 
     async def _create_new_session(
         self,
+        session_lock: AcquiredLock,
     ) -> ClientSession:
-        logger.info("Creating new session")
-        new_ws, hs_request, hs_response = await self._establish_new_connection()
-        if not hs_response.status.ok:
-            message = hs_response.status.reason
-            raise RiverException(
-                ERROR_SESSION,
-                f"Server did not return OK status on handshake response: {message}",
+        async with self._create_session_lock:
+            logger.info("Creating new session")
+            new_ws, hs_request, hs_response = await self._establish_new_connection()
+            if not hs_response.status.ok:
+                message = hs_response.status.reason
+                raise RiverException(
+                    ERROR_SESSION,
+                    f"Server did not return OK status on handshake response: {message}",
+                )
+            new_session = ClientSession(
+                transport_id=self._transport_id,
+                to_id=self._server_id,
+                session_id=hs_request.sessionId,
+                websocket=new_ws,
+                transport_options=self._transport_options,
+                is_server=False,
+                close_session_callback=self.lock_and_delete_session,
+                retry_connection_callback=self._retry_connection,
+                handlers={},
             )
-        new_session = ClientSession(
-            transport_id=self._transport_id,
-            to_id=self._server_id,
-            session_id=hs_request.sessionId,
-            websocket=new_ws,
-            transport_options=self._transport_options,
-            is_server=False,
-            close_session_callback=self._delete_session,
-            retry_connection_callback=self._retry_connection,
-            handlers={},
-        )
 
-        self._set_session(new_session)
-        await new_session.start_serve_responses()
-        return new_session
+            self._set_session(session_lock, new_session)
+            await new_session.start_serve_responses()
+            return new_session
 
     async def _retry_connection(self) -> ClientSession:
-        if not self._transport_options.transparent_reconnect:
-            await self._close_all_sessions()
-        return await self.get_or_create_session()
+        if self._transport_options.transparent_reconnect:
+            return await self.get_or_create_session()
+
+        async with self._session_lock() as session_lock:
+            return await self._create_new_session(session_lock)
 
     async def _send_handshake_request(
         self,
@@ -344,7 +364,6 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
                 # If the session status is mismatched, we should close the old session
                 # and let the retry logic to create a new session.
                 await old_session.close()
-                await self._delete_session(old_session)
 
             raise RiverException(
                 ERROR_HANDSHAKE,

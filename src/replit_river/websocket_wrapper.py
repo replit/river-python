@@ -27,9 +27,11 @@ class WebsocketWrapper:
 
     async def close(self) -> None:
         async with self.ws_lock:
-            if self.ws_state == WsState.OPEN:
-                self.ws_state = WsState.CLOSING
-                task = asyncio.create_task(self.ws.close())
-                _background_tasks.add(task)
-                task.add_done_callback(_background_tasks.discard)
-                self.ws_state = WsState.CLOSED
+            if self.ws_state != WsState.OPEN:
+                return
+
+            self.ws_state = WsState.CLOSING
+            task = asyncio.create_task(self.ws.close())
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+            self.ws_state = WsState.CLOSED

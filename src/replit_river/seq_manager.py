@@ -87,9 +87,4 @@ class SeqManager:
                         f"{self.ack}"
                     )
             self.receiver_ack = msg.ack
-        await self._set_ack(msg.seq + 1)
-
-    async def _set_ack(self, new_ack: int) -> int:
-        async with self._ack_lock:
-            self.ack = new_ack
-            return self.ack
+            self.ack = msg.seq + 1
