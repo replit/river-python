@@ -62,7 +62,6 @@ async def client(
                 logging.debug("Start closing test client : %s", "test_client")
                 await client.close()
     finally:
-        await asyncio.sleep(1)
         logging.debug("Start closing test server")
         await server.close()
         # Server should close normally

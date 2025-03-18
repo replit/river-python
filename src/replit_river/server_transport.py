@@ -270,7 +270,6 @@ class ServerTransport(Transport):
                 # we have an old session but the session id is different
                 # just delete the old session
                 await old_session.close()
-                await self._delete_session(old_session)
                 old_session = None
 
             if not old_session and (
