@@ -8,8 +8,8 @@ from websockets.server import WebSocketServerProtocol
 
 from replit_river.messages import WebsocketClosedException
 from replit_river.seq_manager import SessionStateMismatchException
+from replit_river.server_session import ServerSession
 from replit_river.server_transport import ServerTransport
-from replit_river.session import Session
 from replit_river.transport import TransportOptions
 
 from .rpc import (
@@ -41,7 +41,7 @@ class Server(object):
 
     async def _handshake_to_get_session(
         self, websocket: WebSocketServerProtocol
-    ) -> Session | None:
+    ) -> ServerSession | None:
         """This is a wrapper to make sentry happy, sentry doesn't recognize the
         exception handling outside of a task or asyncio.wait_for. So we need to catch
         the errors specifically here.

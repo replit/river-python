@@ -6,8 +6,8 @@ from replit_river.messages import FailedSendingMessageException
 from replit_river.rpc import ACK_BIT
 from replit_river.session import SendMessage, SessionState
 
-
 logger = logging.getLogger(__name__)
+
 
 async def setup_heartbeat(
     session_id: str,

@@ -1,5 +1,5 @@
 import logging
-from typing import Any
+from typing import Any, Mapping
 
 import nanoid  # type: ignore  # type: ignore
 from pydantic import ValidationError
@@ -27,6 +27,7 @@ from replit_river.seq_manager import (
     InvalidMessageException,
     SessionStateMismatchException,
 )
+from replit_river.server_session import ServerSession
 from replit_river.session import Session
 from replit_river.transport import Transport
 from replit_river.transport_options import TransportOptions
@@ -35,6 +36,8 @@ logger = logging.getLogger(__name__)
 
 
 class ServerTransport(Transport):
+    _sessions: dict[str, ServerSession]
+
     def __init__(
         self,
         transport_id: str,
@@ -45,11 +48,12 @@ class ServerTransport(Transport):
             transport_options=transport_options,
             is_server=True,
         )
+        self._sessions = {}
 
     async def handshake_to_get_session(
         self,
         websocket: WebSocketServerProtocol,
-    ) -> Session:
+    ) -> ServerSession:
         async for message in websocket:
             try:
                 msg = parse_transport_msg(message, self._transport_options)
@@ -88,7 +92,7 @@ class ServerTransport(Transport):
         raise WebsocketClosedException("No handshake message received")
 
     async def close(self) -> None:
-        await self._close_all_sessions()
+        await self._close_all_sessions(self._get_all_sessions)
 
     async def _get_or_create_session(
         self,
@@ -96,15 +100,15 @@ class ServerTransport(Transport):
         to_id: str,
         session_id: str,
         websocket: WebSocketCommonProtocol,
-    ) -> Session:
+    ) -> ServerSession:
         async with self._session_lock:
             session_to_close: Session | None = None
-            new_session: Session | None = None
+            new_session: ServerSession | None = None
             if to_id not in self._sessions:
                 logger.info(
                     'Creating new session with "%s" using ws: %s', to_id, websocket.id
                 )
-                new_session = Session(
+                new_session = ServerSession(
                     transport_id,
                     to_id,
                     session_id,
@@ -125,7 +129,7 @@ class ServerTransport(Transport):
                         old_session.session_id,
                     )
                     session_to_close = old_session
-                    new_session = Session(
+                    new_session = ServerSession(
                         transport_id,
                         to_id,
                         session_id,
@@ -152,7 +156,7 @@ class ServerTransport(Transport):
             if session_to_close:
                 logger.info("Closing stale session %s", session_to_close.session_id)
                 await session_to_close.close()
-            self._set_session(new_session)
+            self._sessions[new_session._to_id] = new_session
         return new_session
 
     async def _send_handshake_response(
@@ -293,3 +297,11 @@ class ServerTransport(Transport):
             )
 
             return handshake_request, handshake_response
+
+    def _get_all_sessions(self) -> Mapping[str, Session]:
+        return self._sessions
+
+    async def _delete_session(self, session: Session) -> None:
+        async with self._session_lock:
+            if session._to_id in self._sessions:
+                del self._sessions[session._to_id]

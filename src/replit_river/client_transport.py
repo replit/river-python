@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Generic
+from typing import Generic, Mapping
 
 import websockets
 from pydantic import ValidationError
@@ -36,6 +36,7 @@ from replit_river.seq_manager import (
     IgnoreMessageException,
     InvalidMessageException,
 )
+from replit_river.session import Session
 from replit_river.transport import Transport
 from replit_river.transport_options import (
     HandshakeMetadataType,
@@ -47,6 +48,8 @@ logger = logging.getLogger(__name__)
 
 
 class ClientTransport(Transport, Generic[HandshakeMetadataType]):
+    _sessions: dict[str, ClientSession]
+
     def __init__(
         self,
         uri_and_metadata_factory: Callable[[], Awaitable[UriAndMetadata]],
@@ -59,6 +62,7 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
             transport_options=transport_options,
             is_server=False,
         )
+        self._sessions = {}
         self._uri_and_metadata_factory = uri_and_metadata_factory
         self._client_id = client_id
         self._server_id = server_id
@@ -70,7 +74,7 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
 
     async def close(self) -> None:
         self._rate_limiter.close()
-        await self._close_all_sessions()
+        await self._close_all_sessions(self._get_all_sessions)
 
     async def get_or_create_session(self) -> ClientSession:
         async with self._create_session_lock:
@@ -207,13 +211,13 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
             handlers={},
         )
 
-        self._set_session(new_session)
+        self._sessions[new_session._to_id] = new_session
         await new_session.start_serve_responses()
         return new_session
 
     async def _retry_connection(self) -> ClientSession:
         if not self._transport_options.transparent_reconnect:
-            await self._close_all_sessions()
+            await self._close_all_sessions(self._get_all_sessions)
         return await self.get_or_create_session()
 
     async def _send_handshake_request(
@@ -352,3 +356,11 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
                 + f"{handshake_response.status.reason}",
             )
         return handshake_request, handshake_response
+
+    def _get_all_sessions(self) -> Mapping[str, Session]:
+        return self._sessions
+
+    async def _delete_session(self, session: Session) -> None:
+        async with self._session_lock:
+            if session._to_id in self._sessions:
+                del self._sessions[session._to_id]
