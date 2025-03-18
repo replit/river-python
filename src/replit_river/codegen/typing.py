@@ -161,6 +161,13 @@ def render_type_expr(value: TypeExpression) -> str:
                     literals.append(tpe)
                 else:
                     _other.append(tpe)
+
+            without_none: list[TypeExpression] = [
+                x for x in _other if not isinstance(x, NoneTypeExpr)
+            ]
+            has_none = len(_other) > len(without_none)
+            _other = without_none
+
             retval: str = " | ".join(render_type_expr(x) for x in _other)
             if literals:
                 _rendered: str = ", ".join(repr(x.nested) for x in literals)
@@ -168,6 +175,11 @@ def render_type_expr(value: TypeExpression) -> str:
                     retval = f"Literal[{_rendered}] | {retval}"
                 else:
                     retval = f"Literal[{_rendered}]"
+            if has_none:
+                if retval:
+                    retval = f"{retval} | None"
+                else:
+                    retval = "None"
             return retval
         case OpenUnionTypeExpr(inner):
             return (
