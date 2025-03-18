@@ -1,7 +1,7 @@
 import asyncio
 import enum
 import logging
-from typing import Any, Callable, Coroutine
+from typing import Any, Awaitable, Callable, Coroutine, Protocol
 
 import nanoid  # type: ignore
 import websockets
@@ -42,6 +42,19 @@ trace_propagator = TraceContextTextMapPropagator()
 trace_setter = TransportMessageTracingSetter()
 
 
+class SendMessage(Protocol):
+    async def __call__(
+        self,
+        *,
+        stream_id: str,
+        payload: dict[Any, Any] | str,
+        control_flags: int,
+        service_name: str | None,
+        procedure_name: str | None,
+        span: Span | None,
+    ) -> None: ...
+
+
 class SessionState(enum.Enum):
     """The state a session can be in.
 
@@ -53,7 +66,7 @@ class SessionState(enum.Enum):
     CLOSED = 2
 
 
-class Session(object):
+class Session:
     """A transport object that handles the websocket connection with a client."""
 
     def __init__(
@@ -106,7 +119,29 @@ class Session(object):
         self._setup_heartbeats_task()
 
     def _setup_heartbeats_task(self) -> None:
-        self._task_manager.create_task(self._heartbeat())
+        async def do_close_websocket() -> None:
+            await self.close_websocket(
+                self._ws_wrapper,
+                should_retry=not self._is_server,
+            )
+            await self._begin_close_session_countdown()
+
+        def increment_and_get_heartbeat_misses() -> int:
+            self._heartbeat_misses += 1
+            return self._heartbeat_misses
+
+        self._task_manager.create_task(
+            self._heartbeat(
+                self.session_id,
+                self._transport_options.heartbeat_ms,
+                self._transport_options.heartbeats_until_dead,
+                lambda: self._state,
+                lambda: self._close_session_after_time_secs,
+                close_websocket=do_close_websocket,
+                send_message=self.send_message,
+                increment_and_get_heartbeat_misses=increment_and_get_heartbeat_misses,
+            )
+        )
         self._task_manager.create_task(self._check_to_close_session())
 
     async def is_session_open(self) -> bool:
@@ -276,45 +311,51 @@ class Session(object):
 
     async def _heartbeat(
         self,
+        session_id: str,
+        heartbeat_ms: float,
+        heartbeats_until_dead: int,
+        get_state: Callable[[], SessionState],
+        get_closing_grace_period: Callable[[], float | None],
+        close_websocket: Callable[[], Awaitable[None]],
+        send_message: SendMessage,
+        increment_and_get_heartbeat_misses: Callable[[], int],
     ) -> None:
         logger.debug("Start heartbeat")
         while True:
-            await asyncio.sleep(self._transport_options.heartbeat_ms / 1000)
-            if self._state != SessionState.ACTIVE:
+            await asyncio.sleep(heartbeat_ms / 1000)
+            state = get_state()
+            if state != SessionState.ACTIVE:
                 logger.debug(
                     "Session is closed, no need to send heartbeat, state : "
                     "%r close_session_after_this: %r",
-                    {self._state},
-                    {self._close_session_after_time_secs},
+                    {state},
+                    {get_closing_grace_period()},
                 )
                 # session is closing / closed, no need to send heartbeat anymore
                 return
             try:
-                await self.send_message(
-                    "heartbeat",
+                await send_message(
+                    stream_id="heartbeat",
                     # TODO: make this a message class
                     # https://github.com/replit/river/blob/741b1ea6d7600937ad53564e9cf8cd27a92ec36a/transport/message.ts#L42
-                    {
+                    payload={
                         "ack": 0,
                     },
-                    ACK_BIT,
+                    control_flags=ACK_BIT,
+                    procedure_name=None,
+                    service_name=None,
+                    span=None,
                 )
-                self._heartbeat_misses += 1
-                if (
-                    self._heartbeat_misses
-                    > self._transport_options.heartbeats_until_dead
-                ):
-                    if self._close_session_after_time_secs is not None:
+
+                if increment_and_get_heartbeat_misses() > heartbeats_until_dead:
+                    if get_closing_grace_period() is not None:
                         # already in grace period, no need to set again
                         continue
                     logger.info(
                         "%r closing websocket because of heartbeat misses",
-                        self.session_id,
+                        session_id,
                     )
-                    await self.close_websocket(
-                        self._ws_wrapper, should_retry=not self._is_server
-                    )
-                    await self._begin_close_session_countdown()
+                    await close_websocket()
                     continue
             except FailedSendingMessageException:
                 # this is expected during websocket closed period
