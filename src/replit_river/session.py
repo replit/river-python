@@ -356,9 +356,6 @@ class Session:
         except RuntimeError as e:
             raise InvalidMessageException(e) from e
 
-    async def _remove_acked_messages_in_buffer(self) -> None:
-        await self._buffer.remove_old_messages(self._seq_manager.receiver_ack)
-
     async def close(self) -> None:
         """Close the session and all associated streams."""
         logger.info(

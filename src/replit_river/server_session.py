@@ -116,9 +116,10 @@ class ServerSession(Session):
         await self._remove_acked_messages_in_buffer()
         self._reset_session_close_countdown()
 
-    async def _handle_messages_from_ws(
-        self, tg: asyncio.TaskGroup | None = None
-    ) -> None:
+    async def _remove_acked_messages_in_buffer(self) -> None:
+        await self._buffer.remove_old_messages(self._seq_manager.receiver_ack)
+
+    async def _handle_messages_from_ws(self, tg: asyncio.TaskGroup) -> None:
         logger.debug(
             "%s start handling messages from ws %s",
             "server",

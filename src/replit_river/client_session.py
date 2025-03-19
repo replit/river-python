@@ -88,24 +88,21 @@ class ClientSession(Session):
         """Serve messages from the websocket."""
         self._reset_session_close_countdown()
         try:
-            async with asyncio.TaskGroup() as tg:
-                try:
-                    await self._handle_messages_from_ws(tg)
-                except ConnectionClosed:
-                    if self._retry_connection_callback:
-                        self._task_manager.create_task(
-                            self._retry_connection_callback()
-                        )
+            try:
+                await self._handle_messages_from_ws()
+            except ConnectionClosed:
+                if self._retry_connection_callback:
+                    self._task_manager.create_task(self._retry_connection_callback())
 
-                    await self._begin_close_session_countdown()
-                    logger.debug("ConnectionClosed while serving", exc_info=True)
-                except FailedSendingMessageException:
-                    # Expected error if the connection is closed.
-                    logger.debug(
-                        "FailedSendingMessageException while serving", exc_info=True
-                    )
-                except Exception:
-                    logger.exception("caught exception at message iterator")
+                await self._begin_close_session_countdown()
+                logger.debug("ConnectionClosed while serving", exc_info=True)
+            except FailedSendingMessageException:
+                # Expected error if the connection is closed.
+                logger.debug(
+                    "FailedSendingMessageException while serving", exc_info=True
+                )
+            except Exception:
+                logger.exception("caught exception at message iterator")
         except ExceptionGroup as eg:
             _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))
             if unhandled:
@@ -118,9 +115,10 @@ class ClientSession(Session):
         await self._remove_acked_messages_in_buffer()
         self._reset_session_close_countdown()
 
-    async def _handle_messages_from_ws(
-        self, tg: asyncio.TaskGroup | None = None
-    ) -> None:
+    async def _remove_acked_messages_in_buffer(self) -> None:
+        await self._buffer.remove_old_messages(self._seq_manager.receiver_ack)
+
+    async def _handle_messages_from_ws(self) -> None:
         logger.debug(
             "%s start handling messages from ws %s",
             "client",
