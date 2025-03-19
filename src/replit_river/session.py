@@ -62,6 +62,7 @@ class SessionState(enum.Enum):
 
 class Session:
     """Common functionality shared between client_session and server_session"""
+    _is_server: bool
 
     def __init__(
         self,
@@ -70,7 +71,6 @@ class Session:
         session_id: str,
         websocket: websockets.WebSocketCommonProtocol,
         transport_options: TransportOptions,
-        is_server: bool,
         close_session_callback: Callable[["Session"], Coroutine[Any, Any, Any]],
         retry_connection_callback: (
             Callable[
@@ -83,7 +83,7 @@ class Session:
         self._transport_id = transport_id
         self._to_id = to_id
         self.session_id = session_id
-        self._is_server = is_server
+        self._is_server = False
         self._transport_options = transport_options
 
         # session state, only modified during closing

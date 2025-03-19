@@ -225,7 +225,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
             session_id=hs_request.sessionId,
             websocket=new_ws,
             transport_options=self._transport_options,
-            is_server=False,
             close_session_callback=self._delete_session,
             retry_connection_callback=self._retry_connection,
         )

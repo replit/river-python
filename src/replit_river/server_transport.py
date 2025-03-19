@@ -133,7 +133,6 @@ class ServerTransport:
                     session_id,
                     websocket,
                     self._transport_options,
-                    True,
                     self._handlers,
                     close_session_callback=self._delete_session,
                 )
@@ -154,7 +153,6 @@ class ServerTransport:
                         session_id,
                         websocket,
                         self._transport_options,
-                        True,
                         self._handlers,
                         close_session_callback=self._delete_session,
                     )

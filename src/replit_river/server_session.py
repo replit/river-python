@@ -49,7 +49,6 @@ class ServerSession(Session):
         session_id: str,
         websocket: websockets.WebSocketCommonProtocol,
         transport_options: TransportOptions,
-        is_server: bool,
         handlers: dict[tuple[str, str], tuple[str, GenericRpcHandlerBuilder]],
         close_session_callback: Callable[["Session"], Coroutine[Any, Any, Any]],
         retry_connection_callback: (
@@ -66,10 +65,10 @@ class ServerSession(Session):
             session_id=session_id,
             websocket=websocket,
             transport_options=transport_options,
-            is_server=is_server,
             close_session_callback=close_session_callback,
             retry_connection_callback=retry_connection_callback,
         )
+        self._is_server = True
         self._handlers = handlers
 
     async def start_serve_responses(self) -> None:
