@@ -2,12 +2,13 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable
 from datetime import timedelta
-from typing import Any, AsyncGenerator, Callable
+from typing import Any, AsyncGenerator, Callable, Coroutine
 
 import nanoid  # type: ignore
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span
+import websockets
 from websockets.exceptions import ConnectionClosed
 
 from replit_river.error_schema import (
@@ -28,7 +29,7 @@ from replit_river.seq_manager import (
     OutOfOrderMessageException,
 )
 from replit_river.session import Session
-from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
+from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOptions
 
 from .rpc import (
     ACK_BIT,
@@ -45,6 +46,32 @@ logger = logging.getLogger(__name__)
 
 
 class ClientSession(Session):
+    def __init__(
+        self,
+        transport_id: str,
+        to_id: str,
+        session_id: str,
+        websocket: websockets.WebSocketCommonProtocol,
+        transport_options: TransportOptions,
+        close_session_callback: Callable[[Session], Coroutine[Any, Any, Any]],
+        retry_connection_callback: (
+            Callable[
+                [],
+                Coroutine[Any, Any, Any],
+            ]
+            | None
+        ) = None,
+    ) -> None:
+        super().__init__(
+            transport_id=transport_id,
+            to_id=to_id,
+            session_id=session_id,
+            websocket=websocket,
+            transport_options=transport_options,
+            close_session_callback=close_session_callback,
+            retry_connection_callback=retry_connection_callback,
+        )
+
     async def start_serve_responses(self) -> None:
         self._task_manager.create_task(self.serve())
 
