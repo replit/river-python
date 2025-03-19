@@ -228,3 +228,25 @@ class ServerSession(Session):
             tg,
         )
         return input_stream
+
+    async def _send_responses_from_output_stream(
+        self,
+        stream_id: str,
+        output: Channel[Any],
+        is_streaming_output: bool,
+    ) -> None:
+        """Send serialized messages to the websockets."""
+        try:
+            async for payload in output:
+                if not is_streaming_output:
+                    await self.send_message(stream_id, payload, STREAM_CLOSED_BIT)
+                    return
+                await self.send_message(stream_id, payload)
+            logger.debug("sent an end of stream %r", stream_id)
+            await self.send_message(stream_id, {"type": "CLOSE"}, STREAM_CLOSED_BIT)
+        except FailedSendingMessageException:
+            logger.exception("Error while sending responses")
+        except (RuntimeError, ChannelClosed):
+            logger.exception("Error while sending responses")
+        except Exception:
+            logger.exception("Unknown error while river sending responses back")

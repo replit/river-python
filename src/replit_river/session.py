@@ -4,7 +4,7 @@ from typing import Any, Awaitable, Callable, Coroutine
 
 import nanoid  # type: ignore
 import websockets
-from aiochannel import Channel, ChannelClosed
+from aiochannel import Channel
 from opentelemetry.trace import Span, use_span
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
@@ -27,7 +27,6 @@ from replit_river.transport_options import TransportOptions
 from replit_river.websocket_wrapper import WebsocketWrapper
 
 from .rpc import (
-    STREAM_CLOSED_BIT,
     TransportMessage,
     TransportMessageTracingSetter,
 )
@@ -267,28 +266,6 @@ class Session:
             logger.error(
                 "Failed sending message, waiting for retry from buffer", exc_info=True
             )
-
-    async def _send_responses_from_output_stream(
-        self,
-        stream_id: str,
-        output: Channel[Any],
-        is_streaming_output: bool,
-    ) -> None:
-        """Send serialized messages to the websockets."""
-        try:
-            async for payload in output:
-                if not is_streaming_output:
-                    await self.send_message(stream_id, payload, STREAM_CLOSED_BIT)
-                    return
-                await self.send_message(stream_id, payload)
-            logger.debug("sent an end of stream %r", stream_id)
-            await self.send_message(stream_id, {"type": "CLOSE"}, STREAM_CLOSED_BIT)
-        except FailedSendingMessageException:
-            logger.exception("Error while sending responses")
-        except (RuntimeError, ChannelClosed):
-            logger.exception("Error while sending responses")
-        except Exception:
-            logger.exception("Unknown error while river sending responses back")
 
     async def close_websocket(
         self, ws_wrapper: WebsocketWrapper, should_retry: bool
