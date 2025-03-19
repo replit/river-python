@@ -3,10 +3,12 @@ import enum
 import logging
 from typing import Any, Awaitable, Callable, Protocol
 
+from aiochannel import Channel, ChannelClosed
 from opentelemetry.trace import Span
 
 from replit_river.messages import FailedSendingMessageException
-from replit_river.rpc import ACK_BIT
+from replit_river.rpc import ACK_BIT, STREAM_CLOSED_BIT, TransportMessage
+from replit_river.seq_manager import InvalidMessageException
 
 logger = logging.getLogger(__name__)
 
@@ -111,3 +113,23 @@ async def check_to_close_session(
             logger.info("Grace period ended for %s, closing session", transport_id)
             await do_close()
             return
+
+
+async def add_msg_to_stream(
+    msg: TransportMessage,
+    stream: Channel,
+) -> None:
+    if (
+        msg.controlFlags & STREAM_CLOSED_BIT != 0
+        and msg.payload.get("type", None) == "CLOSE"
+    ):
+        # close message is not sent to the stream
+        return
+    try:
+        await stream.put(msg.payload)
+    except ChannelClosed:
+        # The client is no longer interested in this stream,
+        # just drop the message.
+        pass
+    except RuntimeError as e:
+        raise InvalidMessageException(e) from e

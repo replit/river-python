@@ -20,7 +20,6 @@ from replit_river.messages import (
     send_transport_message,
 )
 from replit_river.seq_manager import (
-    InvalidMessageException,
     SeqManager,
 )
 from replit_river.task_manager import BackgroundTaskManager
@@ -302,26 +301,6 @@ class Session:
             await ws_wrapper.close()
         if should_retry and self._retry_connection_callback:
             self._task_manager.create_task(self._retry_connection_callback())
-
-    async def _add_msg_to_stream(
-        self,
-        msg: TransportMessage,
-        stream: Channel,
-    ) -> None:
-        if (
-            msg.controlFlags & STREAM_CLOSED_BIT != 0
-            and msg.payload.get("type", None) == "CLOSE"
-        ):
-            # close message is not sent to the stream
-            return
-        try:
-            await stream.put(msg.payload)
-        except ChannelClosed:
-            # The client is no longer interested in this stream,
-            # just drop the message.
-            pass
-        except RuntimeError as e:
-            raise InvalidMessageException(e) from e
 
     async def close(self) -> None:
         """Close the session and all associated streams."""

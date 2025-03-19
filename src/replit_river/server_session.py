@@ -7,6 +7,7 @@ from aiochannel import Channel, ChannelClosed
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from websockets.exceptions import ConnectionClosed
 
+from replit_river.common_session import add_msg_to_stream
 from replit_river.messages import (
     FailedSendingMessageException,
     parse_transport_msg,
@@ -147,7 +148,7 @@ class ServerSession(Session):
                             raise IgnoreMessageException(
                                 "no stream for message, ignoring"
                             )
-                        await self._add_msg_to_stream(msg, stream)
+                        await add_msg_to_stream(msg, stream)
                     else:
                         # TODO(dstewart) This looks like it opens a new call to handler
                         #                on ever ws message, instead of demuxing and
