@@ -109,11 +109,6 @@ class ServerSession(Session):
                     "Unhandled exceptions on River server", unhandled.exceptions
                 )
 
-    async def _update_book_keeping(self, msg: TransportMessage) -> None:
-        await self._seq_manager.check_seq_and_update(msg)
-        await self._buffer.remove_old_messages(self._seq_manager.receiver_ack)
-        self._reset_session_close_countdown()
-
     async def _handle_messages_from_ws(self, tg: asyncio.TaskGroup) -> None:
         logger.debug(
             "%s start handling messages from ws %s",
@@ -131,7 +126,13 @@ class ServerSession(Session):
 
                     logger.debug(f"{self._transport_id} got a message %r", msg)
 
-                    await self._update_book_keeping(msg)
+                    # Update bookkeeping
+                    await self._seq_manager.check_seq_and_update(msg)
+                    await self._buffer.remove_old_messages(
+                        self._seq_manager.receiver_ack,
+                    )
+                    self._reset_session_close_countdown()
+
                     if msg.controlFlags & ACK_BIT != 0:
                         continue
                     async with self._stream_lock:
