@@ -3,7 +3,6 @@ import logging
 from typing import Any, Callable, Mapping
 
 import nanoid  # type: ignore  # type: ignore
-from grpc import GenericRpcHandler
 from pydantic import ValidationError
 from websockets import (
     WebSocketCommonProtocol,
@@ -21,6 +20,7 @@ from replit_river.messages import (
 from replit_river.rpc import (
     ControlMessageHandshakeRequest,
     ControlMessageHandshakeResponse,
+    GenericRpcHandlerBuilder,
     HandShakeStatus,
     TransportMessage,
 )
@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 class ServerTransport:
     _sessions: dict[str, ServerSession]
-    _handlers: dict[tuple[str, str], tuple[str, GenericRpcHandler]]
+    _handlers: dict[tuple[str, str], tuple[str, GenericRpcHandlerBuilder]]
 
     def __init__(
         self,
@@ -48,7 +48,7 @@ class ServerTransport:
         self._sessions = {}
         self._transport_id = transport_id
         self._transport_options = transport_options
-        self._handlers: dict[tuple[str, str], tuple[str, GenericRpcHandler]] = {}
+        self._handlers: dict[tuple[str, str], tuple[str, GenericRpcHandlerBuilder]] = {}
         self._session_lock = asyncio.Lock()
 
     async def _close_all_sessions(

@@ -13,7 +13,7 @@ from replit_river.server_transport import ServerTransport
 from replit_river.transport_options import TransportOptions
 
 from .rpc import (
-    GenericRpcHandler,
+    GenericRpcHandlerBuilder,
 )
 
 logger = logging.getLogger(__name__)
@@ -35,7 +35,7 @@ class Server(object):
 
     def add_rpc_handlers(
         self,
-        rpc_handlers: Mapping[tuple[str, str], tuple[str, GenericRpcHandler]],
+        rpc_handlers: Mapping[tuple[str, str], tuple[str, GenericRpcHandlerBuilder]],
     ) -> None:
         self._transport._handlers.update(rpc_handlers)
 

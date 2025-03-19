@@ -32,7 +32,7 @@ from .rpc import (
     ACK_BIT,
     STREAM_CLOSED_BIT,
     STREAM_OPEN_BIT,
-    GenericRpcHandler,
+    GenericRpcHandlerBuilder,
     TransportMessage,
     TransportMessageTracingSetter,
 )
@@ -78,7 +78,7 @@ class Session:
         websocket: websockets.WebSocketCommonProtocol,
         transport_options: TransportOptions,
         is_server: bool,
-        handlers: dict[tuple[str, str], tuple[str, GenericRpcHandler]],
+        handlers: dict[tuple[str, str], tuple[str, GenericRpcHandlerBuilder]],
         close_session_callback: Callable[["Session"], Coroutine[Any, Any, Any]],
         retry_connection_callback: (
             Callable[
