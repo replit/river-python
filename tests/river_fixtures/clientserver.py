@@ -1,4 +1,3 @@
-import asyncio
 import logging
 from typing import AsyncGenerator, Literal
 
@@ -64,7 +63,6 @@ async def client(
             await client.close()
 
     finally:
-        await asyncio.sleep(1)
         logging.debug("Start closing test server")
         if binding:
             binding.close()
