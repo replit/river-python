@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Generic, Mapping, assert_never
+from typing import Generic, assert_never
 
 import nanoid
 import websockets
@@ -71,11 +71,8 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         # We want to make sure there's only one session creation at a time
         self._create_session_lock = asyncio.Lock()
 
-    async def _close_all_sessions(
-        self,
-        get_all_sessions: Callable[[], Mapping[str, Session]],
-    ) -> None:
-        sessions = get_all_sessions().values()
+    async def _close_all_sessions(self) -> None:
+        sessions = self._sessions.values()
         logger.info(
             f"start closing sessions {self._transport_id}, number sessions : "
             f"{len(sessions)}"
@@ -94,7 +91,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
 
     async def close(self) -> None:
         self._rate_limiter.close()
-        await self._close_all_sessions(self._get_all_sessions)
+        await self._close_all_sessions()
 
     async def get_or_create_session(self) -> ClientSession:
         async with self._create_session_lock:
@@ -235,7 +232,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
 
     async def _retry_connection(self) -> ClientSession:
         if not self._transport_options.transparent_reconnect:
-            await self._close_all_sessions(self._get_all_sessions)
+            await self._close_all_sessions()
         return await self.get_or_create_session()
 
     async def _send_handshake_request(
@@ -376,9 +373,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                 + f"{handshake_response.status.reason}",
             )
         return handshake_request, handshake_response
-
-    def _get_all_sessions(self) -> Mapping[str, Session]:
-        return self._sessions
 
     async def _delete_session(self, session: Session) -> None:
         async with self._session_lock:

@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Callable, Mapping
+from typing import Any
 
 import nanoid  # type: ignore  # type: ignore
 from pydantic import ValidationError
@@ -51,11 +51,8 @@ class ServerTransport:
         self._handlers: dict[tuple[str, str], tuple[str, GenericRpcHandlerBuilder]] = {}
         self._session_lock = asyncio.Lock()
 
-    async def _close_all_sessions(
-        self,
-        get_all_sessions: Callable[[], Mapping[str, Session]],
-    ) -> None:
-        sessions = get_all_sessions().values()
+    async def _close_all_sessions(self) -> None:
+        sessions = self._sessions.values()
         logger.info(
             f"start closing sessions {self._transport_id}, number sessions : "
             f"{len(sessions)}"
@@ -111,7 +108,7 @@ class ServerTransport:
         raise WebsocketClosedException("No handshake message received")
 
     async def close(self) -> None:
-        await self._close_all_sessions(self._get_all_sessions)
+        await self._close_all_sessions()
 
     async def _get_existing_session(self, to_id: str) -> ServerSession | None:
         async with self._session_lock:
@@ -314,9 +311,6 @@ class ServerTransport:
         )
 
         return handshake_request, handshake_response
-
-    def _get_all_sessions(self) -> Mapping[str, Session]:
-        return self._sessions
 
     async def _delete_session(self, session: Session) -> None:
         async with self._session_lock:
