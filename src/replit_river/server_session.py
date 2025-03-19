@@ -80,9 +80,6 @@ class ServerSession(Session):
 
         self._setup_heartbeats_task(do_close_websocket)
 
-    async def start_serve_responses(self) -> None:
-        self._task_manager.create_task(self.serve())
-
     async def serve(self) -> None:
         """Serve messages from the websocket."""
         self._reset_session_close_countdown()
