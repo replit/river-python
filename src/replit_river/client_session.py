@@ -5,10 +5,10 @@ from datetime import timedelta
 from typing import Any, AsyncGenerator, Callable, Coroutine
 
 import nanoid  # type: ignore
+import websockets
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span
-import websockets
 from websockets.exceptions import ConnectionClosed
 
 from replit_river.error_schema import (
@@ -71,6 +71,15 @@ class ClientSession(Session):
             close_session_callback=close_session_callback,
             retry_connection_callback=retry_connection_callback,
         )
+
+        async def do_close_websocket() -> None:
+            await self.close_websocket(
+                self._ws_wrapper,
+                should_retry=True,
+            )
+            await self._begin_close_session_countdown()
+
+        self._setup_heartbeats_task(do_close_websocket)
 
     async def start_serve_responses(self) -> None:
         self._task_manager.create_task(self.serve())

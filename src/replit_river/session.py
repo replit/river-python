@@ -1,7 +1,7 @@
 import asyncio
 import enum
 import logging
-from typing import Any, Callable, Coroutine, Protocol
+from typing import Any, Awaitable, Callable, Coroutine, Protocol
 
 import nanoid  # type: ignore
 import websockets
@@ -62,7 +62,6 @@ class SessionState(enum.Enum):
 
 class Session:
     """Common functionality shared between client_session and server_session"""
-    _is_server: bool
 
     def __init__(
         self,
@@ -83,7 +82,6 @@ class Session:
         self._transport_id = transport_id
         self._to_id = to_id
         self.session_id = session_id
-        self._is_server = False
         self._transport_options = transport_options
 
         # session state, only modified during closing
@@ -108,16 +106,10 @@ class Session:
         self._buffer = MessageBuffer(self._transport_options.buffer_size)
         self._task_manager = BackgroundTaskManager()
 
-        self._setup_heartbeats_task()
-
-    def _setup_heartbeats_task(self) -> None:
-        async def do_close_websocket() -> None:
-            await self.close_websocket(
-                self._ws_wrapper,
-                should_retry=not self._is_server,
-            )
-            await self._begin_close_session_countdown()
-
+    def _setup_heartbeats_task(
+        self,
+        do_close_websocket: Callable[[], Awaitable[None]],
+    ) -> None:
         def increment_and_get_heartbeat_misses() -> int:
             self._heartbeat_misses += 1
             return self._heartbeat_misses

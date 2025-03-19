@@ -50,7 +50,7 @@ class ServerSession(Session):
         websocket: websockets.WebSocketCommonProtocol,
         transport_options: TransportOptions,
         handlers: dict[tuple[str, str], tuple[str, GenericRpcHandlerBuilder]],
-        close_session_callback: Callable[["Session"], Coroutine[Any, Any, Any]],
+        close_session_callback: Callable[[Session], Coroutine[Any, Any, Any]],
         retry_connection_callback: (
             Callable[
                 [],
@@ -68,8 +68,16 @@ class ServerSession(Session):
             close_session_callback=close_session_callback,
             retry_connection_callback=retry_connection_callback,
         )
-        self._is_server = True
         self._handlers = handlers
+
+        async def do_close_websocket() -> None:
+            await self.close_websocket(
+                self._ws_wrapper,
+                should_retry=False,
+            )
+            await self._begin_close_session_countdown()
+
+        self._setup_heartbeats_task(do_close_websocket)
 
     async def start_serve_responses(self) -> None:
         self._task_manager.create_task(self.serve())
