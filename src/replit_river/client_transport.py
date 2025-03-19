@@ -228,7 +228,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
             is_server=False,
             close_session_callback=self._delete_session,
             retry_connection_callback=self._retry_connection,
-            handlers={},
         )
 
         self._sessions[new_session._to_id] = new_session

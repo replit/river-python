@@ -1,7 +1,8 @@
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Callable, Coroutine
 
+import websockets
 from aiochannel import Channel, ChannelClosed
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from websockets.exceptions import ConnectionClosed
@@ -16,12 +17,13 @@ from replit_river.seq_manager import (
     OutOfOrderMessageException,
 )
 from replit_river.session import Session
-from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
+from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOptions
 
 from .rpc import (
     ACK_BIT,
     STREAM_CLOSED_BIT,
     STREAM_OPEN_BIT,
+    GenericRpcHandlerBuilder,
     TransportMessage,
     TransportMessageTracingSetter,
 )
@@ -37,6 +39,38 @@ trace_setter = TransportMessageTracingSetter()
 
 class ServerSession(Session):
     """A transport object that handles the websocket connection with a client."""
+
+    handlers: dict[tuple[str, str], tuple[str, GenericRpcHandlerBuilder]]
+
+    def __init__(
+        self,
+        transport_id: str,
+        to_id: str,
+        session_id: str,
+        websocket: websockets.WebSocketCommonProtocol,
+        transport_options: TransportOptions,
+        is_server: bool,
+        handlers: dict[tuple[str, str], tuple[str, GenericRpcHandlerBuilder]],
+        close_session_callback: Callable[["Session"], Coroutine[Any, Any, Any]],
+        retry_connection_callback: (
+            Callable[
+                [],
+                Coroutine[Any, Any, Any],
+            ]
+            | None
+        ) = None,
+    ) -> None:
+        super().__init__(
+            transport_id=transport_id,
+            to_id=to_id,
+            session_id=session_id,
+            websocket=websocket,
+            transport_options=transport_options,
+            is_server=is_server,
+            close_session_callback=close_session_callback,
+            retry_connection_callback=retry_connection_callback,
+        )
+        self._handlers = handlers
 
     async def start_serve_responses(self) -> None:
         self._task_manager.create_task(self.serve())

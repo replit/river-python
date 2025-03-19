@@ -26,7 +26,6 @@ from replit_river.websocket_wrapper import WebsocketWrapper
 
 from .rpc import (
     STREAM_CLOSED_BIT,
-    GenericRpcHandlerBuilder,
     TransportMessage,
     TransportMessageTracingSetter,
 )
@@ -72,7 +71,6 @@ class Session:
         websocket: websockets.WebSocketCommonProtocol,
         transport_options: TransportOptions,
         is_server: bool,
-        handlers: dict[tuple[str, str], tuple[str, GenericRpcHandlerBuilder]],
         close_session_callback: Callable[["Session"], Coroutine[Any, Any, Any]],
         retry_connection_callback: (
             Callable[
@@ -85,7 +83,6 @@ class Session:
         self._transport_id = transport_id
         self._to_id = to_id
         self.session_id = session_id
-        self._handlers = handlers
         self._is_server = is_server
         self._transport_options = transport_options
 
