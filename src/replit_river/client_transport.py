@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Generic, Mapping
+from typing import Generic, Mapping, assert_never
 
 import nanoid
 import websockets
@@ -319,24 +319,27 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         ControlMessageHandshakeResponse,
     ]:
         try:
+            expectedSessionState: ExpectedSessionState
+            match old_session:
+                case None:
+                    expectedSessionState = ExpectedSessionState(
+                        nextExpectedSeq=0,
+                        nextSentSeq=0,
+                    )
+                case ClientSession():
+                    expectedSessionState = ExpectedSessionState(
+                        nextExpectedSeq=await old_session.get_next_expected_seq(),
+                        nextSentSeq=await old_session.get_next_sent_seq(),
+                    )
+                case other:
+                    assert_never(other)
             handshake_request = await self._send_handshake_request(
                 transport_id=transport_id,
                 to_id=to_id,
                 session_id=session_id,
                 handshake_metadata=handshake_metadata,
                 websocket=websocket,
-                expected_session_state=ExpectedSessionState(
-                    nextExpectedSeq=(
-                        await old_session.get_next_expected_seq()
-                        if old_session is not None
-                        else 0
-                    ),
-                    nextSentSeq=(
-                        await old_session.get_next_sent_seq()
-                        if old_session is not None
-                        else 0
-                    ),
-                ),
+                expected_session_state=expectedSessionState,
             )
         except FailedSendingMessageException as e:
             raise RiverException(
