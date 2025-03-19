@@ -268,3 +268,32 @@ async def test_ignore_flood_subscription(client: Client) -> None:
         timedelta(seconds=20),
     )
     assert response == "Hello, Alice!"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("handlers", [{**basic_rpc_method}])
+async def test_rpc_method_reconnect(client: Client) -> None:
+    response = await client.send_rpc(
+        "test_service",
+        "rpc_method",
+        "Alice",
+        serialize_request,
+        deserialize_response,
+        deserialize_error,
+        timedelta(seconds=20),
+    )
+    assert response == "Hello, Alice!"
+
+    await client._transport._close_all_sessions(client._transport._get_all_sessions)
+
+    response = await client.send_rpc(
+        "test_service",
+        "rpc_method",
+        "Bob",
+        serialize_request,
+        deserialize_response,
+        deserialize_error,
+        timedelta(seconds=20),
+    )
+
+    assert response == "Hello, Bob!"
