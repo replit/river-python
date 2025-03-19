@@ -8,7 +8,11 @@ from aiochannel import Channel, ChannelClosed
 from opentelemetry.trace import Span, use_span
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-from replit_river.common_session import SessionState, setup_heartbeat
+from replit_river.common_session import (
+    SessionState,
+    check_to_close_session,
+    setup_heartbeat,
+)
 from replit_river.message_buffer import MessageBuffer, MessageBufferClosedError
 from replit_river.messages import (
     FailedSendingMessageException,
@@ -101,7 +105,16 @@ class Session:
                 increment_and_get_heartbeat_misses=increment_and_get_heartbeat_misses,
             )
         )
-        self._task_manager.create_task(self._check_to_close_session())
+        self._task_manager.create_task(
+            check_to_close_session(
+                self._transport_id,
+                self._transport_options.close_session_check_interval_ms,
+                lambda: self._state,
+                self._get_current_time,
+                lambda: self._close_session_after_time_secs,
+                self.close,
+            )
+        )
 
     async def is_session_open(self) -> bool:
         async with self._state_lock:
@@ -149,27 +162,6 @@ class Session:
     def _reset_session_close_countdown(self) -> None:
         self._heartbeat_misses = 0
         self._close_session_after_time_secs = None
-
-    async def _check_to_close_session(self) -> None:
-        while True:
-            await asyncio.sleep(
-                self._transport_options.close_session_check_interval_ms / 1000
-            )
-            if self._state != SessionState.ACTIVE:
-                # already closing
-                return
-            # calculate the value now before comparing it so that there are no
-            # await points between the check and the comparison to avoid a TOCTOU
-            # race.
-            current_time = await self._get_current_time()
-            if not self._close_session_after_time_secs:
-                continue
-            if current_time > self._close_session_after_time_secs:
-                logger.info(
-                    "Grace period ended for %s, closing session", self._transport_id
-                )
-                await self.close()
-                return
 
     async def _send_buffered_messages(
         self, websocket: websockets.WebSocketCommonProtocol
