@@ -1,7 +1,6 @@
 import asyncio
-import enum
 import logging
-from typing import Any, Awaitable, Callable, Coroutine, Protocol
+from typing import Any, Awaitable, Callable, Coroutine
 
 import nanoid  # type: ignore
 import websockets
@@ -9,7 +8,7 @@ from aiochannel import Channel, ChannelClosed
 from opentelemetry.trace import Span, use_span
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 
-from replit_river.common_session import setup_heartbeat
+from replit_river.common_session import SessionState, setup_heartbeat
 from replit_river.message_buffer import MessageBuffer, MessageBufferClosedError
 from replit_river.messages import (
     FailedSendingMessageException,
@@ -34,30 +33,6 @@ logger = logging.getLogger(__name__)
 
 trace_propagator = TraceContextTextMapPropagator()
 trace_setter = TransportMessageTracingSetter()
-
-
-class SendMessage(Protocol):
-    async def __call__(
-        self,
-        *,
-        stream_id: str,
-        payload: dict[Any, Any] | str,
-        control_flags: int,
-        service_name: str | None,
-        procedure_name: str | None,
-        span: Span | None,
-    ) -> None: ...
-
-
-class SessionState(enum.Enum):
-    """The state a session can be in.
-
-    Can only transition from ACTIVE to CLOSING to CLOSED.
-    """
-
-    ACTIVE = 0
-    CLOSING = 1
-    CLOSED = 2
 
 
 class Session:

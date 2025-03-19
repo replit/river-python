@@ -1,12 +1,38 @@
 import asyncio
+import enum
 import logging
-from typing import Awaitable, Callable
+from typing import Any, Awaitable, Callable, Protocol
+
+from opentelemetry.trace import Span
 
 from replit_river.messages import FailedSendingMessageException
 from replit_river.rpc import ACK_BIT
-from replit_river.session import SendMessage, SessionState
 
 logger = logging.getLogger(__name__)
+
+
+class SendMessage(Protocol):
+    async def __call__(
+        self,
+        *,
+        stream_id: str,
+        payload: dict[Any, Any] | str,
+        control_flags: int,
+        service_name: str | None,
+        procedure_name: str | None,
+        span: Span | None,
+    ) -> None: ...
+
+
+class SessionState(enum.Enum):
+    """The state a session can be in.
+
+    Can only transition from ACTIVE to CLOSING to CLOSED.
+    """
+
+    ACTIVE = 0
+    CLOSING = 1
+    CLOSED = 2
 
 
 async def setup_heartbeat(
