@@ -152,24 +152,14 @@ class Session:
             if new_ws.id != old_ws_id:
                 await old_wrapper.close()
             self._ws_wrapper = WebsocketWrapper(new_ws)
-        await self._send_buffered_messages(new_ws)
 
-    async def _get_current_time(self) -> float:
-        return asyncio.get_event_loop().time()
-
-    def _reset_session_close_countdown(self) -> None:
-        self._heartbeat_misses = 0
-        self._close_session_after_time_secs = None
-
-    async def _send_buffered_messages(
-        self, websocket: websockets.WebSocketCommonProtocol
-    ) -> None:
+        # Send buffered messages to the new ws
         buffered_messages = list(self._buffer.buffer)
         for msg in buffered_messages:
             try:
                 await self._send_transport_message(
                     msg,
-                    websocket,
+                    new_ws,
                 )
             except WebsocketClosedException:
                 logger.info(
@@ -179,6 +169,13 @@ class Session:
             except FailedSendingMessageException:
                 logger.exception("Error while sending buffered messages")
                 break
+
+    async def _get_current_time(self) -> float:
+        return asyncio.get_event_loop().time()
+
+    def _reset_session_close_countdown(self) -> None:
+        self._heartbeat_misses = 0
+        self._close_session_after_time_secs = None
 
     async def _send_transport_message(
         self,
