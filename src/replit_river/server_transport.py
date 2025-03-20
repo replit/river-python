@@ -117,10 +117,11 @@ class ServerTransport:
         session_id: str,
         websocket: WebSocketCommonProtocol,
     ) -> ServerSession:
+        new_session: ServerSession | None = None
+        old_session: ServerSession | None = None
         async with self._session_lock:
-            session_to_close: Session | None = None
-            new_session: ServerSession | None = None
-            if to_id not in self._sessions:
+            old_session = self._sessions.get(to_id)
+            if not old_session:
                 logger.info(
                     'Creating new session with "%s" using ws: %s', to_id, websocket.id
                 )
@@ -134,7 +135,6 @@ class ServerTransport:
                     close_session_callback=self._delete_session,
                 )
             else:
-                old_session = self._sessions[to_id]
                 if old_session.session_id != session_id:
                     logger.info(
                         'Create new session with "%s" for session id %s'
@@ -143,7 +143,6 @@ class ServerTransport:
                         session_id,
                         old_session.session_id,
                     )
-                    session_to_close = old_session
                     new_session = ServerSession(
                         transport_id,
                         to_id,
@@ -167,10 +166,12 @@ class ServerTransport:
                     except FailedSendingMessageException as e:
                         raise e
 
-            if session_to_close:
-                logger.info("Closing stale session %s", session_to_close.session_id)
-                await session_to_close.close()
             self._sessions[new_session._to_id] = new_session
+
+        if old_session and new_session != old_session:
+            logger.info("Closing stale session %s", old_session.session_id)
+            await old_session.close()
+
         return new_session
 
     async def _send_handshake_response(
@@ -247,7 +248,7 @@ class ServerTransport:
             raise InvalidMessageException("handshake request to wrong server")
 
         async with self._session_lock:
-            old_session = self._sessions.get(request_message.from_, None)
+            old_session = self._sessions.get(request_message.from_)
             client_next_expected_seq = (
                 handshake_request.expectedSessionState.nextExpectedSeq
             )
@@ -285,10 +286,6 @@ class ServerTransport:
                     )
                     raise SessionStateMismatchException(message)
             elif old_session:
-                # we have an old session but the session id is different
-                # just delete the old session
-                await old_session.close()
-                await self._delete_session(old_session)
                 old_session = None
 
             if not old_session and (
