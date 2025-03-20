@@ -145,9 +145,6 @@ class ServerSession(Session):
                             )
                         await add_msg_to_stream(msg, stream)
                     else:
-                        # TODO(dstewart) This looks like it opens a new call to handler
-                        #                on ever ws message, instead of demuxing and
-                        #                routing.
                         _stream = await self._open_stream_and_call_handler(msg, tg)
                         if not stream:
                             async with self._stream_lock:
