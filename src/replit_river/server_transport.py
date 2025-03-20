@@ -303,15 +303,7 @@ class ServerTransport:
             )
             raise SessionStateMismatchException(message)
 
-        # from this point on, we're committed to connecting
-        session_id = handshake_request.sessionId
-        handshake_response = await self._send_handshake_response(
-            request_message,
-            HandShakeStatus(ok=True, sessionId=session_id),
-            websocket,
-        )
-
-        return handshake_request, handshake_response
+            return handshake_request, handshake_response
 
     async def _delete_session(self, session: Session) -> None:
         async with self._session_lock:
