@@ -1,8 +1,9 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from typing import Generic
+from typing import Generic, assert_never
 
+import nanoid
 import websockets
 from pydantic import ValidationError
 from websockets import (
@@ -36,7 +37,7 @@ from replit_river.seq_manager import (
     IgnoreMessageException,
     InvalidMessageException,
 )
-from replit_river.transport import Transport
+from replit_river.session import Session
 from replit_river.transport_options import (
     HandshakeMetadataType,
     TransportOptions,
@@ -46,7 +47,9 @@ from replit_river.transport_options import (
 logger = logging.getLogger(__name__)
 
 
-class ClientTransport(Transport, Generic[HandshakeMetadataType]):
+class ClientTransport(Generic[HandshakeMetadataType]):
+    _sessions: dict[str, ClientSession]
+
     def __init__(
         self,
         uri_and_metadata_factory: Callable[[], Awaitable[UriAndMetadata]],
@@ -54,11 +57,11 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
         server_id: str,
         transport_options: TransportOptions,
     ):
-        super().__init__(
-            transport_id=client_id,
-            transport_options=transport_options,
-            is_server=False,
-        )
+        self._sessions = {}
+        self._transport_id = client_id
+        self._transport_options = transport_options
+        self._session_lock = asyncio.Lock()
+
         self._uri_and_metadata_factory = uri_and_metadata_factory
         self._client_id = client_id
         self._server_id = server_id
@@ -67,6 +70,24 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
         )
         # We want to make sure there's only one session creation at a time
         self._create_session_lock = asyncio.Lock()
+
+    async def _close_all_sessions(self) -> None:
+        sessions = self._sessions.values()
+        logger.info(
+            f"start closing sessions {self._transport_id}, number sessions : "
+            f"{len(sessions)}"
+        )
+        sessions_to_close = list(sessions)
+
+        # closing sessions requires access to the session lock, so we need to close
+        # them one by one to be safe
+        for session in sessions_to_close:
+            await session.close()
+
+        logger.info(f"Transport closed {self._transport_id}")
+
+    def generate_nanoid(self) -> str:
+        return str(nanoid.generate())
 
     async def close(self) -> None:
         self._rate_limiter.close()
@@ -201,13 +222,11 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
             session_id=hs_request.sessionId,
             websocket=new_ws,
             transport_options=self._transport_options,
-            is_server=False,
             close_session_callback=self._delete_session,
             retry_connection_callback=self._retry_connection,
-            handlers={},
         )
 
-        self._set_session(new_session)
+        self._sessions[new_session._to_id] = new_session
         await new_session.start_serve_responses()
         return new_session
 
@@ -297,24 +316,27 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
         ControlMessageHandshakeResponse,
     ]:
         try:
+            expectedSessionState: ExpectedSessionState
+            match old_session:
+                case None:
+                    expectedSessionState = ExpectedSessionState(
+                        nextExpectedSeq=0,
+                        nextSentSeq=0,
+                    )
+                case ClientSession():
+                    expectedSessionState = ExpectedSessionState(
+                        nextExpectedSeq=await old_session.get_next_expected_seq(),
+                        nextSentSeq=await old_session.get_next_sent_seq(),
+                    )
+                case other:
+                    assert_never(other)
             handshake_request = await self._send_handshake_request(
                 transport_id=transport_id,
                 to_id=to_id,
                 session_id=session_id,
                 handshake_metadata=handshake_metadata,
                 websocket=websocket,
-                expected_session_state=ExpectedSessionState(
-                    nextExpectedSeq=(
-                        await old_session.get_next_expected_seq()
-                        if old_session is not None
-                        else 0
-                    ),
-                    nextSentSeq=(
-                        await old_session.get_next_sent_seq()
-                        if old_session is not None
-                        else 0
-                    ),
-                ),
+                expected_session_state=expectedSessionState,
             )
         except FailedSendingMessageException as e:
             raise RiverException(
@@ -352,3 +374,8 @@ class ClientTransport(Transport, Generic[HandshakeMetadataType]):
                 + f"{handshake_response.status.reason}",
             )
         return handshake_request, handshake_response
+
+    async def _delete_session(self, session: Session) -> None:
+        async with self._session_lock:
+            if session._to_id in self._sessions:
+                del self._sessions[session._to_id]

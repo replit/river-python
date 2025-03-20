@@ -342,7 +342,7 @@ def generate_river_module(
                 ) -> None:
                   rpc_method_handlers: Mapping[
                     tuple[str, str],
-                    tuple[str, river.GenericRpcHandler]
+                    tuple[str, river.GenericRpcHandlerBuilder]
                   ] = {{
                 """
                 ),

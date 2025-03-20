@@ -2,13 +2,16 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable
 from datetime import timedelta
-from typing import Any, AsyncGenerator, Callable
+from typing import Any, AsyncGenerator, Callable, Coroutine
 
 import nanoid  # type: ignore
+import websockets
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span
+from websockets.exceptions import ConnectionClosed
 
+from replit_river.common_session import add_msg_to_stream
 from replit_river.error_schema import (
     ERROR_CODE_CANCEL,
     ERROR_CODE_STREAM_CLOSED,
@@ -17,10 +20,20 @@ from replit_river.error_schema import (
     StreamClosedRiverServiceException,
     exception_from_message,
 )
+from replit_river.messages import (
+    FailedSendingMessageException,
+    parse_transport_msg,
+)
+from replit_river.seq_manager import (
+    IgnoreMessageException,
+    InvalidMessageException,
+    OutOfOrderMessageException,
+)
 from replit_river.session import Session
-from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
+from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOptions
 
 from .rpc import (
+    ACK_BIT,
     STREAM_CLOSED_BIT,
     STREAM_OPEN_BIT,
     ErrorType,
@@ -33,6 +46,129 @@ logger = logging.getLogger(__name__)
 
 
 class ClientSession(Session):
+    def __init__(
+        self,
+        transport_id: str,
+        to_id: str,
+        session_id: str,
+        websocket: websockets.WebSocketCommonProtocol,
+        transport_options: TransportOptions,
+        close_session_callback: Callable[[Session], Coroutine[Any, Any, Any]],
+        retry_connection_callback: (
+            Callable[
+                [],
+                Coroutine[Any, Any, Any],
+            ]
+            | None
+        ) = None,
+    ) -> None:
+        super().__init__(
+            transport_id=transport_id,
+            to_id=to_id,
+            session_id=session_id,
+            websocket=websocket,
+            transport_options=transport_options,
+            close_session_callback=close_session_callback,
+            retry_connection_callback=retry_connection_callback,
+        )
+
+        async def do_close_websocket() -> None:
+            await self.close_websocket(
+                self._ws_wrapper,
+                should_retry=True,
+            )
+            await self._begin_close_session_countdown()
+
+        self._setup_heartbeats_task(do_close_websocket)
+
+    async def start_serve_responses(self) -> None:
+        self._task_manager.create_task(self.serve())
+
+    async def serve(self) -> None:
+        """Serve messages from the websocket."""
+        self._reset_session_close_countdown()
+        try:
+            try:
+                await self._handle_messages_from_ws()
+            except ConnectionClosed:
+                if self._retry_connection_callback:
+                    self._task_manager.create_task(self._retry_connection_callback())
+
+                await self._begin_close_session_countdown()
+                logger.debug("ConnectionClosed while serving", exc_info=True)
+            except FailedSendingMessageException:
+                # Expected error if the connection is closed.
+                logger.debug(
+                    "FailedSendingMessageException while serving", exc_info=True
+                )
+            except Exception:
+                logger.exception("caught exception at message iterator")
+        except ExceptionGroup as eg:
+            _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))
+            if unhandled:
+                raise ExceptionGroup(
+                    "Unhandled exceptions on River server", unhandled.exceptions
+                )
+
+    async def _handle_messages_from_ws(self) -> None:
+        logger.debug(
+            "%s start handling messages from ws %s",
+            "client",
+            self._ws_wrapper.id,
+        )
+        try:
+            ws_wrapper = self._ws_wrapper
+            async for message in ws_wrapper.ws:
+                try:
+                    if not await ws_wrapper.is_open():
+                        # We should not process messages if the websocket is closed.
+                        break
+                    msg = parse_transport_msg(message, self._transport_options)
+
+                    logger.debug(f"{self._transport_id} got a message %r", msg)
+
+                    # Update bookkeeping
+                    await self._seq_manager.check_seq_and_update(msg)
+                    await self._buffer.remove_old_messages(
+                        self._seq_manager.receiver_ack,
+                    )
+                    self._reset_session_close_countdown()
+
+                    if msg.controlFlags & ACK_BIT != 0:
+                        continue
+                    async with self._stream_lock:
+                        stream = self._streams.get(msg.streamId, None)
+                    if msg.controlFlags & STREAM_OPEN_BIT == 0:
+                        if not stream:
+                            logger.warning("no stream for %s", msg.streamId)
+                            raise IgnoreMessageException(
+                                "no stream for message, ignoring"
+                            )
+                        await add_msg_to_stream(msg, stream)
+                    else:
+                        raise InvalidMessageException(
+                            "Client should not receive stream open bit"
+                        )
+
+                    if msg.controlFlags & STREAM_CLOSED_BIT != 0:
+                        if stream:
+                            stream.close()
+                        async with self._stream_lock:
+                            del self._streams[msg.streamId]
+                except IgnoreMessageException:
+                    logger.debug("Ignoring transport message", exc_info=True)
+                    continue
+                except OutOfOrderMessageException:
+                    logger.exception("Out of order message, closing connection")
+                    await ws_wrapper.close()
+                    return
+                except InvalidMessageException:
+                    logger.exception("Got invalid transport message, closing session")
+                    await self.close()
+                    return
+        except ConnectionClosed as e:
+            raise e
+
     async def send_rpc(
         self,
         service_name: str,

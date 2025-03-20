@@ -9,7 +9,7 @@ from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanE
 
 from replit_river.error_schema import RiverError
 from replit_river.rpc import (
-    GenericRpcHandler,
+    GenericRpcHandlerBuilder,
     TransportMessage,
 )
 
@@ -17,7 +17,7 @@ from replit_river.rpc import (
 pytest_plugins = ["tests.river_fixtures.logging", "tests.river_fixtures.clientserver"]
 
 HandlerKind = Literal["rpc", "subscription-stream", "upload-stream", "stream"]
-HandlerMapping = Mapping[tuple[str, str], tuple[HandlerKind, GenericRpcHandler]]
+HandlerMapping = Mapping[tuple[str, str], tuple[HandlerKind, GenericRpcHandlerBuilder]]
 
 
 def transport_message(

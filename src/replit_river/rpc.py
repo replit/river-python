@@ -43,7 +43,7 @@ ErrorType = TypeVar("ErrorType", bound=RiverError)
 
 _MetadataType: TypeAlias = grpc.aio.Metadata | Sequence[tuple[str, str | bytes]]
 
-GenericRpcHandler = Callable[
+GenericRpcHandlerBuilder = Callable[
     [str, Channel[Any], Channel[Any]], Coroutine[None, None, None]
 ]
 ACK_BIT = 0x0001
@@ -220,7 +220,7 @@ def rpc_method_handler(
     ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
-) -> GenericRpcHandler:
+) -> GenericRpcHandlerBuilder:
     async def wrapped(
         peer: str,
         input: Channel[Any],
@@ -277,7 +277,7 @@ def subscription_method_handler(
     ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
-) -> GenericRpcHandler:
+) -> GenericRpcHandlerBuilder:
     async def wrapped(
         peer: str,
         input: Channel[Any],
@@ -336,7 +336,7 @@ def upload_method_handler(
     ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
-) -> GenericRpcHandler:
+) -> GenericRpcHandlerBuilder:
     async def wrapped(
         peer: str,
         input: Channel[Any],
@@ -414,7 +414,7 @@ def stream_method_handler(
     ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
-) -> GenericRpcHandler:
+) -> GenericRpcHandlerBuilder:
     async def wrapped(
         peer: str,
         input: Channel[Any],
