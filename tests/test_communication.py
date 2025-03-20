@@ -284,7 +284,7 @@ async def test_rpc_method_reconnect(client: Client) -> None:
     )
     assert response == "Hello, Alice!"
 
-    await client._transport._close_all_sessions(client._transport._get_all_sessions)
+    await client._transport._close_all_sessions()
 
     response = await client.send_rpc(
         "test_service",

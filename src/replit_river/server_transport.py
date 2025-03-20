@@ -122,28 +122,12 @@ class ServerTransport:
         websocket: WebSocketCommonProtocol,
     ) -> ServerSession:
         new_session: ServerSession | None = None
-        old_session: ServerSession | None = await self._get_existing_session(to_id)
-        if not old_session:
-            logger.info(
-                'Creating new session with "%s" using ws: %s', to_id, websocket.id
-            )
-            new_session = ServerSession(
-                transport_id,
-                to_id,
-                session_id,
-                websocket,
-                self._transport_options,
-                self._handlers,
-                close_session_callback=self._delete_session,
-            )
-        else:
-            if old_session.session_id != session_id:
+        old_session: ServerSession | None = None
+        async with self._session_lock:
+            old_session = self._sessions.get(to_id)
+            if not old_session:
                 logger.info(
-                    'Create new session with "%s" for session id %s'
-                    " and close old session %s",
-                    to_id,
-                    session_id,
-                    old_session.session_id,
+                    'Creating new session with "%s" using ws: %s', to_id, websocket.id
                 )
                 new_session = ServerSession(
                     transport_id,
@@ -155,25 +139,42 @@ class ServerTransport:
                     close_session_callback=self._delete_session,
                 )
             else:
-                # If the instance id is the same, we reuse the session and assign
-                # a new websocket to it.
-                logger.debug(
-                    'Reuse old session with "%s" using new ws: %s',
-                    to_id,
-                    websocket.id,
-                )
-                try:
-                    await old_session.replace_with_new_websocket(websocket)
-                    new_session = old_session
-                except FailedSendingMessageException as e:
-                    raise e
+                if old_session.session_id != session_id:
+                    logger.info(
+                        'Create new session with "%s" for session id %s'
+                        " and close old session %s",
+                        to_id,
+                        session_id,
+                        old_session.session_id,
+                    )
+                    new_session = ServerSession(
+                        transport_id,
+                        to_id,
+                        session_id,
+                        websocket,
+                        self._transport_options,
+                        self._handlers,
+                        close_session_callback=self._delete_session,
+                    )
+                else:
+                    # If the instance id is the same, we reuse the session and assign
+                    # a new websocket to it.
+                    logger.debug(
+                        'Reuse old session with "%s" using new ws: %s',
+                        to_id,
+                        websocket.id,
+                    )
+                    try:
+                        await old_session.replace_with_new_websocket(websocket)
+                        new_session = old_session
+                    except FailedSendingMessageException as e:
+                        raise e
+
+            self._sessions[new_session._to_id] = new_session
 
         if old_session and new_session != old_session:
             logger.info("Closing stale session %s", old_session.session_id)
             await old_session.close()
-
-        async with self._session_lock:
-            self._sessions[new_session._to_id] = new_session
 
         return new_session
 
