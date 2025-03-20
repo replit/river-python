@@ -286,9 +286,6 @@ class ServerTransport:
                     )
                     raise SessionStateMismatchException(message)
             elif old_session:
-                # we have an old session but the session id is different
-                # just delete the old session
-                await old_session.close()
                 old_session = None
 
             if not old_session and (
