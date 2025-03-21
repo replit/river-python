@@ -58,6 +58,8 @@ class UnionTypeExpr:
 @dataclass(frozen=True)
 class OpenUnionTypeExpr:
     union: UnionTypeExpr
+    fallback_type: str
+    validator_function: str
 
     def __str__(self) -> str:
         raise Exception("Complex type must be put through render_type_expr!")
@@ -87,8 +89,8 @@ def render_type_expr(value: TypeExpression) -> str:
         case OpenUnionTypeExpr(inner):
             return (
                 "Annotated["
-                f"{render_type_expr(inner)} | RiverUnknownError,"
-                "WrapValidator(translate_unknown_error)"
+                f"{render_type_expr(inner)} | {value.fallback_type},"
+                f"WrapValidator({value.validator_function})"
                 "]"
             )
         case TypeName(name):
