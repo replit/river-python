@@ -159,11 +159,11 @@ def encode_type(
         return OpenUnionTypeExpr(
             UnionTypeExpr(one_of),
             fallback_type="RiverUnknownError"
-                if base_model == "RiverError"
-                else "RiverUnknownValue",
+            if base_model == "RiverError"
+            else "RiverUnknownValue",
             validator_function="translate_unknown_error"
-                if base_model == "RiverError"
-                else "translate_unknown_value",
+            if base_model == "RiverError"
+            else "translate_unknown_value",
         )
 
     encoder_name: TypeName | None = None  # defining this up here to placate mypy
