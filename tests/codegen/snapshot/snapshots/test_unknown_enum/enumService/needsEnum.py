@@ -12,7 +12,12 @@ from typing_extensions import Annotated
 
 from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
-from replit_river.client import RiverUnknownError, translate_unknown_error
+from replit_river.client import (
+    RiverUnknownError,
+    translate_unknown_error,
+    RiverUnknownValue,
+    translate_unknown_value,
+)
 
 import replit_river as river
 
@@ -45,8 +50,10 @@ class NeedsenumErrorsOneOf_err_second(RiverError):
 
 
 NeedsenumErrors = Annotated[
-    Literal["err_first", "err_second"] | RiverUnknownValue,
-    WrapValidator(translate_unknown_value),
+    NeedsenumErrorsOneOf_err_first
+    | NeedsenumErrorsOneOf_err_second
+    | RiverUnknownError,
+    WrapValidator(translate_unknown_error),
 ]
 
 
