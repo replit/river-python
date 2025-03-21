@@ -1,7 +1,6 @@
 import asyncio
 import random
 from contextvars import Context
-from typing import Dict
 
 from replit_river.transport_options import ConnectionRetryOptions
 
@@ -15,16 +14,16 @@ class LeakyBucketRateLimit:
 
     Attributes:
         options (ConnectionRetryOptions): Configuration options for retry behavior.
-        budget_consumed (Dict[str, int]): Dictionary tracking the number of retries
+        budget_consumed (dict[str, int]): Dictionary tracking the number of retries
         (or budget) consumed per user.
-        tasks (Dict[str, asyncio.Task]): Dictionary holding asyncio tasks for budget
+        tasks (dict[str, asyncio.Task]): Dictionary holding asyncio tasks for budget
         restoration.
     """
 
     def __init__(self, options: ConnectionRetryOptions):
         self.options = options
-        self.budget_consumed: Dict[str, int] = {}
-        self.tasks: Dict[str, asyncio.Task] = {}
+        self.budget_consumed: dict[str, int] = {}
+        self.tasks: dict[str, asyncio.Task] = {}
 
     def get_backoff_ms(self, user: str) -> float:
         """Calculate the backoff time in milliseconds for a user.

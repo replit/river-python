@@ -1,42 +1,33 @@
 import importlib
-import shutil
-from pathlib import Path
-from typing import AsyncIterable, TextIO
+from typing import AsyncIterable
 
 import pytest
+from pytest_snapshot.plugin import Snapshot
 
 from replit_river.client import Client
-from replit_river.codegen.client import schema_to_river_client_codegen
-from tests.codegen.stream.generated.test_service.stream_method import (
-    Stream_MethodInput,
-    Stream_MethodOutput,
-)
+from tests.codegen.snapshot.codegen_snapshot_fixtures import validate_codegen
 from tests.common_handlers import basic_stream
 
 
-@pytest.fixture(scope="session", autouse=True)
-def generate_stream_client() -> None:
-    import tests.codegen.stream.generated
-
-    shutil.rmtree("tests/codegen/stream/generated")
-
-    def file_opener(path: Path) -> TextIO:
-        return open(path, "w")
-
-    schema_to_river_client_codegen(
-        lambda: open("tests/codegen/stream/schema.json"),
-        "tests/codegen/stream/generated",
-        "StreamClient",
-        True,
-        file_opener,
-    )
-    importlib.reload(tests.codegen.stream.generated)
-
-
-@pytest.mark.asyncio
 @pytest.mark.parametrize("handlers", [{**basic_stream}])
-async def test_basic_stream(client: Client) -> None:
-    from tests.codegen.stream.generated import StreamClient
+async def test_basic_stream(snapshot: Snapshot, client: Client) -> None:
+    validate_codegen(
+        snapshot=snapshot,
+        read_schema=lambda: open("tests/codegen/stream/schema.json"),
+        target_path="test_basic_stream",
+        client_name="StreamClient",
+    )
+
+    import tests.codegen.snapshot.snapshots.test_basic_stream
+
+    importlib.reload(tests.codegen.snapshot.snapshots.test_basic_stream)
+    from tests.codegen.snapshot.snapshots.test_basic_stream import (
+        StreamClient,  # noqa: E501
+    )
+    from tests.codegen.snapshot.snapshots.test_basic_stream.test_service.stream_method import (  # noqa: E501
+        Stream_MethodInput,
+        Stream_MethodOutput,
+    )
 
     async def emit() -> AsyncIterable[Stream_MethodInput]:
         for i in range(5):

@@ -1,4 +1,4 @@
-from typing import Any, Callable, Literal, TypedDict, TypeVar, Union
+from typing import Any, Callable, Literal, TypedDict, TypeVar
 
 import pyd
 import tyd
@@ -85,35 +85,37 @@ def testAgenttoollanguageserverOpendocumentInput() -> None:
     )
 
 
-kind_type = Union[
-    Literal[1],
-    Literal[2],
-    Literal[3],
-    Literal[4],
-    Literal[5],
-    Literal[6],
-    Literal[7],
-    Literal[8],
-    Literal[9],
-    Literal[10],
-    Literal[11],
-    Literal[12],
-    Literal[13],
-    Literal[14],
-    Literal[15],
-    Literal[16],
-    Literal[17],
-    Literal[18],
-    Literal[19],
-    Literal[20],
-    Literal[21],
-    Literal[22],
-    Literal[23],
-    Literal[24],
-    Literal[25],
-    Literal[26],
-    None,
-]
+kind_type = (
+    Literal[
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+    ]
+    | None
+)
 
 
 def testAgenttoollanguageserverGetcodesymbolInput() -> None:

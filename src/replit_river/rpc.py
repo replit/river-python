@@ -6,18 +6,15 @@ from typing import (
     Awaitable,
     Callable,
     Coroutine,
-    Dict,
     Generic,
     Iterable,
     Iterator,
     Literal,
     Mapping,
     NoReturn,
-    Optional,
     Sequence,
-    Tuple,
+    TypeAlias,
     TypeVar,
-    Union,
 )
 
 import grpc
@@ -44,9 +41,9 @@ RequestType = TypeVar("RequestType")
 ResponseType = TypeVar("ResponseType")
 ErrorType = TypeVar("ErrorType", bound=RiverError)
 
-_MetadataType = Union[grpc.aio.Metadata, Sequence[Tuple[str, Union[str, bytes]]]]
+_MetadataType: TypeAlias = grpc.aio.Metadata | Sequence[tuple[str, str | bytes]]
 
-GenericRpcHandler = Callable[
+GenericRpcHandlerBuilder = Callable[
     [str, Channel[Any], Channel[Any]], Coroutine[None, None, None]
 ]
 ACK_BIT = 0x0001
@@ -64,7 +61,7 @@ SESSION_MISMATCH_CODE = "SESSION_STATE_MISMATCH"
 # Equivalent of https://github.com/replit/river/blob/c1345f1ff6a17a841d4319fad5c153b5bda43827/transport/message.ts#L23-L33
 class ExpectedSessionState(BaseModel):
     nextExpectedSeq: int
-    nextSentSeq: Optional[int] = None
+    nextSentSeq: int | None = None
 
 
 class ControlMessageHandshakeRequest(BaseModel, Generic[HandshakeMetadataType]):
@@ -72,14 +69,14 @@ class ControlMessageHandshakeRequest(BaseModel, Generic[HandshakeMetadataType]):
     protocolVersion: str
     sessionId: str
     expectedSessionState: ExpectedSessionState
-    metadata: Optional[HandshakeMetadataType] = None
+    metadata: HandshakeMetadataType | None = None
 
 
 class HandShakeStatus(BaseModel):
     ok: bool
-    sessionId: Optional[str] = None
-    reason: Optional[str] = None
-    code: Optional[str] = None
+    sessionId: str | None = None
+    reason: str | None = None
+    code: str | None = None
 
 
 class ControlMessageHandshakeResponse(BaseModel):
@@ -99,11 +96,11 @@ class TransportMessage(BaseModel):
     to: str
     seq: int
     ack: int
-    serviceName: Optional[str] = None
-    procedureName: Optional[str] = None
+    serviceName: str | None = None
+    procedureName: str | None = None
     streamId: str
     controlFlags: int
-    tracing: Optional[PropagationContext] = None
+    tracing: PropagationContext | None = None
     payload: Any
     model_config = ConfigDict(populate_by_name=True)
     # need this because we create TransportMessage objects with destructuring
@@ -132,8 +129,8 @@ class GrpcContext(grpc.aio.ServicerContext, Generic[RequestType, ResponseType]):
 
     def __init__(self, peer: str) -> None:
         self._peer = peer
-        self._abort_code: Optional[grpc.StatusCode] = None
-        self._abort_details: Optional[str] = None
+        self._abort_code: grpc.StatusCode | None = None
+        self._abort_details: str | None = None
 
     async def abort(
         self,
@@ -158,10 +155,10 @@ class GrpcContext(grpc.aio.ServicerContext, Generic[RequestType, ResponseType]):
     def peer(self) -> str:
         return self._peer
 
-    def peer_identities(self) -> Optional[Iterable[bytes]]:
+    def peer_identities(self) -> Iterable[bytes] | None:
         return None
 
-    def peer_identity_key(self) -> Optional[str]:
+    def peer_identity_key(self) -> str | None:
         return None
 
     async def read(self) -> RequestType:
@@ -201,7 +198,7 @@ class GrpcContext(grpc.aio.ServicerContext, Generic[RequestType, ResponseType]):
 
 def get_response_or_error_payload(
     response: Any, response_serializer: Callable[[ResponseType], Any]
-) -> Dict:
+) -> dict[Any, Any]:
     if isinstance(response, RiverError):
         return {
             "ok": False,
@@ -223,7 +220,7 @@ def rpc_method_handler(
     ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
-) -> GenericRpcHandler:
+) -> GenericRpcHandlerBuilder:
     async def wrapped(
         peer: str,
         input: Channel[Any],
@@ -280,7 +277,7 @@ def subscription_method_handler(
     ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
-) -> GenericRpcHandler:
+) -> GenericRpcHandlerBuilder:
     async def wrapped(
         peer: str,
         input: Channel[Any],
@@ -339,7 +336,7 @@ def upload_method_handler(
     ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
-) -> GenericRpcHandler:
+) -> GenericRpcHandlerBuilder:
     async def wrapped(
         peer: str,
         input: Channel[Any],
@@ -417,7 +414,7 @@ def stream_method_handler(
     ],
     request_deserializer: Callable[[Any], RequestType],
     response_serializer: Callable[[ResponseType], Any],
-) -> GenericRpcHandler:
+) -> GenericRpcHandlerBuilder:
     async def wrapped(
         peer: str,
         input: Channel[Any],

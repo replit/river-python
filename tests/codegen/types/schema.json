@@ -1,0 +1,320 @@
+{
+  "services": {
+    "test_service": {
+      "procedures": {
+        "pathological_method": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "string": {
+                "type": "string"
+              },
+              "req_string": {
+                "type": "string"
+              },
+              "Uint8Array": {
+                "type": "Uint8Array"
+              },
+              "req_Uint8Array": {
+                "type": "Uint8Array"
+              },
+              "number": {
+                "type": "number"
+              },
+              "req_number": {
+                "type": "number"
+              },
+              "integer": {
+                "type": "integer"
+              },
+              "req_integer": {
+                "type": "integer"
+              },
+              "boolean": {
+                "type": "boolean"
+              },
+              "req_boolean": {
+                "type": "boolean"
+              },
+              "null": {
+                "type": "null"
+              },
+              "req_null": {
+                "type": "null"
+              },
+              "undefined": {
+                "type": "undefined"
+              },
+              "req_undefined": {
+                "type": "undefined"
+              },
+              "Date": {
+                "type": "Date"
+              },
+              "req_Date": {
+                "type": "Date"
+              },
+              "arr_string": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "req_arr_string": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "arr_Uint8Array": {
+                "type": "array",
+                "items": {
+                  "type": "Uint8Array"
+                }
+              },
+              "req_arr_Uint8Array": {
+                "type": "array",
+                "items": {
+                  "type": "Uint8Array"
+                }
+              },
+              "arr_number": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                }
+              },
+              "req_arr_number": {
+                "type": "array",
+                "items": {
+                  "type": "number"
+                }
+              },
+              "arr_integer": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "req_arr_integer": {
+                "type": "array",
+                "items": {
+                  "type": "integer"
+                }
+              },
+              "arr_boolean": {
+                "type": "array",
+                "items": {
+                  "type": "boolean"
+                }
+              },
+              "req_arr_boolean": {
+                "type": "array",
+                "items": {
+                  "type": "boolean"
+                }
+              },
+              "arr_null": {
+                "type": "array",
+                "items": {
+                  "type": "null"
+                }
+              },
+              "req_arr_null": {
+                "type": "array",
+                "items": {
+                  "type": "null"
+                }
+              },
+              "arr_undefined": {
+                "type": "array",
+                "items": {
+                  "type": "undefined"
+                }
+              },
+              "req_arr_undefined": {
+                "type": "array",
+                "items": {
+                  "type": "undefined"
+                }
+              },
+              "arr_Date": {
+                "type": "array",
+                "items": {
+                  "type": "Date"
+                }
+              },
+              "req_arr_Date": {
+                "type": "array",
+                "items": {
+                  "type": "Date"
+                }
+              },
+              "obj_string": {
+                "type": "object",
+                "properties": {
+                  "prop_string": {
+                    "type": "string"
+                  }
+                }
+              },
+              "req_obj_string": {
+                "type": "object",
+                "properties": {
+                  "prop_string": {
+                    "type": "string"
+                  }
+                }
+              },
+              "obj_Uint8Array": {
+                "type": "object",
+                "properties": {
+                  "prop_Uint8Array": {
+                    "type": "Uint8Array"
+                  }
+                }
+              },
+              "req_obj_Uint8Array": {
+                "type": "object",
+                "properties": {
+                  "prop_Uint8Array": {
+                    "type": "Uint8Array"
+                  }
+                }
+              },
+              "obj_number": {
+                "type": "object",
+                "properties": {
+                  "prop_number": {
+                    "type": "number"
+                  }
+                }
+              },
+              "req_obj_number": {
+                "type": "object",
+                "properties": {
+                  "prop_number": {
+                    "type": "number"
+                  }
+                }
+              },
+              "obj_integer": {
+                "type": "object",
+                "properties": {
+                  "prop_integer": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "req_obj_integer": {
+                "type": "object",
+                "properties": {
+                  "prop_integer": {
+                    "type": "integer"
+                  }
+                }
+              },
+              "obj_boolean": {
+                "type": "object",
+                "properties": {
+                  "prop_boolean": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "req_obj_boolean": {
+                "type": "object",
+                "properties": {
+                  "prop_boolean": {
+                    "type": "boolean"
+                  }
+                }
+              },
+              "obj_null": {
+                "type": "object",
+                "properties": {
+                  "prop_null": {
+                    "type": "null"
+                  }
+                }
+              },
+              "req_obj_null": {
+                "type": "object",
+                "properties": {
+                  "prop_null": {
+                    "type": "null"
+                  }
+                }
+              },
+              "obj_undefined": {
+                "type": "object",
+                "properties": {
+                  "prop_undefined": {
+                    "type": "undefined"
+                  }
+                }
+              },
+              "req_obj_undefined": {
+                "type": "object",
+                "properties": {
+                  "prop_undefined": {
+                    "type": "undefined"
+                  }
+                }
+              },
+              "obj_Date": {
+                "type": "object",
+                "properties": {
+                  "prop_Date": {
+                    "type": "Date"
+                  }
+                }
+              },
+              "req_obj_Date": {
+                "type": "object",
+                "properties": {
+                  "prop_Date": {
+                    "type": "Date"
+                  }
+                }
+              }
+            },
+            "required": [
+              "req_string",
+              "req_Uint8Array",
+              "req_number",
+              "req_integer",
+              "req_boolean",
+              "req_null",
+              "req_undefined",
+              "req_Date",
+              "req_arr_string",
+              "req_arr_Uint8Array",
+              "req_arr_number",
+              "req_arr_integer",
+              "req_arr_boolean",
+              "req_arr_null",
+              "req_arr_undefined",
+              "req_arr_Date",
+              "req_obj_string",
+              "req_obj_Uint8Array",
+              "req_obj_number",
+              "req_obj_integer",
+              "req_obj_boolean",
+              "req_obj_null",
+              "req_obj_undefined",
+              "req_obj_Date"
+            ]
+          },
+          "output": {
+            "type": "boolean"
+          },
+          "errors": {
+            "not": {}
+          },
+          "type": "rpc"
+        }
+      }
+    }
+  }
+}

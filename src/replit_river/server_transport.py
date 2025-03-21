@@ -1,5 +1,6 @@
+import asyncio
 import logging
-from typing import Any, Optional, Tuple
+from typing import Any
 
 import nanoid  # type: ignore  # type: ignore
 from pydantic import ValidationError
@@ -19,6 +20,7 @@ from replit_river.messages import (
 from replit_river.rpc import (
     ControlMessageHandshakeRequest,
     ControlMessageHandshakeResponse,
+    GenericRpcHandlerBuilder,
     HandShakeStatus,
     TransportMessage,
 )
@@ -27,29 +29,47 @@ from replit_river.seq_manager import (
     InvalidMessageException,
     SessionStateMismatchException,
 )
+from replit_river.server_session import ServerSession
 from replit_river.session import Session
-from replit_river.transport import Transport
 from replit_river.transport_options import TransportOptions
 
 logger = logging.getLogger(__name__)
 
 
-class ServerTransport(Transport):
+class ServerTransport:
+    _sessions: dict[str, ServerSession]
+    _handlers: dict[tuple[str, str], tuple[str, GenericRpcHandlerBuilder]]
+
     def __init__(
         self,
         transport_id: str,
         transport_options: TransportOptions,
     ) -> None:
-        super().__init__(
-            transport_id=transport_id,
-            transport_options=transport_options,
-            is_server=True,
+        self._sessions = {}
+        self._transport_id = transport_id
+        self._transport_options = transport_options
+        self._handlers: dict[tuple[str, str], tuple[str, GenericRpcHandlerBuilder]] = {}
+        self._session_lock = asyncio.Lock()
+
+    async def _close_all_sessions(self) -> None:
+        sessions = self._sessions.values()
+        logger.info(
+            f"start closing sessions {self._transport_id}, number sessions : "
+            f"{len(sessions)}"
         )
+        sessions_to_close = list(sessions)
+
+        # closing sessions requires access to the session lock, so we need to close
+        # them one by one to be safe
+        for session in sessions_to_close:
+            await session.close()
+
+        logger.info(f"Transport closed {self._transport_id}")
 
     async def handshake_to_get_session(
         self,
         websocket: WebSocketServerProtocol,
-    ) -> Session:
+    ) -> ServerSession:
         async for message in websocket:
             try:
                 msg = parse_transport_msg(message, self._transport_options)
@@ -96,26 +116,25 @@ class ServerTransport(Transport):
         to_id: str,
         session_id: str,
         websocket: WebSocketCommonProtocol,
-    ) -> Session:
+    ) -> ServerSession:
+        new_session: ServerSession | None = None
+        old_session: ServerSession | None = None
         async with self._session_lock:
-            session_to_close: Optional[Session] = None
-            new_session: Optional[Session] = None
-            if to_id not in self._sessions:
+            old_session = self._sessions.get(to_id)
+            if not old_session:
                 logger.info(
                     'Creating new session with "%s" using ws: %s', to_id, websocket.id
                 )
-                new_session = Session(
+                new_session = ServerSession(
                     transport_id,
                     to_id,
                     session_id,
                     websocket,
                     self._transport_options,
-                    self._is_server,
                     self._handlers,
                     close_session_callback=self._delete_session,
                 )
             else:
-                old_session = self._sessions[to_id]
                 if old_session.session_id != session_id:
                     logger.info(
                         'Create new session with "%s" for session id %s'
@@ -124,14 +143,12 @@ class ServerTransport(Transport):
                         session_id,
                         old_session.session_id,
                     )
-                    session_to_close = old_session
-                    new_session = Session(
+                    new_session = ServerSession(
                         transport_id,
                         to_id,
                         session_id,
                         websocket,
                         self._transport_options,
-                        self._is_server,
                         self._handlers,
                         close_session_callback=self._delete_session,
                     )
@@ -149,10 +166,12 @@ class ServerTransport(Transport):
                     except FailedSendingMessageException as e:
                         raise e
 
-            if session_to_close:
-                logger.info("Closing stale session %s", session_to_close.session_id)
-                await session_to_close.close()
-            self._set_session(new_session)
+            self._sessions[new_session._to_id] = new_session
+
+        if old_session and new_session != old_session:
+            logger.info("Closing stale session %s", old_session.session_id)
+            await old_session.close()
+
         return new_session
 
     async def _send_handshake_response(
@@ -192,7 +211,7 @@ class ServerTransport(Transport):
 
     async def _establish_handshake(
         self, request_message: TransportMessage, websocket: WebSocketCommonProtocol
-    ) -> Tuple[
+    ) -> tuple[
         ControlMessageHandshakeRequest[Any],
         ControlMessageHandshakeResponse,
     ]:
@@ -229,7 +248,7 @@ class ServerTransport(Transport):
             raise InvalidMessageException("handshake request to wrong server")
 
         async with self._session_lock:
-            old_session = self._sessions.get(request_message.from_, None)
+            old_session = self._sessions.get(request_message.from_)
             client_next_expected_seq = (
                 handshake_request.expectedSessionState.nextExpectedSeq
             )
@@ -267,10 +286,6 @@ class ServerTransport(Transport):
                     )
                     raise SessionStateMismatchException(message)
             elif old_session:
-                # we have an old session but the session id is different
-                # just delete the old session
-                await old_session.close()
-                await self._delete_session(old_session)
                 old_session = None
 
             if not old_session and (
@@ -293,3 +308,8 @@ class ServerTransport(Transport):
             )
 
             return handshake_request, handshake_response
+
+    async def _delete_session(self, session: Session) -> None:
+        async with self._session_lock:
+            if session._to_id in self._sessions:
+                del self._sessions[session._to_id]

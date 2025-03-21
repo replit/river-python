@@ -25,7 +25,7 @@ class Test_ServiceService:
     async def stream_method(
         self,
         inputStream: AsyncIterable[Stream_MethodInput],
-    ) -> AsyncIterator[Stream_MethodOutput | RiverError]:
+    ) -> AsyncIterator[Stream_MethodOutput | RiverError | RiverError]:
         return self.client.send_stream(
             "test_service",
             "stream_method",
