@@ -780,6 +780,226 @@ def generate_common_client(
     return FileContents("\n".join(chunks))
 
 
+def render_library_call(
+    schema_name: str,
+    name: str,
+    procedure: RiverProcedure,
+    init_meta: tuple[RiverType, TypeExpression, str] | None,
+    input_meta: tuple[RiverType, TypeExpression, str] | None,
+    output_meta: tuple[RiverType, TypeExpression, str] | None,
+    error_meta: tuple[RiverType, TypeExpression, str] | None,
+) -> list[str]:
+    """
+    This method is only ever called from one place, but it's defensively establishing a
+    namespace that lets us draw some new boundaries around the parameters, without the
+    pollution from other intermediatae values.
+    """
+    current_chunks: list[str] = []
+
+    if procedure.type == "rpc":
+        assert input_meta
+        assert output_meta
+        assert error_meta
+        _, input_type, render_input_method = input_meta
+        _, output_type, parse_output_method = output_meta
+        _, _, parse_error_method = error_meta
+
+        current_chunks.extend(
+            [
+                reindent(
+                    "  ",
+                    f"""\
+        async def {name}(
+          self,
+          input: {render_type_expr(input_type)},
+          timeout: datetime.timedelta,
+        ) -> {render_type_expr(output_type)}:
+          return await self.client.send_rpc(
+            {repr(schema_name)},
+            {repr(name)},
+            input,
+            {reindent("                    ", render_input_method)},
+            {reindent("                    ", parse_output_method)},
+            {reindent("                    ", parse_error_method)},
+            timeout,
+          )
+                """,
+                )
+            ]
+        )
+    elif procedure.type == "subscription":
+        assert input_meta
+        assert output_meta
+        assert error_meta
+        _, input_type, render_input_method = input_meta
+        _, output_type, parse_output_method = output_meta
+        _, error_type, parse_error_method = error_meta
+        error_type_name = extract_inner_type(error_type)
+
+        output_or_error_type = UnionTypeExpr([output_type, error_type_name])
+
+        output_or_error_type = UnionTypeExpr(
+            [
+                output_or_error_type,
+                TypeName("RiverError"),
+            ]
+        )
+        current_chunks.extend(
+            [
+                reindent(
+                    "  ",
+                    f"""\
+        async def {name}(
+          self,
+          input: {render_type_expr(input_type)},
+        ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
+          return self.client.send_subscription(
+            {repr(schema_name)},
+            {repr(name)},
+            input,
+            {reindent("                    ", render_input_method)},
+            {reindent("                    ", parse_output_method)},
+            {reindent("                    ", parse_error_method)},
+          )
+              """,
+                )
+            ]
+        )
+    elif procedure.type == "upload":
+        assert input_meta
+        assert output_meta
+        assert error_meta
+        _, input_type, render_input_method = input_meta
+        _, output_type, parse_output_method = output_meta
+        _, error_type, parse_error_method = error_meta
+        error_type_name = extract_inner_type(error_type)
+
+        output_or_error_type = UnionTypeExpr([output_type, error_type_name])
+
+        if init_meta:
+            _, init_type, render_init_method = init_meta
+            current_chunks.extend(
+                [
+                    reindent(
+                        "  ",
+                        f"""\
+        async def {name}(
+          self,
+          init: {render_type_expr(init_type)},
+          inputStream: AsyncIterable[{render_type_expr(input_type)}],
+        ) -> {render_type_expr(output_type)}:
+          return await self.client.send_upload(
+            {repr(schema_name)},
+            {repr(name)},
+            init,
+            inputStream,
+            {reindent("                    ", render_init_method)},
+            {reindent("                    ", render_input_method)},
+            {reindent("                    ", parse_output_method)},
+            {reindent("                    ", parse_error_method)},
+          )
+                    """,
+                    )
+                ]
+            )
+        else:
+            current_chunks.extend(
+                [
+                    reindent(
+                        "  ",
+                        f"""\
+        async def {name}(
+          self,
+          inputStream: AsyncIterable[{render_type_expr(input_type)}],
+        ) -> {  # TODO(dstewart) This should just be output_type
+                            render_type_expr(output_or_error_type)
+                        }:
+          return await self.client.send_upload(
+            {repr(schema_name)},
+            {repr(name)},
+            None,
+            inputStream,
+            None,
+            {reindent("                    ", render_input_method)},
+            {reindent("                    ", parse_output_method)},
+            {reindent("                    ", parse_error_method)},
+          )
+                    """,
+                    )
+                ]
+            )
+    elif procedure.type == "stream":
+        assert input_meta
+        assert output_meta
+        assert error_meta
+        _, input_type, render_input_method = input_meta
+        _, output_type, parse_output_method = output_meta
+        _, error_type, parse_error_method = error_meta
+        error_type_name = extract_inner_type(error_type)
+
+        output_or_error_type = UnionTypeExpr([output_type, error_type_name])
+
+        output_or_error_type = UnionTypeExpr(
+            [
+                output_or_error_type,
+                TypeName("RiverError"),
+            ]
+        )
+        if init_meta:
+            _, init_type, render_init_method = init_meta
+            current_chunks.extend(
+                [
+                    reindent(
+                        "  ",
+                        f"""\
+        async def {name}(
+          self,
+          init: {render_type_expr(init_type)},
+          inputStream: AsyncIterable[{render_type_expr(input_type)}],
+        ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
+          return self.client.send_stream(
+            {repr(schema_name)},
+            {repr(name)},
+            init,
+            inputStream,
+            {reindent("                    ", render_init_method)},
+            {reindent("                    ", render_input_method)},
+            {reindent("                    ", parse_output_method)},
+            {reindent("                    ", parse_error_method)},
+          )
+                    """,
+                    )
+                ]
+            )
+        else:
+            current_chunks.extend(
+                [
+                    reindent(
+                        "  ",
+                        f"""\
+        async def {name}(
+          self,
+          inputStream: AsyncIterable[{render_type_expr(input_type)}],
+        ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
+          return self.client.send_stream(
+            {repr(schema_name)},
+            {repr(name)},
+            None,
+            inputStream,
+            None,
+            {reindent("                    ", render_input_method)},
+            {reindent("                    ", parse_output_method)},
+            {reindent("                    ", parse_error_method)},
+          )
+                    """,
+                    )
+                ]
+            )
+
+    current_chunks.append("")
+    return current_chunks
+
+
 def generate_individual_service(
     schema_name: str,
     schema: RiverService,
@@ -910,7 +1130,6 @@ def generate_individual_service(
                     error_type_type_adapter_name, error_type, output_module_info
                 )
             )
-        output_or_error_type = UnionTypeExpr([output_type, error_type_name])
 
         # NB: These strings must be indented to at least the same level of
         #     the function strings in the branches below, otherwise `dedent`
@@ -982,186 +1201,58 @@ def generate_individual_service(
                     render_input_method = f"encode_{render_literal_type(input_type)}"
             else:
                 input_type_name = extract_inner_type(input_type)
-                input_type_type_adapter_name = TypeName(
+                input_type_type_adapter = TypeName(
                     f"{render_literal_type(input_type_name)}TypeAdapter"
                 )
                 serdes.append(
                     _type_adapter_definition(
-                        input_type_type_adapter_name, input_type, input_module_info
+                        input_type_type_adapter, input_type, input_module_info
                     )
                 )
                 render_input_method = f"""\
-                                lambda x: {render_type_expr(input_type_type_adapter_name)}
+                                lambda x: {render_type_expr(input_type_type_adapter)}
                                   .dump_python(
                                     x, # type: ignore[arg-type]
                                     by_alias=True,
                                     exclude_none=True,
                                   )
                                 """
-
         if isinstance(output_type, NoneTypeExpr):
             parse_output_method = "lambda x: None"
 
-        if procedure.type == "rpc":
-            current_chunks.extend(
-                [
-                    reindent(
-                        "  ",
-                        f"""\
-            async def {name}(
-              self,
-              input: {render_type_expr(input_type)},
-              timeout: datetime.timedelta,
-            ) -> {render_type_expr(output_type)}:
-              return await self.client.send_rpc(
-                {repr(schema_name)},
-                {repr(name)},
-                input,
-                {reindent("                    ", render_input_method)},
-                {reindent("                    ", parse_output_method)},
-                {reindent("                    ", parse_error_method)},
-                timeout,
-              )
-                    """,
-                    )
-                ]
-            )
-        elif procedure.type == "subscription":
-            output_or_error_type = UnionTypeExpr(
-                [
-                    output_or_error_type,
-                    TypeName("RiverError"),
-                ]
-            )
-            current_chunks.extend(
-                [
-                    reindent(
-                        "  ",
-                        f"""\
-            async def {name}(
-              self,
-              input: {render_type_expr(input_type)},
-            ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
-              return self.client.send_subscription(
-                {repr(schema_name)},
-                {repr(name)},
-                input,
-                {reindent("                    ", render_input_method)},
-                {reindent("                    ", parse_output_method)},
-                {reindent("                    ", parse_error_method)},
-              )
-                  """,
-                    )
-                ]
-            )
-        elif procedure.type == "upload":
-            if init_type:
-                current_chunks.extend(
-                    [
-                        reindent(
-                            "  ",
-                            f"""\
-            async def {name}(
-              self,
-              init: {render_type_expr(init_type)},
-              inputStream: AsyncIterable[{render_type_expr(input_type)}],
-            ) -> {render_type_expr(output_type)}:
-              return await self.client.send_upload(
-                {repr(schema_name)},
-                {repr(name)},
-                init,
-                inputStream,
-                {reindent("                    ", render_init_method)},
-                {reindent("                    ", render_input_method)},
-                {reindent("                    ", parse_output_method)},
-                {reindent("                    ", parse_error_method)},
-              )
-                        """,
-                        )
-                    ]
+        def combine_or_none(
+            proc_type: RiverType | None,
+            tpe: TypeExpression | None,
+            serde_method: str | None,
+        ) -> tuple[RiverType, TypeExpression, str] | None:
+            if not proc_type and not tpe and not serde_method:
+                return None
+            if not proc_type or not tpe or not serde_method:
+                raise ValueError(
+                    f"Unable to convert {repr(proc_type)} into either"
+                    f" tpe={tpe} or render_method={serde_method}"
                 )
-            else:
-                current_chunks.extend(
-                    [
-                        reindent(
-                            "  ",
-                            f"""\
-            async def {name}(
-              self,
-              inputStream: AsyncIterable[{render_type_expr(input_type)}],
-            ) -> {render_type_expr(output_or_error_type)}:
-              return await self.client.send_upload(
-                {repr(schema_name)},
-                {repr(name)},
-                None,
-                inputStream,
-                None,
-                {reindent("                    ", render_input_method)},
-                {reindent("                    ", parse_output_method)},
-                {reindent("                    ", parse_error_method)},
-              )
-                        """,
-                        )
-                    ]
-                )
-        elif procedure.type == "stream":
-            output_or_error_type = UnionTypeExpr(
-                [
-                    output_or_error_type,
-                    TypeName("RiverError"),
-                ]
-            )
-            if init_type:
-                current_chunks.extend(
-                    [
-                        reindent(
-                            "  ",
-                            f"""\
-            async def {name}(
-              self,
-              init: {render_type_expr(init_type)},
-              inputStream: AsyncIterable[{render_type_expr(input_type)}],
-            ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
-              return self.client.send_stream(
-                {repr(schema_name)},
-                {repr(name)},
-                init,
-                inputStream,
-                {reindent("                    ", render_init_method)},
-                {reindent("                    ", render_input_method)},
-                {reindent("                    ", parse_output_method)},
-                {reindent("                    ", parse_error_method)},
-              )
-                        """,
-                        )
-                    ]
-                )
-            else:
-                current_chunks.extend(
-                    [
-                        reindent(
-                            "  ",
-                            f"""\
-            async def {name}(
-              self,
-              inputStream: AsyncIterable[{render_type_expr(input_type)}],
-            ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
-              return self.client.send_stream(
-                {repr(schema_name)},
-                {repr(name)},
-                None,
-                inputStream,
-                None,
-                {reindent("                    ", render_input_method)},
-                {reindent("                    ", parse_output_method)},
-                {reindent("                    ", parse_error_method)},
-              )
-                        """,
-                        )
-                    ]
-                )
+            return (proc_type, tpe, serde_method)
 
-        current_chunks.append("")
+        current_chunks.extend(
+            render_library_call(
+                schema_name=schema_name,
+                name=name,
+                procedure=procedure,
+                init_meta=combine_or_none(
+                    procedure.init, init_type, render_init_method
+                ),
+                input_meta=combine_or_none(
+                    procedure.input, input_type, render_input_method
+                ),
+                output_meta=combine_or_none(
+                    procedure.output, output_type, parse_output_method
+                ),
+                error_meta=combine_or_none(
+                    procedure.errors, error_type, parse_error_method
+                ),
+            )
+        )
 
     emitted_files: dict[RenderedPath, FileContents] = {}
 
