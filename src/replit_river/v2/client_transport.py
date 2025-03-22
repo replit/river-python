@@ -43,6 +43,8 @@ from replit_river.transport_options import (
 )
 from replit_river.v2.client_session import ClientSession
 
+PROTOCOL_VERSION = "v2.0"
+
 logger = logging.getLogger(__name__)
 
 
@@ -245,7 +247,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
     ) -> ControlMessageHandshakeRequest[HandshakeMetadataType]:
         handshake_request = ControlMessageHandshakeRequest[HandshakeMetadataType](
             type="HANDSHAKE_REQ",
-            protocolVersion="v2.0",
+            protocolVersion=PROTOCOL_VERSION,
             sessionId=session_id,
             metadata=handshake_metadata,
             expectedSessionState=expected_session_state,
