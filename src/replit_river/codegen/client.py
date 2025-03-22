@@ -960,10 +960,8 @@ def render_library_call(
                 ]
             )
     elif procedure.type == "stream":
-        assert input_meta
         assert output_meta
         assert error_meta
-        _, input_type, render_input_method = input_meta
         _, output_type, parse_output_method = output_meta
         _, error_type, parse_error_method = error_meta
         error_type_name = extract_inner_type(error_type)
@@ -976,8 +974,9 @@ def render_library_call(
                 TypeName("RiverError"),
             ]
         )
-        if init_meta:
+        if init_meta and input_meta:
             _, init_type, render_init_method = init_meta
+            _, input_type, render_input_method = input_meta
             current_chunks.extend(
                 [
                     reindent(
@@ -1002,8 +1001,9 @@ def render_library_call(
                     )
                 ]
             )
-        else:
-            assert protocol_version == "v1.1", "Protocol v2 requires init to be defined"
+        elif protocol_version == "v1.1":
+            assert input_meta, "Protocol v1 requires input to be defined"
+            _, input_type, render_input_method = input_meta
             current_chunks.extend(
                 [
                     reindent(
@@ -1027,6 +1027,34 @@ def render_library_call(
                     )
                 ]
             )
+        elif protocol_version == "v2.0":
+            assert init_meta, "Protocol v2 requires init to be defined"
+            _, init_type, render_init_method = init_meta
+            current_chunks.extend(
+                [
+                    reindent(
+                        "  ",
+                        f"""\
+        async def {name}(
+          self,
+          init: {render_type_expr(init_type)},
+        ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
+          return self.client.send_stream(
+            {repr(schema_name)},
+            {repr(name)},
+            init,
+            None,
+            {reindent("                    ", render_init_method)},
+            None,
+            {reindent("                    ", parse_output_method)},
+            {reindent("                    ", parse_error_method)},
+          )
+                    """,
+                    )
+                ]
+            )
+        else:
+            raise ValueError("Precondition failed")
 
     current_chunks.append("")
     return current_chunks
