@@ -57,11 +57,12 @@ def main() -> None:
             return open(path, "w")
 
         schema_to_river_client_codegen(
-            lambda: open(schema_path),
-            target_path,
-            args.client_name,
-            args.typed_dict_inputs,
-            file_opener,
+            read_schema=lambda: open(schema_path),
+            target_path=target_path,
+            client_name=args.client_name,
+            typed_dict_inputs=args.typed_dict_inputs,
+            file_opener=file_opener,
+            protocol_version="v1.1",
         )
     else:
         raise NotImplementedError(f"Unknown command {args.command}")

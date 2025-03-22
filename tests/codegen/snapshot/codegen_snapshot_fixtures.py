@@ -34,6 +34,7 @@ def validate_codegen(
         client_name=client_name,
         file_opener=file_opener,
         typed_dict_inputs=True,
+        protocol_version="v1.1",
     )
     for path, file in files.items():
         file.seek(0)
