@@ -13,12 +13,6 @@ from pydantic import (
 )
 
 from replit_river.error_schema import ERROR_CODE_UNKNOWN, RiverError, RiverException
-from replit_river.rpc import (
-    ErrorType,
-    InitType,
-    RequestType,
-    ResponseType,
-)
 from replit_river.transport_options import (
     HandshakeMetadataType,
     TransportOptions,
@@ -91,16 +85,16 @@ class Client(Generic[HandshakeMetadataType]):
     async def ensure_connected(self) -> None:
         await self._transport.get_or_create_session()
 
-    async def send_rpc(
+    async def send_rpc[R, A](
         self,
         service_name: str,
         procedure_name: str,
-        request: RequestType,
-        request_serializer: Callable[[RequestType], Any],
-        response_deserializer: Callable[[Any], ResponseType],
-        error_deserializer: Callable[[Any], ErrorType],
+        request: R,
+        request_serializer: Callable[[R], Any],
+        response_deserializer: Callable[[Any], A],
+        error_deserializer: Callable[[Any], RiverError],
         timeout: timedelta,
-    ) -> ResponseType:
+    ) -> A:
         with _trace_procedure("rpc", service_name, procedure_name) as span_handle:
             session = await self._transport.get_or_create_session()
             return await session.send_rpc(
@@ -114,17 +108,17 @@ class Client(Generic[HandshakeMetadataType]):
                 timeout,
             )
 
-    async def send_upload(
+    async def send_upload[I, R, A](
         self,
         service_name: str,
         procedure_name: str,
-        init: InitType | None,
-        request: AsyncIterable[RequestType],
-        init_serializer: Callable[[InitType], Any] | None,
-        request_serializer: Callable[[RequestType], Any],
-        response_deserializer: Callable[[Any], ResponseType],
-        error_deserializer: Callable[[Any], ErrorType],
-    ) -> ResponseType:
+        init: I | None,
+        request: AsyncIterable[R],
+        init_serializer: Callable[[I], Any] | None,
+        request_serializer: Callable[[R], Any],
+        response_deserializer: Callable[[Any], A],
+        error_deserializer: Callable[[Any], RiverError],
+    ) -> A:
         with _trace_procedure("upload", service_name, procedure_name) as span_handle:
             session = await self._transport.get_or_create_session()
             return await session.send_upload(
@@ -139,15 +133,15 @@ class Client(Generic[HandshakeMetadataType]):
                 span_handle.span,
             )
 
-    async def send_subscription(
+    async def send_subscription[R, E, A](
         self,
         service_name: str,
         procedure_name: str,
-        request: RequestType,
-        request_serializer: Callable[[RequestType], Any],
-        response_deserializer: Callable[[Any], ResponseType],
-        error_deserializer: Callable[[Any], ErrorType],
-    ) -> AsyncGenerator[ResponseType | RiverError, None]:
+        request: R,
+        request_serializer: Callable[[R], Any],
+        response_deserializer: Callable[[Any], A],
+        error_deserializer: Callable[[Any], E],
+    ) -> AsyncGenerator[A | E, None]:
         with _trace_procedure(
             "subscription", service_name, procedure_name
         ) as span_handle:
@@ -165,17 +159,17 @@ class Client(Generic[HandshakeMetadataType]):
                     _record_river_error(span_handle, msg)
                 yield msg  # type: ignore # https://github.com/python/mypy/issues/10817
 
-    async def send_stream(
+    async def send_stream[I, R, E, A](
         self,
         service_name: str,
         procedure_name: str,
-        init: InitType | None,
-        request: AsyncIterable[RequestType],
-        init_serializer: Callable[[InitType], Any] | None,
-        request_serializer: Callable[[RequestType], Any],
-        response_deserializer: Callable[[Any], ResponseType],
-        error_deserializer: Callable[[Any], ErrorType],
-    ) -> AsyncGenerator[ResponseType | RiverError, None]:
+        init: I | None,
+        request: AsyncIterable[R],
+        init_serializer: Callable[[I], Any] | None,
+        request_serializer: Callable[[R], Any],
+        response_deserializer: Callable[[Any], A],
+        error_deserializer: Callable[[Any], E],
+    ) -> AsyncGenerator[A | E, None]:
         with _trace_procedure("stream", service_name, procedure_name) as span_handle:
             session = await self._transport.get_or_create_session()
             async for msg in session.send_stream(
