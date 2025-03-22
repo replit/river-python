@@ -250,10 +250,10 @@ class ClientSession(Session):
         self,
         service_name: str,
         procedure_name: str,
-        init: I | None,
-        request: AsyncIterable[R],
-        init_serializer: Callable[[I], Any] | None,
-        request_serializer: Callable[[R], Any],
+        init: I,
+        request: AsyncIterable[R] | None,
+        init_serializer: Callable[[I], Any],
+        request_serializer: Callable[[R], Any] | None,
         response_deserializer: Callable[[Any], A],
         error_deserializer: Callable[[Any], RiverError],
         span: Span,
@@ -266,33 +266,31 @@ class ClientSession(Session):
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(1)
         self._streams[stream_id] = output
-        first_message = True
         try:
-            if init and init_serializer:
-                await self.send_message(
-                    stream_id=stream_id,
-                    control_flags=STREAM_OPEN_BIT,
-                    service_name=service_name,
-                    procedure_name=procedure_name,
-                    payload=init_serializer(init),
-                    span=span,
-                )
-                first_message = False
-            # If this request is not closed and the session is killed, we should
-            # throw exception here
-            async for item in request:
-                control_flags = 0
-                if first_message:
-                    control_flags = STREAM_OPEN_BIT
-                    first_message = False
-                await self.send_message(
-                    stream_id=stream_id,
-                    service_name=service_name,
-                    procedure_name=procedure_name,
-                    control_flags=control_flags,
-                    payload=request_serializer(item),
-                    span=span,
-                )
+            await self.send_message(
+                stream_id=stream_id,
+                control_flags=STREAM_OPEN_BIT,
+                service_name=service_name,
+                procedure_name=procedure_name,
+                payload=init_serializer(init),
+                span=span,
+            )
+
+            if request:
+                assert request_serializer, "send_stream missing request_serializer"
+
+                # If this request is not closed and the session is killed, we should
+                # throw exception here
+                async for item in request:
+                    control_flags = 0
+                    await self.send_message(
+                        stream_id=stream_id,
+                        service_name=service_name,
+                        procedure_name=procedure_name,
+                        control_flags=control_flags,
+                        payload=request_serializer(item),
+                        span=span,
+                    )
         except Exception as e:
             raise RiverServiceException(
                 ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
@@ -301,7 +299,7 @@ class ClientSession(Session):
             service_name,
             procedure_name,
             stream_id,
-            extra_control_flags=STREAM_OPEN_BIT if first_message else 0,
+            extra_control_flags=0,
         )
 
         # Handle potential errors during communication
