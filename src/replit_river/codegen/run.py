@@ -75,6 +75,7 @@ def main() -> None:
             args.typed_dict_inputs,
             file_opener,
             method_filter=method_filter,
+            protocol_version="v1.1",
         )
     else:
         raise NotImplementedError(f"Unknown command {args.command}")

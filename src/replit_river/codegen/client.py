@@ -802,6 +802,7 @@ def render_library_call(
     schema_name: str,
     name: str,
     procedure: RiverProcedure,
+    protocol_version: Literal["v1.1", "v2.0"],
     init_meta: tuple[RiverType, TypeExpression, str] | None,
     input_meta: tuple[RiverType, TypeExpression, str] | None,
     output_meta: tuple[RiverType, TypeExpression, str] | None,
@@ -1023,6 +1024,7 @@ def generate_individual_service(
     schema: RiverService,
     input_base_class: Literal["TypedDict"] | Literal["BaseModel"],
     method_filter: set[str] | None,
+    protocol_version: Literal["v1.1", "v2.0"],
 ) -> tuple[ModuleName, ClassName, dict[RenderedPath, FileContents]]:
     serdes: list[tuple[list[TypeName], list[ModuleName], list[FileContents]]] = []
 
@@ -1257,6 +1259,7 @@ def generate_individual_service(
                 schema_name=schema_name,
                 name=name,
                 procedure=procedure,
+                protocol_version=protocol_version,
                 init_meta=combine_or_none(
                     procedure.init, init_type, render_init_method
                 ),
@@ -1312,6 +1315,7 @@ def generate_river_client_module(
     schema_root: RiverSchema,
     typed_dict_inputs: bool,
     method_filter: set[str] | None,
+    protocol_version: Literal["v1.1", "v2.0"],
 ) -> dict[RenderedPath, FileContents]:
     files: dict[RenderedPath, FileContents] = {}
 
@@ -1340,6 +1344,7 @@ def generate_river_client_module(
             schema,
             input_base_class,
             method_filter,
+            protocol_version,
         )
         if emitted_files:
             # Short-cut if we didn't actually emit anything
@@ -1361,6 +1366,7 @@ def schema_to_river_client_codegen(
     typed_dict_inputs: bool,
     file_opener: Callable[[Path], TextIO],
     method_filter: set[str] | None,
+    protocol_version: Literal["v1.1", "v2.0"],
 ) -> None:
     """Generates the lines of a River module."""
     with read_schema() as f:
@@ -1370,6 +1376,7 @@ def schema_to_river_client_codegen(
         schemas.root,
         typed_dict_inputs,
         method_filter,
+        protocol_version,
     ).items():
         module_path = Path(target_path).joinpath(subpath)
         module_path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
