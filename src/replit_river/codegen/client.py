@@ -119,7 +119,7 @@ RiverType = RiverConcreteType | RiverUnionType | RiverNotType | RiverIntersectio
 
 class RiverProcedure(BaseModel):
     init: RiverType | None = Field(default=None)
-    input: RiverType
+    input: RiverType | None = Field(default=None)
     output: RiverType
     errors: RiverType | None = Field(default=None)
     type: (
