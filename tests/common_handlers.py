@@ -80,3 +80,51 @@ basic_stream: HandlerMapping = {
         stream_method_handler(stream_handler, deserialize_request, serialize_response),
     ),
 }
+
+
+async def stream_error(
+    request: Iterator[int] | AsyncIterator[int],
+    context: grpc.aio.ServicerContext,
+) -> AsyncGenerator[bool, None]:
+    if isinstance(request, AsyncIterator):
+        async for data in request:
+            match data % 4:
+                case 0:
+                    yield True
+                case 1:
+                    yield False
+                case 2:
+                    await context.abort(
+                        grpc.StatusCode.DATA_LOSS,
+                        details="We know about the Data Loss error code",
+                    )
+                case 3:
+                    await context.abort(
+                        grpc.StatusCode.UNIMPLEMENTED,
+                        details="This is a completely unknown error code",
+                    )
+    else:
+        for data in request:
+            match data % 4:
+                case 0:
+                    yield True
+                case 1:
+                    yield False
+                case 2:
+                    await context.abort(
+                        grpc.StatusCode.DATA_LOSS,
+                        details="We know about the Data Loss error code",
+                    )
+                case 3:
+                    await context.abort(
+                        grpc.StatusCode.UNIMPLEMENTED,
+                        details="This is a completely unknown error code",
+                    )
+
+
+error_stream: HandlerMapping = {
+    ("test_service", "emit_error"): (
+        "stream",
+        stream_method_handler(stream_error, lambda x: x, lambda x: x),
+    ),
+}

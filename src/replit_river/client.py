@@ -13,7 +13,7 @@ from pydantic import (
 )
 
 from replit_river.client_transport import ClientTransport
-from replit_river.error_schema import RiverError, RiverException
+from replit_river.error_schema import ERROR_CODE_UNKNOWN, RiverError, RiverException
 from replit_river.transport_options import (
     HandshakeMetadataType,
     TransportOptions,
@@ -37,6 +37,10 @@ class RiverUnknownValue(BaseModel):
     value: Any
 
 
+class RiverUnknownError(RiverError):
+    pass
+
+
 def translate_unknown_value(
     value: Any, handler: Callable[[Any], Any], info: ValidationInfo
 ) -> Any | RiverUnknownValue:
@@ -44,6 +48,21 @@ def translate_unknown_value(
         return handler(value)
     except Exception:
         return RiverUnknownValue(tag="RiverUnknownValue", value=value)
+
+
+def translate_unknown_error(
+    value: Any, handler: Callable[[Any], Any], info: ValidationInfo
+) -> Any | RiverUnknownError:
+    try:
+        return handler(value)
+    except Exception:
+        if isinstance(value, dict) and "code" in value and "message" in value:
+            return RiverUnknownError(
+                code=value["code"],
+                message=value["message"],
+            )
+        else:
+            return RiverUnknownError(code=ERROR_CODE_UNKNOWN, message="Unknown error")
 
 
 class Client(Generic[HandshakeMetadataType]):

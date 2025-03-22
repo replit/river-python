@@ -32,7 +32,7 @@ def server(
 
 
 @pytest.fixture
-async def client(
+async def erroringClient(
     server: Server,
     transport_options: TransportOptions,
     no_logging_error: NoErrors,
@@ -69,5 +69,13 @@ async def client(
         await server.close()
         if binding:
             await binding.wait_closed()
-        # Server should close normally
-        no_logging_error()
+
+
+@pytest.fixture
+async def client(
+    erroringClient: Client,
+    no_logging_error: NoErrors,
+) -> AsyncGenerator[Client, None]:
+    yield erroringClient
+    # Server should close normally
+    no_logging_error()

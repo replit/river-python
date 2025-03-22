@@ -22,31 +22,24 @@ from replit_river.client import (
 import replit_river as river
 
 
-def encode_Rpc_MethodInput(
-    x: "Rpc_MethodInput",
-) -> Any:
-    return {
-        k: v
-        for (k, v) in (
-            {
-                "data": x.get("data"),
-            }
-        ).items()
-        if v is not None
-    }
+class Emit_ErrorErrorsOneOf_DATA_LOSS(RiverError):
+    code: Literal["DATA_LOSS"]
+    message: str
 
 
-class Rpc_MethodInput(TypedDict):
-    data: str
+class Emit_ErrorErrorsOneOf_UNEXPECTED_DISCONNECT(RiverError):
+    code: Literal["UNEXPECTED_DISCONNECT"]
+    message: str
 
 
-Rpc_MethodInputTypeAdapter: TypeAdapter[Rpc_MethodInput] = TypeAdapter(Rpc_MethodInput)
+Emit_ErrorErrors = Annotated[
+    Emit_ErrorErrorsOneOf_DATA_LOSS
+    | Emit_ErrorErrorsOneOf_UNEXPECTED_DISCONNECT
+    | RiverUnknownError,
+    WrapValidator(translate_unknown_error),
+]
 
 
-class Rpc_MethodOutput(BaseModel):
-    data: str
-
-
-Rpc_MethodOutputTypeAdapter: TypeAdapter[Rpc_MethodOutput] = TypeAdapter(
-    Rpc_MethodOutput
+Emit_ErrorErrorsTypeAdapter: TypeAdapter[Emit_ErrorErrors] = TypeAdapter(
+    Emit_ErrorErrors
 )

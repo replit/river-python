@@ -12,7 +12,12 @@ from typing_extensions import Annotated
 
 from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
-from replit_river.client import RiverUnknownValue, translate_unknown_value
+from replit_river.client import (
+    RiverUnknownError,
+    translate_unknown_error,
+    RiverUnknownValue,
+    translate_unknown_value,
+)
 
 import replit_river as river
 
@@ -24,18 +29,32 @@ def encode_NeedsenumInput(x: "NeedsenumInput") -> Any:
     return x
 
 
-NeedsenumInputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumInput)
+NeedsenumInputTypeAdapter: TypeAdapter[NeedsenumInput] = TypeAdapter(NeedsenumInput)
 
 NeedsenumOutput = Annotated[
     Literal["out_first", "out_second"] | RiverUnknownValue,
     WrapValidator(translate_unknown_value),
 ]
 
-NeedsenumOutputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumOutput)
+NeedsenumOutputTypeAdapter: TypeAdapter[NeedsenumOutput] = TypeAdapter(NeedsenumOutput)
+
+
+class NeedsenumErrorsOneOf_err_first(RiverError):
+    code: Literal["err_first"]
+    message: str
+
+
+class NeedsenumErrorsOneOf_err_second(RiverError):
+    code: Literal["err_second"]
+    message: str
+
 
 NeedsenumErrors = Annotated[
-    Literal["err_first", "err_second"] | RiverUnknownValue,
-    WrapValidator(translate_unknown_value),
+    NeedsenumErrorsOneOf_err_first
+    | NeedsenumErrorsOneOf_err_second
+    | RiverUnknownError,
+    WrapValidator(translate_unknown_error),
 ]
 
-NeedsenumErrorsTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumErrors)
+
+NeedsenumErrorsTypeAdapter: TypeAdapter[NeedsenumErrors] = TypeAdapter(NeedsenumErrors)

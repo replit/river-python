@@ -12,7 +12,12 @@ from typing_extensions import Annotated
 
 from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
-from replit_river.client import RiverUnknownValue, translate_unknown_value
+from replit_river.client import (
+    RiverUnknownError,
+    translate_unknown_error,
+    RiverUnknownValue,
+    translate_unknown_value,
+)
 
 import replit_river as river
 
@@ -72,7 +77,9 @@ def encode_NeedsenumobjectInput(
     )
 
 
-NeedsenumobjectInputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumobjectInput)
+NeedsenumobjectInputTypeAdapter: TypeAdapter[NeedsenumobjectInput] = TypeAdapter(
+    NeedsenumobjectInput
+)
 
 
 class NeedsenumobjectOutputFooOneOf_out_first(BaseModel):
@@ -105,7 +112,9 @@ class NeedsenumobjectOutput(BaseModel):
     foo: NeedsenumobjectOutputFoo | None = None
 
 
-NeedsenumobjectOutputTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumobjectOutput)
+NeedsenumobjectOutputTypeAdapter: TypeAdapter[NeedsenumobjectOutput] = TypeAdapter(
+    NeedsenumobjectOutput
+)
 
 
 class NeedsenumobjectErrorsFooAnyOf_0(RiverError):
@@ -119,8 +128,8 @@ class NeedsenumobjectErrorsFooAnyOf_1(RiverError):
 NeedsenumobjectErrorsFoo = Annotated[
     NeedsenumobjectErrorsFooAnyOf_0
     | NeedsenumobjectErrorsFooAnyOf_1
-    | RiverUnknownValue,
-    WrapValidator(translate_unknown_value),
+    | RiverUnknownError,
+    WrapValidator(translate_unknown_error),
 ]
 
 
@@ -128,4 +137,6 @@ class NeedsenumobjectErrors(RiverError):
     foo: NeedsenumobjectErrorsFoo | None = None
 
 
-NeedsenumobjectErrorsTypeAdapter: TypeAdapter[Any] = TypeAdapter(NeedsenumobjectErrors)
+NeedsenumobjectErrorsTypeAdapter: TypeAdapter[NeedsenumobjectErrors] = TypeAdapter(
+    NeedsenumobjectErrors
+)

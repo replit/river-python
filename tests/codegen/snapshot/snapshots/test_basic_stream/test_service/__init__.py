@@ -16,6 +16,12 @@ from .stream_method import (
     Stream_MethodOutputTypeAdapter,
     encode_Stream_MethodInput,
 )
+from .emit_error import Emit_ErrorErrors, Emit_ErrorErrorsTypeAdapter
+
+intTypeAdapter: TypeAdapter[int] = TypeAdapter(int)
+
+
+boolTypeAdapter: TypeAdapter[bool] = TypeAdapter(bool)
 
 
 class Test_ServiceService:
@@ -37,6 +43,25 @@ class Test_ServiceService:
                 x  # type: ignore[arg-type]
             ),
             lambda x: RiverErrorTypeAdapter.validate_python(
+                x  # type: ignore[arg-type]
+            ),
+        )
+
+    async def emit_error(
+        self,
+        inputStream: AsyncIterable[int],
+    ) -> AsyncIterator[bool | Emit_ErrorErrors | RiverError]:
+        return self.client.send_stream(
+            "test_service",
+            "emit_error",
+            None,
+            inputStream,
+            None,
+            lambda x: x,
+            lambda x: boolTypeAdapter.validate_python(
+                x  # type: ignore[arg-type]
+            ),
+            lambda x: Emit_ErrorErrorsTypeAdapter.validate_python(
                 x  # type: ignore[arg-type]
             ),
         )

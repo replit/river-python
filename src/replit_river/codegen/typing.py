@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import NewType, assert_never
+from typing import NewType, assert_never, cast
 
 ModuleName = NewType("ModuleName", str)
 ClassName = NewType("ClassName", str)
@@ -96,6 +96,8 @@ class UnionTypeExpr:
 @dataclass(frozen=True)
 class OpenUnionTypeExpr:
     union: UnionTypeExpr
+    fallback_type: str
+    validator_function: str
 
     def __str__(self) -> str:
         raise Exception("Complex type must be put through render_type_expr!")
@@ -182,10 +184,11 @@ def render_type_expr(value: TypeExpression) -> str:
                     retval = "None"
             return retval
         case OpenUnionTypeExpr(inner):
+            open_union = cast(OpenUnionTypeExpr, value)
             return (
                 "Annotated["
-                f"{render_type_expr(inner)} | RiverUnknownValue,"
-                "WrapValidator(translate_unknown_value)"
+                f"{render_type_expr(inner)} | {open_union.fallback_type},"
+                f"WrapValidator({open_union.validator_function})"
                 "]"
             )
         case TypeName(name):

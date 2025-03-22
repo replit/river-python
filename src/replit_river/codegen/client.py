@@ -81,7 +81,8 @@ from typing_extensions import Annotated
 
 from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
-from replit_river.client import RiverUnknownValue, translate_unknown_value
+from replit_river.client import RiverUnknownError, translate_unknown_error, \
+    RiverUnknownValue, translate_unknown_value
 
 import replit_river as river
 
@@ -154,6 +155,20 @@ def encode_type(
     in_module: list[ModuleName],
     permit_unknown_members: bool,
 ) -> tuple[TypeExpression, list[ModuleName], list[FileContents], set[TypeName]]:
+    def _make_open_union_type_expr(one_of: list[TypeExpression]) -> OpenUnionTypeExpr:
+        if base_model == "RiverError":
+            return OpenUnionTypeExpr(
+                UnionTypeExpr(one_of),
+                fallback_type="RiverUnknownError",
+                validator_function="translate_unknown_error",
+            )
+        else:
+            return OpenUnionTypeExpr(
+                UnionTypeExpr(one_of),
+                fallback_type="RiverUnknownValue",
+                validator_function="translate_unknown_value",
+            )
+
     encoder_name: TypeName | None = None  # defining this up here to placate mypy
     chunks: list[FileContents] = []
     if isinstance(type, RiverNotType):
@@ -304,7 +319,7 @@ def encode_type(
                     )
                 union: TypeExpression
                 if permit_unknown_members:
-                    union = OpenUnionTypeExpr(UnionTypeExpr(one_of))
+                    union = _make_open_union_type_expr(one_of)
                 else:
                     union = UnionTypeExpr(one_of)
                 chunks.append(
@@ -383,7 +398,7 @@ def encode_type(
                             )
                             raise ValueError(f"What does it mean to have {_o2} here?")
         if permit_unknown_members:
-            union = OpenUnionTypeExpr(UnionTypeExpr(any_of))
+            union = _make_open_union_type_expr(any_of)
         else:
             union = UnionTypeExpr(any_of)
         if is_literal(type):
@@ -795,6 +810,7 @@ def generate_individual_service(
         _type: TypeExpression,
         module_info: list[ModuleName],
     ) -> tuple[list[TypeName], list[ModuleName], list[FileContents]]:
+        varname = render_type_expr(type_adapter_name)
         rendered_type_expr = render_type_expr(_type)
         return (
             [type_adapter_name],
@@ -802,10 +818,10 @@ def generate_individual_service(
             [
                 FileContents(
                     dedent(f"""
-                    {render_type_expr(type_adapter_name)}: TypeAdapter[Any] = (
-                        TypeAdapter({rendered_type_expr})
-                    )
-                """)
+                {varname}: TypeAdapter[{rendered_type_expr}] = (
+                    TypeAdapter({rendered_type_expr})
+                )
+            """)
                 )
             ],
         )

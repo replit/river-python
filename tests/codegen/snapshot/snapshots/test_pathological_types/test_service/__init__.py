@@ -31,7 +31,7 @@ from .pathological_method import (
     encode_Pathological_MethodInputReq_Obj_Undefined,
 )
 
-boolTypeAdapter: TypeAdapter[Any] = TypeAdapter(bool)
+boolTypeAdapter: TypeAdapter[bool] = TypeAdapter(bool)
 
 
 class Test_ServiceService:

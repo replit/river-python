@@ -12,7 +12,12 @@ from typing_extensions import Annotated
 
 from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
-from replit_river.client import RiverUnknownValue, translate_unknown_value
+from replit_river.client import (
+    RiverUnknownError,
+    translate_unknown_error,
+    RiverUnknownValue,
+    translate_unknown_value,
+)
 
 import replit_river as river
 
@@ -35,11 +40,15 @@ class Stream_MethodInput(TypedDict):
     data: str
 
 
-Stream_MethodInputTypeAdapter: TypeAdapter[Any] = TypeAdapter(Stream_MethodInput)
+Stream_MethodInputTypeAdapter: TypeAdapter[Stream_MethodInput] = TypeAdapter(
+    Stream_MethodInput
+)
 
 
 class Stream_MethodOutput(BaseModel):
     data: str
 
 
-Stream_MethodOutputTypeAdapter: TypeAdapter[Any] = TypeAdapter(Stream_MethodOutput)
+Stream_MethodOutputTypeAdapter: TypeAdapter[Stream_MethodOutput] = TypeAdapter(
+    Stream_MethodOutput
+)

@@ -12,7 +12,12 @@ from typing_extensions import Annotated
 
 from pydantic import BaseModel, Field, TypeAdapter, WrapValidator
 from replit_river.error_schema import RiverError
-from replit_river.client import RiverUnknownValue, translate_unknown_value
+from replit_river.client import (
+    RiverUnknownError,
+    translate_unknown_error,
+    RiverUnknownValue,
+    translate_unknown_value,
+)
 
 import replit_river as river
 
@@ -473,6 +478,6 @@ class Pathological_MethodInput(TypedDict):
     undefined: NotRequired[None]
 
 
-Pathological_MethodInputTypeAdapter: TypeAdapter[Any] = TypeAdapter(
-    Pathological_MethodInput
+Pathological_MethodInputTypeAdapter: TypeAdapter[Pathological_MethodInput] = (
+    TypeAdapter(Pathological_MethodInput)
 )

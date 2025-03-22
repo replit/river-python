@@ -1,26 +1,39 @@
 import importlib
-from typing import AsyncIterable
+from typing import AsyncIterable, Literal
 
 import pytest
 from pytest_snapshot.plugin import Snapshot
 
-from replit_river.client import Client
+from replit_river.client import Client, RiverUnknownError
 from tests.codegen.snapshot.codegen_snapshot_fixtures import validate_codegen
-from tests.common_handlers import basic_stream
+from tests.common_handlers import basic_stream, error_stream
+
+_AlreadyGenerated = False
 
 
-@pytest.mark.parametrize("handlers", [{**basic_stream}])
-async def test_basic_stream(snapshot: Snapshot, client: Client) -> None:
-    validate_codegen(
-        snapshot=snapshot,
-        read_schema=lambda: open("tests/codegen/stream/schema.json"),
-        target_path="test_basic_stream",
-        client_name="StreamClient",
-    )
+@pytest.fixture
+def stream_client_codegen(snapshot: Snapshot) -> Literal[True]:
+    global _AlreadyGenerated
+    if not _AlreadyGenerated:
+        validate_codegen(
+            snapshot=snapshot,
+            read_schema=lambda: open("tests/codegen/stream/schema.json"),
+            target_path="test_basic_stream",
+            client_name="StreamClient",
+        )
+        _AlreadyGenerated = True
 
     import tests.codegen.snapshot.snapshots.test_basic_stream
 
     importlib.reload(tests.codegen.snapshot.snapshots.test_basic_stream)
+    return True
+
+
+@pytest.mark.parametrize("handlers", [{**basic_stream}])
+async def test_basic_stream(
+    stream_client_codegen: Literal[True],
+    client: Client,
+) -> None:
     from tests.codegen.snapshot.snapshots.test_basic_stream import (
         StreamClient,  # noqa: E501
     )
@@ -41,3 +54,33 @@ async def test_basic_stream(snapshot: Snapshot, client: Client) -> None:
         assert f"Stream response for {i}" == datum.data, f"{i} == {datum.data}"
         i = i + 1
     assert i == 5
+
+
+@pytest.mark.parametrize("handlers", [{**error_stream}])
+@pytest.mark.parametrize("phase", [0, 1, 2, 3])
+async def test_error_stream(
+    stream_client_codegen: Literal[True],
+    erroringClient: Client,
+    phase: int,
+) -> None:
+    from tests.codegen.snapshot.snapshots.test_basic_stream import (
+        StreamClient,  # noqa: E501
+    )
+
+    async def emit() -> AsyncIterable[int]:
+        yield phase
+
+    res = await StreamClient(erroringClient).test_service.emit_error(emit())
+
+    async for datum in res:
+        match phase:
+            case 0:
+                assert datum
+            case 1:
+                assert not datum
+            case 2:
+                assert not isinstance(datum, bool)
+                assert datum.code == "DATA_LOSS"
+            case 3:
+                assert isinstance(datum, RiverUnknownError)
+                assert datum.code == "UNIMPLEMENTED"
