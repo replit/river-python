@@ -389,10 +389,10 @@ class ClientSession(Session):
         self,
         service_name: str,
         procedure_name: str,
-        init: I | None,
-        request: AsyncIterable[R],
-        init_serializer: Callable[[I], Any] | None,
-        request_serializer: Callable[[R], Any],
+        init: I,
+        request: AsyncIterable[R] | None,
+        init_serializer: Callable[[I], Any],
+        request_serializer: Callable[[R], Any] | None,
         response_deserializer: Callable[[Any], A],
         error_deserializer: Callable[[Any], E],
         span: Span,
@@ -405,33 +405,15 @@ class ClientSession(Session):
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(MAX_MESSAGE_BUFFER_SIZE)
         self._streams[stream_id] = output
-        empty_stream = False
         try:
-            if init and init_serializer:
-                await self.send_message(
-                    service_name=service_name,
-                    procedure_name=procedure_name,
-                    stream_id=stream_id,
-                    control_flags=STREAM_OPEN_BIT,
-                    payload=init_serializer(init),
-                    span=span,
-                )
-            else:
-                # Get the very first message to open the stream
-                request_iter = aiter(request)
-                first = await anext(request_iter)
-                await self.send_message(
-                    service_name=service_name,
-                    procedure_name=procedure_name,
-                    stream_id=stream_id,
-                    control_flags=STREAM_OPEN_BIT,
-                    payload=request_serializer(first),
-                    span=span,
-                )
-
-        except StopAsyncIteration:
-            empty_stream = True
-
+            await self.send_message(
+                service_name=service_name,
+                procedure_name=procedure_name,
+                stream_id=stream_id,
+                control_flags=STREAM_OPEN_BIT,
+                payload=init_serializer(init),
+                span=span,
+            )
         except Exception as e:
             raise StreamClosedRiverServiceException(
                 ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
@@ -439,7 +421,7 @@ class ClientSession(Session):
 
         # Create the encoder task
         async def _encode_stream() -> None:
-            if empty_stream:
+            if not request:
                 await self.send_close_stream(
                     service_name,
                     procedure_name,
@@ -447,6 +429,8 @@ class ClientSession(Session):
                     extra_control_flags=STREAM_OPEN_BIT,
                 )
                 return
+
+            assert request_serializer, "send_stream missing request_serializer"
 
             async for item in request:
                 if item is None:
