@@ -25,6 +25,45 @@
             "not": {}
           },
           "type": "stream"
+        },
+        "emit_error": {
+          "input": {
+            "type": "integer"
+          },
+          "output": {
+            "type": "boolean"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "const": "DATA_LOSS",
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": ["code", "message"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "const": "UNEXPECTED_DISCONNECT",
+                    "type": "string"
+                  },
+                  "message": {
+                    "type": "string"
+                  }
+                },
+                "required": ["code", "message"]
+              }
+            ]
+          },
+          "type": "stream"
         }
       }
     }
