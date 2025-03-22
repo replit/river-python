@@ -38,6 +38,13 @@ def main() -> None:
         action="store_true",
         default=False,
     )
+    client.add_argument(
+        "--protocol-version",
+        help="Generate river v2 clients",
+        action="store",
+        default="v1.1",
+        choices=["v1.1", "v2.0"],
+    )
     client.add_argument("schema", help="schema file")
     args = parser.parse_args()
 
@@ -57,11 +64,12 @@ def main() -> None:
             return open(path, "w")
 
         schema_to_river_client_codegen(
-            lambda: open(schema_path),
-            target_path,
-            args.client_name,
-            args.typed_dict_inputs,
-            file_opener,
+            read_schema=lambda: open(schema_path),
+            target_path=target_path,
+            client_name=args.client_name,
+            typed_dict_inputs=args.typed_dict_inputs,
+            file_opener=file_opener,
+            protocol_version=args.protocol_version,
         )
     else:
         raise NotImplementedError(f"Unknown command {args.command}")
