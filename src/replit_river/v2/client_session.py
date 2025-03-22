@@ -36,7 +36,7 @@ from replit_river.seq_manager import (
 from replit_river.session import Session
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOptions
 
-STREAM_CLOSED_BIT = 0x0004  # Synonymous with the cancel bit in v2
+STREAM_CLOSED_BIT = 0b01000  # Synonymous with the cancel bit in v2
 
 
 logger = logging.getLogger(__name__)
