@@ -1,3 +1,4 @@
+import importlib
 from io import StringIO
 
 from pytest_snapshot.plugin import Snapshot
@@ -175,3 +176,30 @@ def test_unknown_enum(snapshot: Snapshot) -> None:
         target_path="test_unknown_enum",
         client_name="foo",
     )
+
+    import tests.codegen.snapshot.snapshots.test_unknown_enum
+
+    importlib.reload(tests.codegen.snapshot.snapshots.test_unknown_enum)
+    from tests.codegen.snapshot.snapshots.test_unknown_enum.enumService.needsEnum import (  # noqa
+        NeedsenumErrorsTypeAdapter,
+    )
+
+    payloads: list[dict[str, str]] = [
+        {
+            "code": "err_first",
+            "message": "This is a message",
+        },
+        {
+            "code": "err_second",
+            "message": "This is a message",
+        },
+        {
+            "code": "unknown_error",
+            "message": "This is new!",
+        },
+    ]
+
+    for error in payloads:
+        x = NeedsenumErrorsTypeAdapter.validate_python(error)
+        assert x.code == error["code"]
+        assert x.message == error["message"]
