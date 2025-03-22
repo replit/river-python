@@ -753,7 +753,14 @@ def generate_common_client(
     handshake_type: HandshakeType,
     handshake_chunks: Sequence[str],
     modules: list[tuple[ModuleName, ClassName]],
+    protocol_version: Literal["v1.1", "v2.0"],
 ) -> FileContents:
+    client_module: str
+    match protocol_version:
+        case "v1.1":
+            client_module = "river"
+        case "v2.0":
+            client_module = "river.v2"
     chunks: list[str] = [ROOT_FILE_HEADER]
     chunks.extend(
         [
@@ -767,7 +774,7 @@ def generate_common_client(
             dedent(
                 f"""\
                 class {client_name}:
-                  def __init__(self, client: river.Client[{handshake_type}]):
+                  def __init__(self, client: {client_module}.Client[{handshake_type}]):
                 """.rstrip()
             )
         ]
@@ -1031,12 +1038,19 @@ def generate_individual_service(
             ],
         )
 
+    client_module: str
+    match protocol_version:
+        case "v1.1":
+            client_module = "river"
+        case "v2.0":
+            client_module = "river.v2"
+
     class_name = ClassName(f"{schema_name.title()}Service")
     current_chunks: list[str] = [
         dedent(
             f"""\
               class {class_name}:
-                def __init__(self, client: river.Client[Any]):
+                def __init__(self, client: {client_module}.Client[Any]):
                   self.client = client
             """
         ),
@@ -1334,7 +1348,11 @@ def generate_river_client_module(
             modules.append((module_name, class_name))
 
     main_contents = generate_common_client(
-        client_name, handshake_type, handshake_chunks, modules
+        client_name,
+        handshake_type,
+        handshake_chunks,
+        modules,
+        protocol_version,
     )
     files[RenderedPath(str(Path("__init__.py")))] = main_contents
 
