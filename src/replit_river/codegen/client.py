@@ -824,8 +824,9 @@ def generate_individual_service(
             continue
         module_names = [ModuleName(name)]
         init_type: TypeExpression | None = None
+        init_module_info: list[ModuleName] = []
         if procedure.init:
-            init_type, module_info, init_chunks, encoder_names = encode_type(
+            init_type, init_module_info, init_chunks, encoder_names = encode_type(
                 procedure.init,
                 TypeName(f"{name.title()}Init"),
                 input_base_class,
@@ -835,34 +836,29 @@ def generate_individual_service(
             serdes.append(
                 (
                     [extract_inner_type(init_type), *encoder_names],
-                    module_info,
+                    init_module_info,
                     init_chunks,
                 )
             )
-        input_type, module_info, input_chunks, encoder_names = encode_type(
-            procedure.input,
-            TypeName(f"{name.title()}Input"),
-            input_base_class,
-            module_names,
-            permit_unknown_members=False,
-        )
-        input_type_name = extract_inner_type(input_type)
-        input_type_type_adapter_name = TypeName(
-            f"{render_literal_type(input_type_name)}TypeAdapter"
-        )
-        serdes.append(
-            (
-                [extract_inner_type(input_type), *encoder_names],
-                module_info,
-                input_chunks,
+        input_type: TypeExpression | None = None
+        input_module_info: list[ModuleName] = []
+        if procedure.input:
+            input_type, input_module_info, input_chunks, encoder_names = encode_type(
+                procedure.input,
+                TypeName(f"{name.title()}Input"),
+                input_base_class,
+                module_names,
+                permit_unknown_members=False,
             )
-        )
-        serdes.append(
-            _type_adapter_definition(
-                input_type_type_adapter_name, input_type, module_info
+            serdes.append(
+                (
+                    [extract_inner_type(input_type), *encoder_names],
+                    input_module_info,
+                    input_chunks,
+                )
             )
-        )
-        output_type, module_info, output_chunks, encoder_names = encode_type(
+
+        output_type, output_module_info, output_chunks, encoder_names = encode_type(
             procedure.output,
             TypeName(f"{name.title()}Output"),
             "BaseModel",
@@ -873,7 +869,7 @@ def generate_individual_service(
         serdes.append(
             (
                 [output_type_name, *encoder_names],
-                module_info,
+                output_module_info,
                 output_chunks,
             )
         )
@@ -882,12 +878,12 @@ def generate_individual_service(
         )
         serdes.append(
             _type_adapter_definition(
-                output_type_type_adapter_name, output_type, module_info
+                output_type_type_adapter_name, output_type, output_module_info
             )
         )
-        output_module_info = module_info
+
         if procedure.errors:
-            error_type, module_info, errors_chunks, encoder_names = encode_type(
+            error_type, error_module_info, errors_chunks, encoder_names = encode_type(
                 procedure.errors,
                 TypeName(f"{name.title()}Errors"),
                 "RiverError",
@@ -899,7 +895,7 @@ def generate_individual_service(
                 error_type = error_type_name
             else:
                 error_type_name = extract_inner_type(error_type)
-                serdes.append(([error_type_name], module_info, errors_chunks))
+                serdes.append(([error_type_name], error_module_info, errors_chunks))
 
         else:
             error_type_name = TypeName("RiverError")
@@ -909,11 +905,9 @@ def generate_individual_service(
             f"{render_literal_type(error_type_name)}TypeAdapter"
         )
         if error_type_type_adapter_name.value != "RiverErrorTypeAdapter":
-            if len(module_info) == 0:
-                module_info = output_module_info
             serdes.append(
                 _type_adapter_definition(
-                    error_type_type_adapter_name, error_type, module_info
+                    error_type_type_adapter_name, error_type, output_module_info
                 )
             )
         output_or_error_type = UnionTypeExpr([output_type, error_type_name])
@@ -960,7 +954,7 @@ def generate_individual_service(
                 )
                 serdes.append(
                     _type_adapter_definition(
-                        init_type_type_adapter_name, init_type, module_info
+                        init_type_type_adapter_name, init_type, init_module_info
                     )
                 )
                 render_init_method = f"""\
@@ -968,40 +962,42 @@ def generate_individual_service(
                         .validate_python(x)
                 """
 
-        assert init_type is None or render_init_method, (
-            f"Unable to derive the init encoder from: {init_type}"
-        )
-
         # Input renderer
         render_input_method: str | None = None
-        if input_base_class == "TypedDict":
-            if is_literal(procedure.input):
-                render_input_method = "lambda x: x"
-            elif isinstance(
-                procedure.input, RiverConcreteType
-            ) and procedure.input.type in ["array"]:
-                match input_type:
-                    case ListTypeExpr(list_type):
-                        render_input_method = f"""\
-                        lambda xs: [
-                            encode_{render_literal_type(list_type)}(x) for x in xs
-                        ]
-                        """
-            else:
-                render_input_method = f"encode_{render_literal_type(input_type)}"
-        else:
-            render_input_method = f"""\
-                            lambda x: {render_type_expr(input_type_type_adapter_name)}
-                              .dump_python(
-                                x, # type: ignore[arg-type]
-                                by_alias=True,
-                                exclude_none=True,
-                              )
+        if input_type and procedure.input is not None:
+            if input_base_class == "TypedDict":
+                if is_literal(procedure.input):
+                    render_input_method = "lambda x: x"
+                elif isinstance(
+                    procedure.input, RiverConcreteType
+                ) and procedure.input.type in ["array"]:
+                    match input_type:
+                        case ListTypeExpr(list_type):
+                            render_input_method = f"""\
+                            lambda xs: [
+                                encode_{render_literal_type(list_type)}(x) for x in xs
+                            ]
                             """
-
-        assert render_input_method, (
-            f"Unable to derive the input encoder from: {input_type}"
-        )
+                else:
+                    render_input_method = f"encode_{render_literal_type(input_type)}"
+            else:
+                input_type_name = extract_inner_type(input_type)
+                input_type_type_adapter_name = TypeName(
+                    f"{render_literal_type(input_type_name)}TypeAdapter"
+                )
+                serdes.append(
+                    _type_adapter_definition(
+                        input_type_type_adapter_name, input_type, input_module_info
+                    )
+                )
+                render_input_method = f"""\
+                                lambda x: {render_type_expr(input_type_type_adapter_name)}
+                                  .dump_python(
+                                    x, # type: ignore[arg-type]
+                                    by_alias=True,
+                                    exclude_none=True,
+                                  )
+                                """
 
         if isinstance(output_type, NoneTypeExpr):
             parse_output_method = "lambda x: None"
@@ -1060,7 +1056,6 @@ def generate_individual_service(
             )
         elif procedure.type == "upload":
             if init_type:
-                assert render_init_method, "Expected an init renderer!"
                 current_chunks.extend(
                     [
                         reindent(
@@ -1117,7 +1112,6 @@ def generate_individual_service(
                 ]
             )
             if init_type:
-                assert render_init_method, "Expected an init renderer!"
                 current_chunks.extend(
                     [
                         reindent(
