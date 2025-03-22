@@ -45,6 +45,13 @@ def main() -> None:
         action="store",
         type=pathlib.Path,
     )
+    client.add_argument(
+        "--protocol-version",
+        help="Generate river v2 clients",
+        action="store",
+        default="v1.1",
+        choices=["v1.1", "v2.0"],
+    )
     client.add_argument("schema", help="schema file")
     args = parser.parse_args()
 
@@ -75,7 +82,7 @@ def main() -> None:
             args.typed_dict_inputs,
             file_opener,
             method_filter=method_filter,
-            protocol_version="v1.1",
+            protocol_version=args.protocol_version,
         )
     else:
         raise NotImplementedError(f"Unknown command {args.command}")
