@@ -156,15 +156,18 @@ def encode_type(
     permit_unknown_members: bool,
 ) -> tuple[TypeExpression, list[ModuleName], list[FileContents], set[TypeName]]:
     def _make_open_union_type_expr(one_of: list[TypeExpression]) -> OpenUnionTypeExpr:
-        return OpenUnionTypeExpr(
-            UnionTypeExpr(one_of),
-            fallback_type="RiverUnknownError"
-            if base_model == "RiverError"
-            else "RiverUnknownValue",
-            validator_function="translate_unknown_error"
-            if base_model == "RiverError"
-            else "translate_unknown_value",
-        )
+        if base_model == "RiverError":
+            return OpenUnionTypeExpr(
+                UnionTypeExpr(one_of),
+                fallback_type="RiverUnknownError",
+                validator_function="translate_unknown_error",
+            )
+        else:
+            return OpenUnionTypeExpr(
+                UnionTypeExpr(one_of),
+                fallback_type="RiverUnknownValue",
+                validator_function="translate_unknown_value",
+            )
 
     encoder_name: TypeName | None = None  # defining this up here to placate mypy
     chunks: list[FileContents] = []
