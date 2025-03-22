@@ -36,6 +36,7 @@ from replit_river.seq_manager import (
 from replit_river.session import Session
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOptions
 
+STREAM_CANCEL_BIT = 0b00100  # Synonymous with the cancel bit in v2
 STREAM_CLOSED_BIT = 0b01000  # Synonymous with the cancel bit in v2
 
 
@@ -213,11 +214,10 @@ class ClientSession(Session):
                 async with asyncio.timeout(timeout.total_seconds()):
                     response = await output.get()
             except asyncio.TimeoutError as e:
-                # TODO(dstewart) After protocol v2, change this to STREAM_CANCEL_BIT
                 await self.send_message(
                     stream_id=stream_id,
-                    control_flags=STREAM_CLOSED_BIT,
-                    payload={"type": "CLOSE"},
+                    control_flags=STREAM_CANCEL_BIT,
+                    payload={"type": "CANCEL"},
                     service_name=service_name,
                     procedure_name=procedure_name,
                     span=span,
