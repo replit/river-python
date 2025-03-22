@@ -1201,9 +1201,9 @@ def generate_individual_service(
                 ) and procedure.init.type in ["array"]:
                     match init_type:
                         case ListTypeExpr(init_type_name):
-                            render_init_method = (
-                                f"lambda xs: [encode_{init_type_name}(x) for x in xs]"
-                            )
+                            render_init_method = f"lambda xs: [encode_{
+                                render_literal_type(init_type_name)
+                            }(x) for x in xs]"
                 else:
                     render_init_method = f"encode_{render_literal_type(init_type)}"
             else:
