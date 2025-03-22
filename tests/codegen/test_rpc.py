@@ -33,6 +33,7 @@ def generate_rpc_client() -> None:
         typed_dict_inputs=True,
         file_opener=file_opener,
         method_filter=None,
+        protocol_version="v1.1",
     )
 
 
