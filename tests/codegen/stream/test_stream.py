@@ -1,5 +1,5 @@
 import importlib
-from typing import AsyncIterable
+from typing import AsyncIterable, Literal
 
 import pytest
 from pytest_snapshot.plugin import Snapshot
@@ -8,19 +8,32 @@ from replit_river.client import Client
 from tests.codegen.snapshot.codegen_snapshot_fixtures import validate_codegen
 from tests.common_handlers import basic_stream
 
+_AlreadyGenerated = False
 
-@pytest.mark.parametrize("handlers", [{**basic_stream}])
-async def test_basic_stream(snapshot: Snapshot, client: Client) -> None:
-    validate_codegen(
-        snapshot=snapshot,
-        read_schema=lambda: open("tests/codegen/stream/schema.json"),
-        target_path="test_basic_stream",
-        client_name="StreamClient",
-    )
+
+@pytest.fixture
+def stream_client_codegen(snapshot: Snapshot) -> Literal[True]:
+    global _AlreadyGenerated
+    if not _AlreadyGenerated:
+        validate_codegen(
+            snapshot=snapshot,
+            read_schema=lambda: open("tests/codegen/stream/schema.json"),
+            target_path="test_basic_stream",
+            client_name="StreamClient",
+        )
+        _AlreadyGenerated = True
 
     import tests.codegen.snapshot.snapshots.test_basic_stream
 
     importlib.reload(tests.codegen.snapshot.snapshots.test_basic_stream)
+    return True
+
+
+@pytest.mark.parametrize("handlers", [{**basic_stream}])
+async def test_basic_stream(
+    stream_client_codegen: Literal[True],
+    client: Client,
+) -> None:
     from tests.codegen.snapshot.snapshots.test_basic_stream import (
         StreamClient,  # noqa: E501
     )
