@@ -11,6 +11,7 @@ from typing import (
     Sequence,
     Set,
     TextIO,
+    assert_never,
     cast,
 )
 
@@ -804,11 +805,22 @@ def render_library_call(
     """
     current_chunks: list[str] = []
 
+    binding: str
     if procedure.type == "rpc":
-        assert input_meta
+        match protocol_version:
+            case "v1.1":
+                assert input_meta
+                _, tpe, render_method = input_meta
+                binding = "input"
+            case "v2.0":
+                assert init_meta
+                _, tpe, render_method = init_meta
+                binding = "init"
+            case other:
+                assert_never(other)
+
         assert output_meta
         assert error_meta
-        _, input_type, render_input_method = input_meta
         _, output_type, parse_output_method = output_meta
         _, _, parse_error_method = error_meta
 
@@ -819,14 +831,14 @@ def render_library_call(
                     f"""\
         async def {name}(
           self,
-          input: {render_type_expr(input_type)},
+          {binding}: {render_type_expr(tpe)},
           timeout: datetime.timedelta,
         ) -> {render_type_expr(output_type)}:
           return await self.client.send_rpc(
             {repr(schema_name)},
             {repr(name)},
-            input,
-            {reindent("                    ", render_input_method)},
+            {binding},
+            {reindent("                    ", render_method)},
             {reindent("                    ", parse_output_method)},
             {reindent("                    ", parse_error_method)},
             timeout,
@@ -836,10 +848,20 @@ def render_library_call(
             ]
         )
     elif procedure.type == "subscription":
-        assert input_meta
+        match protocol_version:
+            case "v1.1":
+                assert input_meta
+                _, tpe, render_method = input_meta
+                binding = "input"
+            case "v2.0":
+                assert init_meta
+                _, tpe, render_method = init_meta
+                binding = "init"
+            case other:
+                assert_never(other)
+
         assert output_meta
         assert error_meta
-        _, input_type, render_input_method = input_meta
         _, output_type, parse_output_method = output_meta
         _, error_type, parse_error_method = error_meta
         error_type_name = extract_inner_type(error_type)
@@ -859,13 +881,13 @@ def render_library_call(
                     f"""\
         async def {name}(
           self,
-          input: {render_type_expr(input_type)},
+          {binding}: {render_type_expr(tpe)},
         ) -> AsyncIterator[{render_type_expr(output_or_error_type)}]:
           return self.client.send_subscription(
             {repr(schema_name)},
             {repr(name)},
-            input,
-            {reindent("                    ", render_input_method)},
+            {binding},
+            {reindent("                    ", render_method)},
             {reindent("                    ", parse_output_method)},
             {reindent("                    ", parse_error_method)},
           )
@@ -911,6 +933,7 @@ def render_library_call(
                 ]
             )
         else:
+            assert protocol_version == "v1.1", "Protocol v2 requires init to be defined"
             current_chunks.extend(
                 [
                     reindent(
@@ -980,6 +1003,7 @@ def render_library_call(
                 ]
             )
         else:
+            assert protocol_version == "v1.1", "Protocol v2 requires init to be defined"
             current_chunks.extend(
                 [
                     reindent(
