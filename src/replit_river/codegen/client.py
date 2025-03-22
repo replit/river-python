@@ -969,7 +969,7 @@ def generate_individual_service(
                 """
 
         assert init_type is None or render_init_method, (
-            f"Unable to derive the init encoder from: {input_type}"
+            f"Unable to derive the init encoder from: {init_type}"
         )
 
         # Input renderer
