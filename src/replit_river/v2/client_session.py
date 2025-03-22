@@ -15,6 +15,7 @@ from replit_river.common_session import add_msg_to_stream
 from replit_river.error_schema import (
     ERROR_CODE_CANCEL,
     ERROR_CODE_STREAM_CLOSED,
+    RiverError,
     RiverException,
     RiverServiceException,
     StreamClosedRiverServiceException,
@@ -28,10 +29,6 @@ from replit_river.rpc import (
     ACK_BIT,
     STREAM_CLOSED_BIT,
     STREAM_OPEN_BIT,
-    ErrorType,
-    InitType,
-    RequestType,
-    ResponseType,
 )
 from replit_river.seq_manager import (
     IgnoreMessageException,
@@ -168,17 +165,17 @@ class ClientSession(Session):
         except ConnectionClosed as e:
             raise e
 
-    async def send_rpc(
+    async def send_rpc[R, A](
         self,
         service_name: str,
         procedure_name: str,
-        request: RequestType,
-        request_serializer: Callable[[RequestType], Any],
-        response_deserializer: Callable[[Any], ResponseType],
-        error_deserializer: Callable[[Any], ErrorType],
+        request: R,
+        request_serializer: Callable[[R], Any],
+        response_deserializer: Callable[[Any], A],
+        error_deserializer: Callable[[Any], RiverError],
         span: Span,
         timeout: timedelta,
-    ) -> ResponseType:
+    ) -> A:
         """Sends a single RPC request to the server.
 
         Expects the input and output be messages that will be msgpacked.
@@ -233,18 +230,18 @@ class ClientSession(Session):
         except Exception as e:
             raise e
 
-    async def send_upload(
+    async def send_upload[I, R, A](
         self,
         service_name: str,
         procedure_name: str,
-        init: InitType | None,
-        request: AsyncIterable[RequestType],
-        init_serializer: Callable[[InitType], Any] | None,
-        request_serializer: Callable[[RequestType], Any],
-        response_deserializer: Callable[[Any], ResponseType],
-        error_deserializer: Callable[[Any], ErrorType],
+        init: I | None,
+        request: AsyncIterable[R],
+        init_serializer: Callable[[I], Any] | None,
+        request_serializer: Callable[[R], Any],
+        response_deserializer: Callable[[Any], A],
+        error_deserializer: Callable[[Any], RiverError],
         span: Span,
-    ) -> ResponseType:
+    ) -> A:
         """Sends an upload request to the server.
 
         Expects the input and output be messages that will be msgpacked.
@@ -320,16 +317,16 @@ class ClientSession(Session):
         except Exception as e:
             raise e
 
-    async def send_subscription(
+    async def send_subscription[R, E, A](
         self,
         service_name: str,
         procedure_name: str,
-        request: RequestType,
-        request_serializer: Callable[[RequestType], Any],
-        response_deserializer: Callable[[Any], ResponseType],
-        error_deserializer: Callable[[Any], ErrorType],
+        request: R,
+        request_serializer: Callable[[R], Any],
+        response_deserializer: Callable[[Any], A],
+        error_deserializer: Callable[[Any], E],
         span: Span,
-    ) -> AsyncGenerator[ResponseType | ErrorType, None]:
+    ) -> AsyncGenerator[A | E, None]:
         """Sends a subscription request to the server.
 
         Expects the input and output be messages that will be msgpacked.
@@ -372,18 +369,18 @@ class ClientSession(Session):
         finally:
             output.close()
 
-    async def send_stream(
+    async def send_stream[I, R, E, A](
         self,
         service_name: str,
         procedure_name: str,
-        init: InitType | None,
-        request: AsyncIterable[RequestType],
-        init_serializer: Callable[[InitType], Any] | None,
-        request_serializer: Callable[[RequestType], Any],
-        response_deserializer: Callable[[Any], ResponseType],
-        error_deserializer: Callable[[Any], ErrorType],
+        init: I | None,
+        request: AsyncIterable[R],
+        init_serializer: Callable[[I], Any] | None,
+        request_serializer: Callable[[R], Any],
+        response_deserializer: Callable[[Any], A],
+        error_deserializer: Callable[[Any], E],
         span: Span,
-    ) -> AsyncGenerator[ResponseType | ErrorType, None]:
+    ) -> AsyncGenerator[A | E, None]:
         """Sends a subscription request to the server.
 
         Expects the input and output be messages that will be msgpacked.
