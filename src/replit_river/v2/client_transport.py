@@ -181,8 +181,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                         handshake_request,
                         handshake_response,
                     ) = await self._establish_handshake(
-                        self._transport_id,
-                        self._server_id,
                         session_id,
                         uri_and_metadata["metadata"],
                         ws,
@@ -238,8 +236,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
 
     async def _send_handshake_request(
         self,
-        transport_id: str,
-        to_id: str,
         session_id: str,
         handshake_metadata: HandshakeMetadataType | None,
         websocket: WebSocketCommonProtocol,
@@ -260,8 +256,8 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         try:
             await send_transport_message(
                 TransportMessage(
-                    from_=transport_id,  # type: ignore
-                    to=to_id,
+                    from_=self.transport_id,  # type: ignore
+                    to=self._server_id,
                     streamId=stream_id,
                     controlFlags=0,
                     id=self.generate_nanoid(),
@@ -306,8 +302,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
 
     async def _establish_handshake(
         self,
-        transport_id: str,
-        to_id: str,
         session_id: str,
         handshake_metadata: HandshakeMetadataType,
         websocket: WebSocketCommonProtocol,
@@ -332,8 +326,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                 case other:
                     assert_never(other)
             handshake_request = await self._send_handshake_request(
-                transport_id=transport_id,
-                to_id=to_id,
                 session_id=session_id,
                 handshake_metadata=handshake_metadata,
                 websocket=websocket,
