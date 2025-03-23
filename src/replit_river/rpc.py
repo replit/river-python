@@ -47,8 +47,10 @@ _MetadataType: TypeAlias = grpc.aio.Metadata | Sequence[tuple[str, str | bytes]]
 GenericRpcHandlerBuilder = Callable[
     [str, Channel[Any], Channel[Any]], Coroutine[None, None, None]
 ]
-ACK_BIT = 0b00001
-STREAM_OPEN_BIT = 0b00010
+ACK_BIT_TYPE = Literal[0b00001]
+ACK_BIT: ACK_BIT_TYPE = 0b00001
+STREAM_OPEN_BIT_TYPE = Literal[0b00010]
+STREAM_OPEN_BIT: STREAM_OPEN_BIT_TYPE = 0b00010
 
 # these codes are retriable
 # if the server sends a response with one of these codes,

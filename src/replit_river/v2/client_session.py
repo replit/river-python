@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable
 from datetime import timedelta
-from typing import Any, AsyncGenerator, Callable, Coroutine
+from typing import Any, AsyncGenerator, Callable, Coroutine, Literal
 
 import nanoid  # type: ignore
 import websockets
@@ -36,8 +36,10 @@ from replit_river.seq_manager import (
 from replit_river.session import Session
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOptions
 
-STREAM_CANCEL_BIT = 0b00100  # Synonymous with the cancel bit in v2
-STREAM_CLOSED_BIT = 0b01000  # Synonymous with the cancel bit in v2
+STREAM_CANCEL_BIT_TYPE = Literal[0b00100]
+STREAM_CANCEL_BIT: STREAM_CANCEL_BIT_TYPE = 0b00100
+STREAM_CLOSED_BIT_TYPE = Literal[0b01000]
+STREAM_CLOSED_BIT: STREAM_CLOSED_BIT_TYPE = 0b01000
 
 
 logger = logging.getLogger(__name__)
