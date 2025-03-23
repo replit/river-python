@@ -4,12 +4,13 @@ from collections.abc import AsyncIterable
 from datetime import timedelta
 from typing import Any, AsyncGenerator, Callable, Literal
 
-import nanoid  # type: ignore
+import nanoid
 import websockets
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span
 from websockets.exceptions import ConnectionClosed
+from websockets.frames import CloseCode
 
 from replit_river.error_schema import (
     ERROR_CODE_CANCEL,
@@ -27,14 +28,19 @@ from replit_river.messages import (
 from replit_river.rpc import (
     ACK_BIT,
     STREAM_OPEN_BIT,
+    TransportMessage,
 )
 from replit_river.seq_manager import (
     IgnoreMessageException,
     InvalidMessageException,
     OutOfOrderMessageException,
 )
-from replit_river.session import CloseSessionCallback, RetryConnectionCallback, Session
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOptions
+from replit_river.v2.session import (
+    CloseSessionCallback,
+    RetryConnectionCallback,
+    Session,
+)
 
 STREAM_CANCEL_BIT_TYPE = Literal[0b00100]
 STREAM_CANCEL_BIT: STREAM_CANCEL_BIT_TYPE = 0b00100
@@ -67,18 +73,42 @@ class ClientSession(Session):
         )
 
         async def do_close_websocket() -> None:
-            await self.close_websocket(
-                self._ws_wrapper,
-                should_retry=True,
-            )
+            if self._ws_unwrapped:
+                self._task_manager.create_task(self._ws_unwrapped.close())
+                if self._retry_connection_callback:
+                    self._task_manager.create_task(self._retry_connection_callback())
             await self._begin_close_session_countdown()
 
         self._setup_heartbeats_task(do_close_websocket)
 
-    async def start_serve_responses(self) -> None:
-        self._task_manager.create_task(self.serve())
+        def commit(msg: TransportMessage) -> None:
+            pending = self._send_buffer.popleft()
+            if msg.seq != pending.seq:
+                logger.error("Out of sequence error")
+            self._ack_buffer.append(pending)
 
-    async def serve(self) -> None:
+            # On commit, release pending writers waiting for more buffer space
+            if self._queue_full_lock.locked():
+                self._queue_full_lock.release()
+
+        def get_next_pending() -> TransportMessage | None:
+            if self._send_buffer:
+                return self._send_buffer[0]
+            return None
+
+        self._task_manager.create_task(
+            buffered_message_sender(
+                get_ws=lambda: self._ws_unwrapped,
+                websocket_closed_callback=self._begin_close_session_countdown,
+                get_next_pending=get_next_pending,
+                commit=commit,
+            )
+        )
+
+    async def start_serve_responses(self) -> None:
+        self._task_manager.create_task(self._serve())
+
+    async def _serve(self) -> None:
         """Serve messages from the websocket."""
         self._reset_session_close_countdown()
         try:
@@ -105,16 +135,18 @@ class ClientSession(Session):
                 )
 
     async def _handle_messages_from_ws(self) -> None:
+        while self._ws_unwrapped is None:
+            await asyncio.sleep(1)
         logger.debug(
             "%s start handling messages from ws %s",
             "client",
-            self._ws_wrapper.id,
+            self._ws_unwrapped.id,
         )
         try:
-            ws_wrapper = self._ws_wrapper
-            async for message in ws_wrapper.ws:
+            ws = self._ws_unwrapped
+            async for message in ws:
                 try:
-                    if not await ws_wrapper.is_open():
+                    if not self._ws_unwrapped:
                         # We should not process messages if the websocket is closed.
                         break
                     msg = parse_transport_msg(message, self._transport_options)
@@ -122,54 +154,76 @@ class ClientSession(Session):
                     logger.debug(f"{self._transport_id} got a message %r", msg)
 
                     # Update bookkeeping
-                    await self._seq_manager.check_seq_and_update(msg)
-                    await self._buffer.remove_old_messages(
-                        self._seq_manager.receiver_ack,
-                    )
+                    if msg.seq < self.ack:
+                        raise IgnoreMessageException(
+                            f"{msg.from_} received duplicate msg, got {msg.seq}"
+                            f" expected {self.ack}"
+                        )
+                    elif msg.seq > self.ack:
+                        logger.warning(
+                            f"Out of order message received got {msg.seq} expected "
+                            f"{self.ack}"
+                        )
+
+                        raise OutOfOrderMessageException(
+                            f"Out of order message received got {msg.seq} expected "
+                            f"{self.ack}"
+                        )
+
+                    assert msg.seq == self.ack, "Safety net, redundant assertion"
+
+                    # Set our next expected ack number
+                    self.ack = msg.seq + 1
+
+                    # Discard old messages from the buffer
+                    while self._ack_buffer and self._ack_buffer[0].seq < msg.ack:
+                        self._ack_buffer.popleft()
+
                     self._reset_session_close_countdown()
 
                     if msg.controlFlags & ACK_BIT != 0:
                         continue
-                    async with self._stream_lock:
-                        stream = self._streams.get(msg.streamId, None)
-                    if msg.controlFlags & STREAM_OPEN_BIT == 0:
-                        if not stream:
-                            logger.warning("no stream for %s", msg.streamId)
-                            raise IgnoreMessageException(
-                                "no stream for message, ignoring"
-                            )
-
-                        if (
-                            msg.controlFlags & STREAM_CLOSED_BIT != 0
-                            and msg.payload.get("type", None) == "CLOSE"
-                        ):
-                            # close message is not sent to the stream
-                            pass
-                        else:
-                            try:
-                                await stream.put(msg.payload)
-                            except ChannelClosed:
-                                # The client is no longer interested in this stream,
-                                # just drop the message.
-                                pass
-                            except RuntimeError as e:
-                                raise InvalidMessageException(e) from e
-                    else:
+                    stream = self._streams.get(msg.streamId)
+                    if msg.controlFlags & STREAM_OPEN_BIT != 0:
                         raise InvalidMessageException(
                             "Client should not receive stream open bit"
                         )
 
+                    if not stream:
+                        logger.warning("no stream for %s", msg.streamId)
+                        raise IgnoreMessageException("no stream for message, ignoring")
+
+                    if (
+                        msg.controlFlags & STREAM_CLOSED_BIT != 0
+                        and msg.payload.get("type", None) == "CLOSE"
+                    ):
+                        # close message is not sent to the stream
+                        pass
+                    else:
+                        try:
+                            await stream.put(msg.payload)
+                        except ChannelClosed:
+                            # The client is no longer interested in this stream,
+                            # just drop the message.
+                            pass
+                        except RuntimeError as e:
+                            raise InvalidMessageException(e) from e
+
                     if msg.controlFlags & STREAM_CLOSED_BIT != 0:
                         if stream:
                             stream.close()
-                        async with self._stream_lock:
-                            del self._streams[msg.streamId]
+                        del self._streams[msg.streamId]
                 except IgnoreMessageException:
                     logger.debug("Ignoring transport message", exc_info=True)
                     continue
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
-                    await ws_wrapper.close()
+                    self._task_manager.create_task(
+                        self._ws_unwrapped.close(
+                            code=CloseCode.INVALID_DATA,
+                            reason="Out of order message",
+                        )
+                    )
                     return
                 except InvalidMessageException:
                     logger.exception("Got invalid transport message, closing session")

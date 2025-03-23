@@ -35,7 +35,6 @@ from replit_river.seq_manager import (
     IgnoreMessageException,
     InvalidMessageException,
 )
-from replit_river.session import Session
 from replit_river.transport_options import (
     HandshakeMetadataType,
     TransportOptions,
@@ -43,13 +42,21 @@ from replit_river.transport_options import (
 )
 from replit_river.v2.client_session import ClientSession
 
+from .session import Session
+
 PROTOCOL_VERSION = "v2.0"
 
 logger = logging.getLogger(__name__)
 
 
+class HandshakeBudgetExhaustedException(RiverException):
+    def __init__(self, code: str, message: str, client_id: str) -> None:
+        super().__init__(code, message)
+        self.client_id = client_id
+
+
 class ClientTransport(Generic[HandshakeMetadataType]):
-    _sessions: dict[str, ClientSession]
+    _session: ClientSession | None
 
     def __init__(
         self,
@@ -58,10 +65,9 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         server_id: str,
         transport_options: TransportOptions,
     ):
-        self._sessions = {}
+        self._session = None
         self._transport_id = client_id
         self._transport_options = transport_options
-        self._session_lock = asyncio.Lock()
 
         self._uri_and_metadata_factory = uri_and_metadata_factory
         self._client_id = client_id
@@ -72,19 +78,11 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         # We want to make sure there's only one session creation at a time
         self._create_session_lock = asyncio.Lock()
 
-    async def _close_all_sessions(self) -> None:
-        sessions = self._sessions.values()
-        logger.info(
-            f"start closing sessions {self._transport_id}, number sessions : "
-            f"{len(sessions)}"
-        )
-        sessions_to_close = list(sessions)
-
-        # closing sessions requires access to the session lock, so we need to close
-        # them one by one to be safe
-        for session in sessions_to_close:
-            await session.close()
-
+    async def _close_session(self) -> None:
+        logger.info(f"start closing session {self._transport_id}")
+        if not self._session:
+            return
+        await self._session.close()
         logger.info(f"Transport closed {self._transport_id}")
 
     def generate_nanoid(self) -> str:
@@ -92,18 +90,23 @@ class ClientTransport(Generic[HandshakeMetadataType]):
 
     async def close(self) -> None:
         self._rate_limiter.close()
-        await self._close_all_sessions()
+        await self._close_session()
 
     async def get_or_create_session(self) -> ClientSession:
+        """
+        If we have an active session, return it.
+        If we have a "closed" session, mint a whole new session.
+        If we have a disconnected session, attempt to start a new WS and use it.
+        """
         async with self._create_session_lock:
-            existing_session = await self._get_existing_session()
-            if not existing_session:
+            existing_session = (
+                self._session
+                if self._session and self._session.is_session_open()
+                else None
+            )
+            if existing_session is None:
                 return await self._create_new_session()
-            is_session_open = await existing_session.is_session_open()
-            if not is_session_open:
-                return await self._create_new_session()
-            is_ws_open = await existing_session.is_websocket_open()
-            if is_ws_open:
+            if existing_session.is_websocket_open():
                 return existing_session
             new_ws, _, hs_response = await self._establish_new_connection(
                 existing_session
@@ -117,25 +120,10 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                 return existing_session
             else:
                 logger.info("Closing stale session %s", existing_session.session_id)
+                await new_ws.close()  # NB(dstewart): This wasn't there in the
+                #                       v1 transport, were we just leaking WS?
                 await existing_session.close()
                 return await self._create_new_session()
-
-    async def _get_existing_session(self) -> ClientSession | None:
-        async with self._session_lock:
-            if not self._sessions:
-                return None
-            if len(self._sessions) > 1:
-                raise RiverException(
-                    "session_error",
-                    "More than one session found in client, should only be one",
-                )
-            session = list(self._sessions.values())[0]
-            if isinstance(session, ClientSession):
-                return session
-            else:
-                raise RiverException(
-                    "session_error", f"Client session type wrong, got {type(session)}"
-                )
 
     async def _establish_new_connection(
         self,
@@ -157,24 +145,26 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                 logger.info(f"Retrying build handshake number {i} times")
             if not rate_limit.has_budget(client_id):
                 logger.debug("No retry budget for %s.", client_id)
-                raise RiverException(
-                    ERROR_HANDSHAKE, f"No retry budget for {client_id}"
+                raise HandshakeBudgetExhaustedException(
+                    ERROR_HANDSHAKE,
+                    "No retry budget",
+                    client_id=client_id,
                 ) from last_error
 
             rate_limit.consume_budget(client_id)
 
             # if the session is closed, we shouldn't use it
-            if old_session and not await old_session.is_session_open():
+            if old_session and not old_session.is_session_open():
                 old_session = None
 
             try:
                 uri_and_metadata = await self._uri_and_metadata_factory()
                 ws = await websockets.connect(uri_and_metadata["uri"])
-                session_id = (
-                    self.generate_nanoid()
-                    if not old_session
-                    else old_session.session_id
-                )
+                session_id: str
+                if old_session:
+                    session_id = old_session.session_id
+                else:
+                    session_id = self.generate_nanoid()
 
                 try:
                     (
@@ -225,13 +215,13 @@ class ClientTransport(Generic[HandshakeMetadataType]):
             retry_connection_callback=self._retry_connection,
         )
 
-        self._sessions[new_session._to_id] = new_session
+        self._session = new_session
         await new_session.start_serve_responses()
         return new_session
 
     async def _retry_connection(self) -> ClientSession:
         if not self._transport_options.transparent_reconnect:
-            await self._close_all_sessions()
+            await self._close_session()
         return await self.get_or_create_session()
 
     async def _send_handshake_request(
@@ -254,16 +244,17 @@ class ClientTransport(Generic[HandshakeMetadataType]):
             logger.error("websocket closed before handshake response")
 
         try:
+            payload = handshake_request.model_dump()
             await send_transport_message(
                 TransportMessage(
-                    from_=self.transport_id,  # type: ignore
+                    from_=self._transport_id,
                     to=self._server_id,
                     streamId=stream_id,
                     controlFlags=0,
                     id=self.generate_nanoid(),
                     seq=0,
                     ack=0,
-                    payload=handshake_request.model_dump(),
+                    payload=payload,
                 ),
                 ws=websocket,
                 websocket_closed_callback=websocket_closed_callback,
@@ -320,8 +311,8 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                     )
                 case ClientSession():
                     expectedSessionState = ExpectedSessionState(
-                        nextExpectedSeq=await old_session.get_next_expected_seq(),
-                        nextSentSeq=await old_session.get_next_sent_seq(),
+                        nextExpectedSeq=old_session.ack,
+                        nextSentSeq=old_session.seq,
                     )
                 case other:
                     assert_never(other)
@@ -368,6 +359,5 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         return handshake_request, handshake_response
 
     async def _delete_session(self, session: Session) -> None:
-        async with self._session_lock:
-            if session._to_id in self._sessions:
-                del self._sessions[session._to_id]
+        if self._session and session._to_id == self._session._to_id:
+            self._session = None
