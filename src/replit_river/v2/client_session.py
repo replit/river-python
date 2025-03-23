@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable
 from datetime import timedelta
-from typing import Any, AsyncGenerator, Callable, Coroutine, Literal
+from typing import Any, AsyncGenerator, Callable, Literal
 
 import nanoid  # type: ignore
 import websockets
@@ -33,7 +33,7 @@ from replit_river.seq_manager import (
     InvalidMessageException,
     OutOfOrderMessageException,
 )
-from replit_river.session import Session
+from replit_river.session import CloseSessionCallback, RetryConnectionCallback, Session
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOptions
 
 STREAM_CANCEL_BIT_TYPE = Literal[0b00100]
@@ -53,14 +53,8 @@ class ClientSession(Session):
         session_id: str,
         websocket: websockets.WebSocketCommonProtocol,
         transport_options: TransportOptions,
-        close_session_callback: Callable[[Session], Coroutine[Any, Any, Any]],
-        retry_connection_callback: (
-            Callable[
-                [],
-                Coroutine[Any, Any, Any],
-            ]
-            | None
-        ) = None,
+        close_session_callback: CloseSessionCallback,
+        retry_connection_callback: RetryConnectionCallback | None = None,
     ) -> None:
         super().__init__(
             transport_id=transport_id,
