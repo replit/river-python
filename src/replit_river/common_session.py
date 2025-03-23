@@ -3,6 +3,7 @@ import logging
 from typing import Any, Protocol
 
 from opentelemetry.trace import Span
+from websockets import WebSocketCommonProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -36,5 +37,5 @@ class SessionState(enum.Enum):
     CLOSED = 3
 
 
-ConnectingStates = set([SessionState.NO_CONNECTION])
+ConnectingStateta = set([SessionState.NO_CONNECTION])
 TerminalStates = set([SessionState.CLOSING, SessionState.CLOSED])
