@@ -193,7 +193,7 @@ class Session:
         msg = TransportMessage(
             streamId=stream_id,
             id=nanoid.generate(),
-            from_=self._transport_id,  # type: ignore
+            from_=self._transport_id,
             to=self._to_id,
             seq=self.seq,
             ack=self.ack,
@@ -202,6 +202,7 @@ class Session:
             serviceName=service_name,
             procedureName=procedure_name,
         )
+
         if span:
             with use_span(span):
                 trace_propagator.inject(msg, None, trace_setter)
