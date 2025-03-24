@@ -74,6 +74,7 @@ class ClientSession(Session):
 
         async def do_close_websocket() -> None:
             if self._ws_unwrapped:
+                self._ws_connected = False
                 self._task_manager.create_task(self._ws_unwrapped.close())
                 if self._retry_connection_callback:
                     self._task_manager.create_task(self._retry_connection_callback())
@@ -98,7 +99,7 @@ class ClientSession(Session):
 
         self._task_manager.create_task(
             buffered_message_sender(
-                get_ws=lambda: self._ws_unwrapped,
+                get_ws=lambda: self._ws_unwrapped if self.is_websocket_open() else None,
                 websocket_closed_callback=self._begin_close_session_countdown,
                 get_next_pending=get_next_pending,
                 commit=commit,
