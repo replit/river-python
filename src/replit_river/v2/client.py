@@ -58,27 +58,6 @@ def translate_unknown_error(
             return RiverUnknownError(code=ERROR_CODE_UNKNOWN, message="Unknown error")
 
 
-# Client[HandshakeSchema](
-#     uri_and_metadata_factory=uri_and_metadata_factory,
-#     client_id=self.client_id,
-#     server_id="SERVER",
-#     transport_options=TransportOptions(
-#         session_disconnect_grace_ms=settings.RIVER_SESSION_DISCONNECT_GRACE_MS,
-#         heartbeat_ms=settings.RIVER_HEARTBEAT_MS,
-#         heartbeats_until_dead=settings.RIVER_HEARTBEATS_UNTIL_DEAD,
-#         connection_retry_options=ConnectionRetryOptions(
-#             base_interval_ms=settings.RIVER_CONNECTION_BASE_INTERVAL_MS,
-#             max_jitter_ms=settings.RIVER_CONNECTION_MAX_JITTER_MS,
-#             max_backoff_ms=settings.RIVER_CONNECTION_MAX_BACKOFF_MS,
-#             attempt_budget_capacity=self.attempt_budget_capacity,
-#             budget_restore_interval_ms=
-#               settings.RIVER_CONNECTION_BUDGET_RESTORE_INTERVAL_MS,
-#             max_retry=self.max_retry_count,
-#         ),
-#     ),
-# )
-
-
 class Client(Generic[HandshakeMetadataType]):
     def __init__(
         self,

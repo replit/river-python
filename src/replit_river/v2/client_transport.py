@@ -6,9 +6,9 @@ from typing import Generic, assert_never
 import nanoid
 import websockets
 from pydantic import ValidationError
-from websockets import (
-    WebSocketCommonProtocol,
-)
+import websockets.asyncio.client
+from websockets import WebSocketCommonProtocol
+from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
 
 from replit_river.error_schema import (
@@ -129,7 +129,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         self,
         old_session: ClientSession | None = None,
     ) -> tuple[
-        WebSocketCommonProtocol,
+        ClientConnection,
         ControlMessageHandshakeRequest[HandshakeMetadataType],
         ControlMessageHandshakeResponse,
     ]:
@@ -159,7 +159,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
 
             try:
                 uri_and_metadata = await self._uri_and_metadata_factory()
-                ws = await websockets.connect(uri_and_metadata["uri"])
+                ws = await websockets.asyncio.client.connect(uri_and_metadata["uri"])
                 session_id: str
                 if old_session:
                     session_id = old_session.session_id
@@ -228,7 +228,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         self,
         session_id: str,
         handshake_metadata: HandshakeMetadataType | None,
-        websocket: WebSocketCommonProtocol,
+        websocket: ClientConnection,
         expected_session_state: ExpectedSessionState,
     ) -> ControlMessageHandshakeRequest[HandshakeMetadataType]:
         handshake_request = ControlMessageHandshakeRequest[HandshakeMetadataType](
@@ -266,7 +266,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
             ) from e
 
     async def _get_handshake_response_msg(
-        self, websocket: WebSocketCommonProtocol
+        self, websocket: ClientConnection
     ) -> TransportMessage:
         while True:
             try:
@@ -295,7 +295,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         self,
         session_id: str,
         handshake_metadata: HandshakeMetadataType,
-        websocket: WebSocketCommonProtocol,
+        websocket: ClientConnection,
         old_session: ClientSession | None,
     ) -> tuple[
         ControlMessageHandshakeRequest[HandshakeMetadataType],
