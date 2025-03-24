@@ -129,6 +129,7 @@ class Session:
         self._retry_connection_callback = retry_connection_callback
 
         # message state
+        self._message_enqueued = asyncio.Semaphore()
         self._space_available_cond = asyncio.Condition()
         self._queue_full_lock = asyncio.Lock()
 
@@ -174,6 +175,7 @@ class Session:
 
         self._task_manager.create_task(
             buffered_message_sender(
+                self._message_enqueued,
                 get_ws=lambda: (
                     cast(WebSocketCommonProtocol | ClientConnection, self._ws_unwrapped)
                     if self.is_websocket_open()
@@ -309,6 +311,8 @@ class Session:
             await self._queue_full_lock.acquire()
             logger.warning("LOCK RELEASED %r", repr(payload))
         self._send_buffer.append(msg)
+        # Wake up buffered_message_sender
+        self._message_enqueued.release()
         self.seq += 1
 
     async def close(self) -> None:
