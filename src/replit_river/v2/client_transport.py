@@ -245,7 +245,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
 
         try:
             payload = handshake_request.model_dump()
-            logger.warning("PAYLOAD HERE: {repr(payload)}")
+            logger.warning(f"PAYLOAD HERE: {repr(payload)}")
             await send_transport_message(
                 TransportMessage(
                     from_=self._transport_id,
