@@ -5,7 +5,6 @@ from datetime import timedelta
 from typing import Any, AsyncGenerator, Callable, Literal, cast
 
 import nanoid
-import websockets
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span
@@ -75,7 +74,11 @@ class ClientSession(Session):
         )
 
         async def do_close_websocket() -> None:
-            logger.debug("do_close called, _ws_connected=%r, _ws_unwrapped=%r", self._ws_connected, self._ws_unwrapped)
+            logger.debug(
+                "do_close called, _ws_connected=%r, _ws_unwrapped=%r",
+                self._ws_connected,
+                self._ws_unwrapped,
+            )
             self._ws_connected = False
             if self._ws_unwrapped:
                 self._task_manager.create_task(self._ws_unwrapped.close())

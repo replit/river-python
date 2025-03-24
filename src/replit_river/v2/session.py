@@ -4,7 +4,6 @@ from collections import deque
 from typing import Any, Awaitable, Callable, Coroutine, TypeAlias
 
 import nanoid  # type: ignore
-import websockets
 from aiochannel import Channel
 from opentelemetry.trace import Span, use_span
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
@@ -162,9 +161,7 @@ class Session:
         self._close_session_after_time_secs = close_session_after_time_secs
         self._ws_connected = False
 
-    async def replace_with_new_websocket(
-        self, new_ws: ClientConnection
-    ) -> None:
+    async def replace_with_new_websocket(self, new_ws: ClientConnection) -> None:
         if self._ws_unwrapped and new_ws.id != self._ws_unwrapped.id:
             self._task_manager.create_task(
                 self._ws_unwrapped.close(
