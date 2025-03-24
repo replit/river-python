@@ -24,7 +24,7 @@ from replit_river.seq_manager import (
 )
 from replit_river.task_manager import BackgroundTaskManager
 from replit_river.transport_options import TransportOptions
-from replit_river.websocket_wrapper import WebsocketWrapper
+from replit_river.websocket_wrapper import WebsocketWrapper, WsState
 
 from .rpc import (
     ACK_BIT,
@@ -121,6 +121,7 @@ class Session:
                 self._transport_options.heartbeat_ms,
                 self._transport_options.heartbeats_until_dead,
                 lambda: self._state,
+                lambda: self._ws_wrapper.ws_state == WsState.OPEN,
                 lambda: self._close_session_after_time_secs,
                 close_websocket=do_close_websocket,
                 send_message=self.send_message,
