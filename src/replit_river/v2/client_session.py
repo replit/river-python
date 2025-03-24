@@ -2,15 +2,17 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable
 from datetime import timedelta
-from typing import Any, AsyncGenerator, Callable, Literal
+from typing import Any, AsyncGenerator, Callable, Literal, cast
 
 import nanoid
 import websockets
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span
+from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
 from websockets.frames import CloseCode
+from websockets.legacy.protocol import WebSocketCommonProtocol
 
 from replit_river.error_schema import (
     ERROR_CODE_CANCEL,
@@ -57,7 +59,7 @@ class ClientSession(Session):
         transport_id: str,
         to_id: str,
         session_id: str,
-        websocket: websockets.WebSocketCommonProtocol,
+        websocket: ClientConnection,
         transport_options: TransportOptions,
         close_session_callback: CloseSessionCallback,
         retry_connection_callback: RetryConnectionCallback | None = None,
@@ -100,7 +102,11 @@ class ClientSession(Session):
 
         self._task_manager.create_task(
             buffered_message_sender(
-                get_ws=lambda: self._ws_unwrapped if self.is_websocket_open() else None,
+                get_ws=lambda: (
+                    cast(WebSocketCommonProtocol | ClientConnection, self._ws_unwrapped)
+                    if self.is_websocket_open()
+                    else None
+                ),
                 websocket_closed_callback=self._begin_close_session_countdown,
                 get_next_pending=get_next_pending,
                 commit=commit,

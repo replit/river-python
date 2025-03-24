@@ -8,6 +8,7 @@ import websockets
 from aiochannel import Channel
 from opentelemetry.trace import Span, use_span
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
+from websockets.asyncio.client import ClientConnection
 from websockets.frames import CloseCode
 
 from replit_river.common_session import (
@@ -47,7 +48,7 @@ class Session:
 
     # ws state
     _ws_connected: bool
-    _ws_unwrapped: websockets.WebSocketCommonProtocol | None
+    _ws_unwrapped: ClientConnection | None
     _heartbeat_misses: int
     _retry_connection_callback: RetryConnectionCallback | None
 
@@ -66,7 +67,7 @@ class Session:
         transport_id: str,
         to_id: str,
         session_id: str,
-        websocket: websockets.WebSocketCommonProtocol,
+        websocket: ClientConnection,
         transport_options: TransportOptions,
         close_session_callback: CloseSessionCallback,
         retry_connection_callback: RetryConnectionCallback | None = None,
@@ -162,7 +163,7 @@ class Session:
         self._ws_connected = False
 
     async def replace_with_new_websocket(
-        self, new_ws: websockets.WebSocketCommonProtocol
+        self, new_ws: ClientConnection
     ) -> None:
         if self._ws_unwrapped and new_ws.id != self._ws_unwrapped.id:
             self._task_manager.create_task(

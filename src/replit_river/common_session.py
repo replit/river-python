@@ -4,6 +4,7 @@ from typing import Any, Protocol
 
 from opentelemetry.trace import Span
 from websockets import WebSocketCommonProtocol
+from websockets.asyncio.client import ClientConnection
 
 logger = logging.getLogger(__name__)
 
