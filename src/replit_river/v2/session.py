@@ -159,6 +159,7 @@ class Session:
             self._to_id,
         )
         self._close_session_after_time_secs = close_session_after_time_secs
+        self._ws_connected = False
 
     async def replace_with_new_websocket(
         self, new_ws: websockets.WebSocketCommonProtocol
