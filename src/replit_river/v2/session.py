@@ -135,7 +135,7 @@ class Session:
     def is_session_open(self) -> bool:
         return self._state == SessionState.ACTIVE
 
-    async def is_websocket_open(self) -> bool:
+    def is_websocket_open(self) -> bool:
         return self._ws_connected
 
     async def _begin_close_session_countdown(self) -> None:
