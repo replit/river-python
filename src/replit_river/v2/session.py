@@ -71,7 +71,6 @@ from replit_river.transport_options import (
 )
 from replit_river.v2.client_transport import (
     PROTOCOL_VERSION,
-    HandshakeBudgetExhaustedException,
 )
 
 STREAM_CANCEL_BIT_TYPE = Literal[0b00100]
@@ -202,11 +201,13 @@ class Session:
             )
         )
 
-    async def ensure_connected(
+    async def ensure_connected[HandshakeMetadata](
         self,
         client_id: str,
         rate_limiter: LeakyBucketRateLimit,
-        uri_and_metadata_factory: Callable[[], Awaitable[UriAndMetadata]],
+        uri_and_metadata_factory: Callable[
+            [], Awaitable[UriAndMetadata[HandshakeMetadata]]
+        ],  # noqa: E501
     ) -> None:
         """
         Either return immediately or establish a websocket connection and return
@@ -218,16 +219,11 @@ class Session:
         logger.info("Attempting to establish new ws connection")
 
         last_error: Exception | None = None
-        for i in range(max_retry):
+        i = 0
+        while rate_limiter.has_budget_or_throw(client_id, ERROR_HANDSHAKE, last_error):
             if i > 0:
                 logger.info(f"Retrying build handshake number {i} times")
-            if not rate_limiter.has_budget(client_id):
-                logger.debug("No retry budget for %s.", client_id)
-                raise HandshakeBudgetExhaustedException(
-                    ERROR_HANDSHAKE,
-                    "No retry budget",
-                    client_id=client_id,
-                ) from last_error
+            i += 1
 
             rate_limiter.consume_budget(client_id)
 
@@ -238,10 +234,12 @@ class Session:
                 try:
                     try:
                         expectedSessionState = ExpectedSessionState(
-                            nextExpectedSeq=0,
-                            nextSentSeq=0,
+                            nextExpectedSeq=self.ack,
+                            nextSentSeq=self.seq,
                         )
-                        handshake_request = ControlMessageHandshakeRequest[Any](
+                        handshake_request = ControlMessageHandshakeRequest[
+                            HandshakeMetadata
+                        ](  # noqa: E501
                             type="HANDSHAKE_REQ",
                             protocolVersion=PROTOCOL_VERSION,
                             sessionId=self.session_id,
@@ -253,84 +251,67 @@ class Session:
                         async def websocket_closed_callback() -> None:
                             logger.error("websocket closed before handshake response")
 
-                        try:
-                            payload = handshake_request.model_dump()
-                            await send_transport_message(
-                                TransportMessage(
-                                    from_=self._transport_id,
-                                    to=self._to_id,
-                                    streamId=stream_id,
-                                    controlFlags=0,
-                                    id=nanoid.generate(),
-                                    seq=0,
-                                    ack=0,
-                                    payload=payload,
-                                ),
-                                ws=ws,
-                                websocket_closed_callback=websocket_closed_callback,
-                            )
-                        except (
-                            WebsocketClosedException,
-                            FailedSendingMessageException,
-                        ) as e:  # noqa: E501
-                            raise RiverException(
-                                ERROR_HANDSHAKE,
-                                "Handshake failed, conn closed while sending response",  # noqa: E501
-                            ) from e
-                    except FailedSendingMessageException as e:
+                        await send_transport_message(
+                            TransportMessage(
+                                from_=self._transport_id,
+                                to=self._to_id,
+                                streamId=stream_id,
+                                controlFlags=0,
+                                id=nanoid.generate(),
+                                seq=0,
+                                ack=0,
+                                payload=handshake_request.model_dump(),
+                            ),
+                            ws=ws,
+                            websocket_closed_callback=websocket_closed_callback,
+                        )
+                    except (
+                        WebsocketClosedException,
+                        FailedSendingMessageException,
+                    ) as e:  # noqa: E501
                         raise RiverException(
-                            ERROR_CODE_STREAM_CLOSED,
-                            "Stream closed before response, closing connection",
+                            ERROR_HANDSHAKE,
+                            "Handshake failed, conn closed while sending response",  # noqa: E501
                         ) from e
 
                     startup_grace_deadline_ms = await self._get_current_time() + 60_000
-                    try:
-                        while True:
-                            if (
-                                await self._get_current_time()
-                                >= startup_grace_deadline_ms
-                            ):  # noqa: E501
-                                raise RiverException(
-                                    ERROR_HANDSHAKE,
-                                    "Handshake response timeout, closing connection",  # noqa: E501
-                                )
-                            try:
-                                data = await ws.recv()
-                            except ConnectionClosed as e:
-                                logger.debug(
-                                    "Connection closed during waiting for handshake response",  # noqa: E501
-                                    exc_info=True,
-                                )
-                                raise RiverException(
-                                    ERROR_HANDSHAKE,
-                                    "Handshake failed, conn closed while waiting for response",  # noqa: E501
-                                ) from e
-                            try:
-                                response_msg = parse_transport_msg(data)
-                                break
-                            except IgnoreMessageException:
-                                logger.debug(
-                                    "Ignoring transport message", exc_info=True
-                                )  # noqa: E501
-                                continue
-                            except InvalidMessageException as e:
-                                raise RiverException(
-                                    ERROR_HANDSHAKE,
-                                    "Got invalid transport message, closing connection",
-                                ) from e
+                    while True:
+                        if await self._get_current_time() >= startup_grace_deadline_ms:  # noqa: E501
+                            raise RiverException(
+                                ERROR_HANDSHAKE,
+                                "Handshake response timeout, closing connection",  # noqa: E501
+                            )
+                        try:
+                            data = await ws.recv()
+                        except ConnectionClosed as e:
+                            logger.debug(
+                                "Connection closed during waiting for handshake response",  # noqa: E501
+                                exc_info=True,
+                            )
+                            raise RiverException(
+                                ERROR_HANDSHAKE,
+                                "Handshake failed, conn closed while waiting for response",  # noqa: E501
+                            ) from e
+                        try:
+                            response_msg = parse_transport_msg(data)
+                            break
+                        except IgnoreMessageException:
+                            logger.debug("Ignoring transport message", exc_info=True)  # noqa: E501
+                            continue
+                        except InvalidMessageException as e:
+                            raise RiverException(
+                                ERROR_HANDSHAKE,
+                                "Got invalid transport message, closing connection",
+                            ) from e
 
+                    try:
                         handshake_response = ControlMessageHandshakeResponse(
                             **response_msg.payload
-                        )  # noqa: E501
+                        )
                         logger.debug("river client waiting for handshake response")
                     except ValidationError as e:
                         raise RiverException(
                             ERROR_HANDSHAKE, "Failed to parse handshake response"
-                        ) from e
-                    except asyncio.TimeoutError as e:
-                        raise RiverException(
-                            ERROR_HANDSHAKE,
-                            "Handshake response timeout, closing connection",  # noqa: E501
                         ) from e
 
                     logger.debug(
