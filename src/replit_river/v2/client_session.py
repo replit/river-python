@@ -73,8 +73,9 @@ class ClientSession(Session):
         )
 
         async def do_close_websocket() -> None:
+            logger.debug("do_close called, _ws_connected=%r, _ws_unwrapped=%r", self._ws_connected, self._ws_unwrapped)
+            self._ws_connected = False
             if self._ws_unwrapped:
-                self._ws_connected = False
                 self._task_manager.create_task(self._ws_unwrapped.close())
                 if self._retry_connection_callback:
                     self._task_manager.create_task(self._retry_connection_callback())
