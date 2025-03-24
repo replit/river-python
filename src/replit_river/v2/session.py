@@ -220,7 +220,9 @@ class Session:
             self._queue_full_lock.locked()
             or len(self._send_buffer) >= self._transport_options.buffer_size
         ):
+            logger.warning("LOCK ACQUIRED %r", repr(payload))
             await self._queue_full_lock.acquire()
+            logger.warning("LOCK RELEASED %r", repr(payload))
         self._send_buffer.append(msg)
         self.seq += 1
 
