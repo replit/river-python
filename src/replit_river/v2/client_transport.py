@@ -71,8 +71,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         self._rate_limiter = LeakyBucketRateLimit(
             transport_options.connection_retry_options
         )
-        # We want to make sure there's only one session creation at a time
-        self._create_session_lock = asyncio.Lock()
 
     async def _close_session(self) -> None:
         logger.info(f"start closing session {self._transport_id}")
@@ -94,29 +92,28 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         If we have a "closed" session, mint a whole new session.
         If we have a disconnected session, attempt to start a new WS and use it.
         """
-        async with self._create_session_lock:
-            existing_session = self._session
-            if not existing_session:
-                logger.info("Creating new session")
-                new_session = Session(
-                    transport_id=self._transport_id,
-                    to_id=self._server_id,
-                    session_id=self.generate_nanoid(),
-                    transport_options=self._transport_options,
-                    close_session_callback=self._delete_session,
-                    retry_connection_callback=self._retry_connection,
-                )
-
-                self._session = new_session
-                existing_session = new_session
-                await existing_session.start_serve_responses()
-
-            await existing_session.ensure_connected(
-                client_id=self._client_id,
-                rate_limiter=self._rate_limiter,
-                uri_and_metadata_factory=self._uri_and_metadata_factory,
+        existing_session = self._session
+        if not existing_session:
+            logger.info("Creating new session")
+            new_session = Session(
+                transport_id=self._transport_id,
+                to_id=self._server_id,
+                session_id=self.generate_nanoid(),
+                transport_options=self._transport_options,
+                close_session_callback=self._delete_session,
+                retry_connection_callback=self._retry_connection,
             )
-            return existing_session
+
+            self._session = new_session
+            existing_session = new_session
+            await existing_session.start_serve_responses()
+
+        await existing_session.ensure_connected(
+            client_id=self._client_id,
+            rate_limiter=self._rate_limiter,
+            uri_and_metadata_factory=self._uri_and_metadata_factory,
+        )
+        return existing_session
 
     async def _establish_new_connection(
         self,
