@@ -70,9 +70,6 @@ from replit_river.transport_options import (
     TransportOptions,
     UriAndMetadata,
 )
-from replit_river.v2.client_transport import (
-    PROTOCOL_VERSION,
-)
 
 STREAM_CANCEL_BIT_TYPE = Literal[0b00100]
 STREAM_CANCEL_BIT: STREAM_CANCEL_BIT_TYPE = 0b00100
@@ -233,6 +230,7 @@ class Session:
         uri_and_metadata_factory: Callable[
             [], Awaitable[UriAndMetadata[HandshakeMetadata]]
         ],  # noqa: E501
+        protocol_version: str,
     ) -> None:
         """
         Either return immediately or establish a websocket connection and return
@@ -266,7 +264,7 @@ class Session:
                             HandshakeMetadata
                         ](  # noqa: E501
                             type="HANDSHAKE_REQ",
-                            protocolVersion=PROTOCOL_VERSION,
+                            protocolVersion=protocol_version,
                             sessionId=self.session_id,
                             metadata=uri_and_metadata["metadata"],
                             expectedSessionState=expectedSessionState,
