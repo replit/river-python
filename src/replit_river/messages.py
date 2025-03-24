@@ -32,6 +32,8 @@ async def send_transport_message(
     ws: WebSocketCommonProtocol,
     websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
 ) -> None:
+    import traceback
+    logger.debug(f"FOOP {repr(traceback.format_stack())}")
     logger.debug("sending a message %r to ws %s", msg, ws)
     logger.debug(f"sending a message 2 {repr(msg)}")
     try:
