@@ -139,6 +139,7 @@ class Session:
 
         # ws state
         self._ws_connected = False
+        self._ws_unwrapped = None
         self._heartbeat_misses = 0
         self._retry_connection_callback = retry_connection_callback
 
@@ -487,9 +488,6 @@ class Session:
             # invocation, so let's await this close to avoid dropping the socket.
             await self._ws_unwrapped.close()
 
-        # Clear the session in transports
-        await self._close_session_callback(self)
-
         # TODO: unexpected_close should close stream differently here to
         # throw exception correctly.
         for stream in self._streams.values():
@@ -497,6 +495,10 @@ class Session:
         self._streams.clear()
 
         self._state = SessionState.CLOSED
+
+        # Clear the session in transports
+        # This will get us GC'd, so this should be the last thing.
+        await self._close_session_callback(self)
 
     async def start_serve_responses(self) -> None:
         self._task_manager.create_task(self._serve())
@@ -528,7 +530,7 @@ class Session:
                 )
 
     async def _handle_messages_from_ws(self) -> None:
-        while self._ws_unwrapped is None:
+        while self._ws_unwrapped is None or not self._ws_connected:
             await asyncio.sleep(1)
         logger.debug(
             "%s start handling messages from ws %s",
@@ -536,12 +538,8 @@ class Session:
             self._ws_unwrapped.id,
         )
         try:
-            ws = self._ws_unwrapped
-            while True:
-                if not self._ws_unwrapped:
-                    # We should not process messages if the websocket is closed.
-                    break
-
+            # We should not process messages if the websocket is closed.
+            while ws := self._ws_unwrapped:
                 # decode=False: Avoiding an unnecessary round-trip through str
                 # Ideally this should be type-ascripted to : bytes, but there is no
                 # @overrides in `websockets` to hint this.
@@ -573,14 +571,16 @@ class Session:
                     # Set our next expected ack number
                     self.ack = msg.seq + 1
 
-                    # Discard old messages from the buffer
+                    # Discard old server-ack'd messages from the ack buffer
                     while self._ack_buffer and self._ack_buffer[0].seq < msg.ack:
                         self._ack_buffer.popleft()
 
                     self._reset_session_close_countdown()
 
+                    # Shortcut to avoid processing ack packets
                     if msg.controlFlags & ACK_BIT != 0:
                         continue
+
                     stream = self._streams.get(msg.streamId, None)
                     if msg.controlFlags & STREAM_OPEN_BIT != 0:
                         raise InvalidMessageException(
