@@ -120,8 +120,11 @@ class Session:
                 self.session_id,
                 self._transport_options.heartbeat_ms,
                 self._transport_options.heartbeats_until_dead,
-                lambda: self._state,
-                lambda: self._ws_wrapper.ws_state == WsState.OPEN,
+                lambda: (
+                    self._state
+                    if self._ws_wrapper.ws_state == WsState.OPEN
+                    else SessionState.CONNECTING
+                ),
                 lambda: self._close_session_after_time_secs,
                 close_websocket=do_close_websocket,
                 send_message=self.send_message,
