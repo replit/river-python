@@ -9,7 +9,7 @@ from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span
 from websockets.asyncio.client import ClientConnection
-from websockets.exceptions import ConnectionClosed
+from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 from websockets.frames import CloseCode
 from websockets.legacy.protocol import WebSocketCommonProtocol
 
@@ -155,7 +155,11 @@ class ClientSession(Session):
         )
         try:
             ws = self._ws_unwrapped
-            async for message in ws:
+            while True:
+                # decode=False: Avoiding an unnecessary round-trip through str
+                # Ideally this should be type-ascripted to : bytes, but there is no
+                # @overrides in `websockets` to hint this.
+                message = await ws.recv(decode=False)
                 try:
                     if not self._ws_unwrapped:
                         # We should not process messages if the websocket is closed.
@@ -240,6 +244,8 @@ class ClientSession(Session):
                     logger.exception("Got invalid transport message, closing session")
                     await self.close()
                     return
+        except ConnectionClosedOK:
+            pass  # Exited normally
         except ConnectionClosed as e:
             raise e
 
