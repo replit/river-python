@@ -32,15 +32,10 @@ async def send_transport_message(
     ws: WebSocketCommonProtocol,
     websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
 ) -> None:
-    import traceback
-    logger.debug(f"FOOP {repr(traceback.format_stack())}")
     logger.debug("sending a message %r to ws %s", msg, ws)
-    logger.debug(f"sending a message 2 {repr(msg)}")
     try:
-        dat = msg.model_dump(by_alias=True, exclude_none=True)
-        logger.debug(f"sending a message 3 {repr(dat)}")
         packed = msgpack.packb(
-            dat, datetime=True
+            msg.model_dump(by_alias=True, exclude_none=True), datetime=True
         )
         assert isinstance(packed, bytes)
         await ws.send(packed)
