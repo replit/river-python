@@ -26,12 +26,6 @@ class HandshakeBudgetExhaustedException(RiverException):
         self.client_id = client_id
 
 
-class BudgetExhaustedException(RiverException):
-    def __init__(self, code: str, message: str, client_id: str) -> None:
-        super().__init__(code, message)
-        self.client_id = client_id
-
-
 class ClientTransport(Generic[HandshakeMetadataType]):
     _session: Session | None
 
@@ -85,6 +79,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
             client_id=self._client_id,
             rate_limiter=self._rate_limiter,
             uri_and_metadata_factory=self._uri_and_metadata_factory,
+            protocol_version=PROTOCOL_VERSION,
         )
         return existing_session
 
