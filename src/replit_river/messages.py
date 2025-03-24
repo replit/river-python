@@ -33,9 +33,12 @@ async def send_transport_message(
     websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
 ) -> None:
     logger.debug("sending a message %r to ws %s", msg, ws)
+    logger.debug(f"sending a message 2 {repr(msg)}")
     try:
+        dat = msg.model_dump(by_alias=True, exclude_none=True)
+        logger.debug(f"sending a message 3 {repr(dat)}")
         packed = msgpack.packb(
-            msg.model_dump(by_alias=True, exclude_none=True), datetime=True
+            dat, datetime=True
         )
         assert isinstance(packed, bytes)
         await ws.send(packed)
