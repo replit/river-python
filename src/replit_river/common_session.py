@@ -26,17 +26,19 @@ class SessionState(enum.Enum):
     """The state a session can be in.
 
     Valid transitions:
-    - NO_CONNECTION -> {ACTIVE}
-    - ACTIVE -> {NO_CONNECTION, CLOSING}
+    - NO_CONNECTION -> {CONNECTING}
+    - CONNECTING -> {ACTIVE, CLOSING}
+    - ACTIVE -> {NO_CONNECTION, CONNECTING, CLOSING}
     - CLOSING -> {CLOSED}
     - CLOSED -> {}
     """
 
     NO_CONNECTION = 0
-    ACTIVE = 1
-    CLOSING = 2
-    CLOSED = 3
+    CONNECTING = 1
+    ACTIVE = 2
+    CLOSING = 3
+    CLOSED = 4
 
 
-ConnectingStateta = set([SessionState.NO_CONNECTION])
+ConnectingStateta = set([SessionState.NO_CONNECTION, SessionState.CONNECTING])
 TerminalStates = set([SessionState.CLOSING, SessionState.CLOSED])

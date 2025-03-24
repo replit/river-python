@@ -66,7 +66,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         call ensure_connected on whatever session is active.
         """
         existing_session = self._session
-        if not existing_session or not existing_session.is_session_open():
+        if not existing_session or existing_session.is_closed():
             logger.info("Creating new session")
             new_session = Session(
                 transport_id=self._transport_id,
