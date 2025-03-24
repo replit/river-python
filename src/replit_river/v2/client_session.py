@@ -156,14 +156,15 @@ class ClientSession(Session):
         try:
             ws = self._ws_unwrapped
             while True:
+                if not self._ws_unwrapped:
+                    # We should not process messages if the websocket is closed.
+                    break
+
                 # decode=False: Avoiding an unnecessary round-trip through str
                 # Ideally this should be type-ascripted to : bytes, but there is no
                 # @overrides in `websockets` to hint this.
                 message = await ws.recv(decode=False)
                 try:
-                    if not self._ws_unwrapped:
-                        # We should not process messages if the websocket is closed.
-                        break
                     msg = parse_transport_msg(message)
 
                     logger.debug(f"{self._transport_id} got a message %r", msg)
