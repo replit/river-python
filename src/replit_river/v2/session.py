@@ -169,6 +169,7 @@ class Session:
                 )
             )
         self._ws_unwrapped = new_ws
+        self._ws_connected = True
 
     async def _get_current_time(self) -> float:
         return asyncio.get_event_loop().time()
