@@ -115,6 +115,7 @@ class Session:
                 self._transport_options.heartbeat_ms,
                 self._transport_options.heartbeats_until_dead,
                 lambda: self._state,
+                lambda: self._ws_connected,
                 lambda: self._close_session_after_time_secs,
                 close_websocket=do_close_websocket,
                 send_message=self.send_message,
