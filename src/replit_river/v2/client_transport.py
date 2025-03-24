@@ -13,7 +13,6 @@ from websockets.exceptions import ConnectionClosed
 from replit_river.error_schema import (
     ERROR_CODE_STREAM_CLOSED,
     ERROR_HANDSHAKE,
-    ERROR_SESSION,
     RiverException,
 )
 from replit_river.messages import (
@@ -96,31 +95,28 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         If we have a disconnected session, attempt to start a new WS and use it.
         """
         async with self._create_session_lock:
-            existing_session = (
-                self._session
-                if self._session and self._session.is_session_open()
-                else None
-            )
-            if existing_session is None:
-                return await self._create_new_session()
-            if existing_session.is_websocket_open():
-                return existing_session
-            new_ws, _, hs_response = await self._establish_new_connection(
-                existing_session
-            )
-            if hs_response.status.sessionId == existing_session.session_id:
-                logger.info(
-                    "Replacing ws connection in session id %s",
-                    existing_session.session_id,
+            existing_session = self._session
+            if not existing_session:
+                logger.info("Creating new session")
+                new_session = Session(
+                    transport_id=self._transport_id,
+                    to_id=self._server_id,
+                    session_id=self.generate_nanoid(),
+                    transport_options=self._transport_options,
+                    close_session_callback=self._delete_session,
+                    retry_connection_callback=self._retry_connection,
                 )
-                await existing_session.replace_with_new_websocket(new_ws)
-                return existing_session
-            else:
-                logger.info("Closing stale session %s", existing_session.session_id)
-                await new_ws.close()  # NB(dstewart): This wasn't there in the
-                #                       v1 transport, were we just leaking WS?
-                await existing_session.close()
-                return await self._create_new_session()
+
+                self._session = new_session
+                existing_session = new_session
+                await existing_session.start_serve_responses()
+
+            await existing_session.ensure_connected(
+                client_id=self._client_id,
+                rate_limiter=self._rate_limiter,
+                uri_and_metadata_factory=self._uri_and_metadata_factory,
+            )
+            return existing_session
 
     async def _establish_new_connection(
         self,
@@ -190,31 +186,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
             ERROR_HANDSHAKE,
             f"Failed to create ws after retrying {max_retry} number of times",
         ) from last_error
-
-    async def _create_new_session(
-        self,
-    ) -> Session:
-        logger.info("Creating new session")
-        new_ws, hs_request, hs_response = await self._establish_new_connection()
-        if not hs_response.status.ok:
-            message = hs_response.status.reason
-            raise RiverException(
-                ERROR_SESSION,
-                f"Server did not return OK status on handshake response: {message}",
-            )
-        new_session = Session(
-            transport_id=self._transport_id,
-            to_id=self._server_id,
-            session_id=hs_request.sessionId,
-            websocket=new_ws,
-            transport_options=self._transport_options,
-            close_session_callback=self._delete_session,
-            retry_connection_callback=self._retry_connection,
-        )
-
-        self._session = new_session
-        await new_session.start_serve_responses()
-        return new_session
 
     async def _retry_connection(self) -> Session:
         if not self._transport_options.transparent_reconnect:
