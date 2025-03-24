@@ -5,9 +5,8 @@ from typing import Generic, assert_never
 
 import nanoid
 import websockets
-from pydantic import ValidationError
 import websockets.asyncio.client
-from websockets import WebSocketCommonProtocol
+from pydantic import ValidationError
 from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
 
