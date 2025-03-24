@@ -244,6 +244,8 @@ class ClientTransport(Generic[HandshakeMetadataType]):
             logger.error("websocket closed before handshake response")
 
         try:
+            payload = handshake_request.model_dump()
+            logger.warning("PAYLOAD HERE: {repr(payload)}")
             await send_transport_message(
                 TransportMessage(
                     from_=self._transport_id,
@@ -253,7 +255,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                     id=self.generate_nanoid(),
                     seq=0,
                     ack=0,
-                    payload=handshake_request.model_dump(),
+                    payload=payload,
                 ),
                 ws=websocket,
                 websocket_closed_callback=websocket_closed_callback,
