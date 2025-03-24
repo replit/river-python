@@ -157,7 +157,7 @@ class ClientSession(Session):
                     if not self._ws_unwrapped:
                         # We should not process messages if the websocket is closed.
                         break
-                    msg = parse_transport_msg(message, self._transport_options)
+                    msg = parse_transport_msg(message)
 
                     logger.debug(f"{self._transport_id} got a message %r", msg)
 
