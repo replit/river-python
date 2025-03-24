@@ -1,7 +1,7 @@
 from typing import Any, Literal, NotRequired, TypeAlias, TypedDict
 
 from replit_river.rpc import ACK_BIT_TYPE, ExpectedSessionState
-from replit_river.v2.client_session import STREAM_CANCEL_BIT_TYPE
+from replit_river.v2.session import STREAM_CANCEL_BIT_TYPE
 
 
 class ControlClose(TypedDict):

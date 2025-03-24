@@ -1,6 +1,5 @@
-from replit_river.v2.session import Session
-
 from .client import Client
+from .session import Session
 
 __all__ = [
     "Client",

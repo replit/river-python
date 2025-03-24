@@ -39,9 +39,7 @@ from replit_river.transport_options import (
     TransportOptions,
     UriAndMetadata,
 )
-from replit_river.v2.client_session import ClientSession
-
-from .session import Session
+from replit_river.v2.session import Session
 
 PROTOCOL_VERSION = "v2.0"
 
@@ -55,7 +53,7 @@ class HandshakeBudgetExhaustedException(RiverException):
 
 
 class ClientTransport(Generic[HandshakeMetadataType]):
-    _session: ClientSession | None
+    _session: Session | None
 
     def __init__(
         self,
@@ -91,7 +89,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         self._rate_limiter.close()
         await self._close_session()
 
-    async def get_or_create_session(self) -> ClientSession:
+    async def get_or_create_session(self) -> Session:
         """
         If we have an active session, return it.
         If we have a "closed" session, mint a whole new session.
@@ -126,7 +124,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
 
     async def _establish_new_connection(
         self,
-        old_session: ClientSession | None = None,
+        old_session: Session | None = None,
     ) -> tuple[
         ClientConnection,
         ControlMessageHandshakeRequest[HandshakeMetadataType],
@@ -195,7 +193,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
 
     async def _create_new_session(
         self,
-    ) -> ClientSession:
+    ) -> Session:
         logger.info("Creating new session")
         new_ws, hs_request, hs_response = await self._establish_new_connection()
         if not hs_response.status.ok:
@@ -204,7 +202,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                 ERROR_SESSION,
                 f"Server did not return OK status on handshake response: {message}",
             )
-        new_session = ClientSession(
+        new_session = Session(
             transport_id=self._transport_id,
             to_id=self._server_id,
             session_id=hs_request.sessionId,
@@ -218,7 +216,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         await new_session.start_serve_responses()
         return new_session
 
-    async def _retry_connection(self) -> ClientSession:
+    async def _retry_connection(self) -> Session:
         if not self._transport_options.transparent_reconnect:
             await self._close_session()
         return await self.get_or_create_session()
@@ -295,7 +293,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         session_id: str,
         handshake_metadata: HandshakeMetadataType,
         websocket: ClientConnection,
-        old_session: ClientSession | None,
+        old_session: Session | None,
     ) -> tuple[
         ControlMessageHandshakeRequest[HandshakeMetadataType],
         ControlMessageHandshakeResponse,
@@ -308,7 +306,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                         nextExpectedSeq=0,
                         nextSentSeq=0,
                     )
-                case ClientSession():
+                case Session():
                     expectedSessionState = ExpectedSessionState(
                         nextExpectedSeq=old_session.ack,
                         nextSentSeq=old_session.seq,
