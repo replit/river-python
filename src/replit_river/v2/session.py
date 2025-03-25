@@ -1076,7 +1076,7 @@ async def _setup_heartbeat(
 
         await asyncio.sleep(heartbeat_ms / 1000)
         state = get_state()
-        if state == SessionState.CONNECTING:
+        if state in ConnectingStates:
             logger.debug("Websocket is not connected, not sending heartbeat")
             continue
         try:
@@ -1132,7 +1132,7 @@ async def _serve(
         while our_task and not our_task.cancelling() and not our_task.cancelled():
             logging.debug(f"_serve loop count={idx}")
             idx += 1
-            while (ws := get_ws()) is None or get_state() == SessionState.CONNECTING:
+            while (ws := get_ws()) is None or get_state() in ConnectingStates:
                 logging.debug("_handle_messages_from_ws spinning while connecting")
                 await block_until_connected()
             logger.debug(
