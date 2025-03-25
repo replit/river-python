@@ -315,7 +315,10 @@ class Session:
                         "river client get handshake response : %r", handshake_response
                     )  # noqa: E501
                     if not handshake_response.status.ok:
-                        if handshake_response.status.code == ERROR_CODE_SESSION_STATE_MISMATCH:
+                        if (
+                            handshake_response.status.code
+                            == ERROR_CODE_SESSION_STATE_MISMATCH
+                        ):  # noqa: E501
                             await self.close()
                         raise RiverException(
                             ERROR_HANDSHAKE,
@@ -479,8 +482,8 @@ class Session:
         self._state = SessionState.CLOSING
 
         # We need to wake up all tasks waiting for connection to be established
-        assert not self._connection_condition.locked()
-        await self._connection_condition.acquire()
+        if not self._connection_condition.locked():
+            await self._connection_condition.acquire()
         self._connection_condition.notify_all()
         self._connection_condition.release()
 
@@ -490,6 +493,8 @@ class Session:
         # throw exception correctly.
         for stream in self._streams.values():
             stream.close()
+        # Before we GC the streams, let's wait for all tasks to be closed gracefully.
+        await asyncio.gather(*[x.join() for x in self._streams.values()])
         self._streams.clear()
 
         if self._ws_unwrapped:
@@ -645,7 +650,6 @@ class Session:
         async def block_until_connected() -> None:
             async with self._connection_condition:
                 await self._connection_condition.wait()
-
 
         self._task_manager.create_task(
             _serve(
