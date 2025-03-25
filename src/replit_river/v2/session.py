@@ -392,6 +392,7 @@ class Session:
             self._transport_id,
             self._to_id,
         )
+        self._state = SessionState.CONNECTING
         self._close_session_after_time_secs = close_session_after_time_secs
 
     async def _get_current_time(self) -> float:
@@ -956,6 +957,9 @@ async def _check_to_close_session(
         close_session_after_time_secs = get_close_session_after_time_secs()
         if not close_session_after_time_secs:
             continue
+        logging.debug(
+            "_check_to_close_session: Preparing to close session if not interrupted"
+        )
         if current_time > close_session_after_time_secs:
             logger.info("Grace period ended for %s, closing session", transport_id)
             await do_close()
