@@ -480,6 +480,15 @@ class Session:
         # if the session is not active, we should not do anything
         if self._state in TerminalStates:
             return
+        logger.debug(
+            "send_message(stream_id=%r, payload=%r, control_flags=%r, "
+            "service_name=%r, procedure_name=%r)",
+            stream_id,
+            payload,
+            bin(control_flags),
+            service_name,
+            procedure_name,
+        )
         msg = TransportMessage(
             streamId=stream_id,
             id=nanoid.generate(),
