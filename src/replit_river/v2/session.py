@@ -26,6 +26,7 @@ from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 
 from replit_river.common_session import (
+    ConnectingStates,
     SendMessage,
     SessionState,
     TerminalStates,
@@ -520,14 +521,19 @@ class Session:
                 return self._ws_unwrapped
             return None
 
+        async def block_until_connected() -> None:
+            async with self._connection_condition:
+                await self._connection_condition.wait()
+
         self._task_manager.create_task(
             _buffered_message_sender(
-                self._connection_condition,
-                self._message_enqueued,
+                block_until_connected=block_until_connected,
+                message_enqueued=self._message_enqueued,
                 get_ws=get_ws,
                 websocket_closed_callback=self._begin_close_session_countdown,
                 get_next_pending=get_next_pending,
                 commit=commit,
+                get_state=lambda: self._state,
             )
         )
 
@@ -565,8 +571,13 @@ class Session:
             self._heartbeat_misses += 1
             return self._heartbeat_misses
 
+        async def block_until_connected() -> None:
+            async with self._connection_condition:
+                await self._connection_condition.wait()
+
         self._task_manager.create_task(
             _setup_heartbeat(
+                block_until_connected,
                 self.session_id,
                 self._transport_options.heartbeat_ms,
                 self._transport_options.heartbeats_until_dead,
@@ -628,9 +639,15 @@ class Session:
         def close_stream(stream_id: str) -> None:
             del self._streams[stream_id]
 
+        async def block_until_connected() -> None:
+            async with self._connection_condition:
+                await self._connection_condition.wait()
+
+
         self._task_manager.create_task(
             _serve(
-                self._transport_id,
+                block_until_connected=block_until_connected,
+                transport_id=self._transport_id,
                 get_state=lambda: self._state,
                 get_ws=lambda: self._ws_unwrapped,
                 transition_connecting=transition_connecting,
@@ -976,23 +993,32 @@ async def _check_to_close_session(
 
 
 async def _buffered_message_sender(
-    connection_condition: asyncio.Condition,
+    block_until_connected: Callable[[], Awaitable[None]],
     message_enqueued: asyncio.Semaphore,
     get_ws: Callable[[], ClientConnection | None],
     websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
     get_next_pending: Callable[[], TransportMessage | None],
     commit: Callable[[TransportMessage], None],
+    get_state: Callable[[], SessionState],
 ) -> None:
-    while True:
+    our_task = asyncio.current_task()
+    while our_task and not our_task.cancelling() and not our_task.cancelled():
         await message_enqueued.acquire()
         while (ws := get_ws()) is None:
             # Block until we have a handle
             logger.debug(
-                "buffered_message_sender: Waiting until ws is connected (condition=%r)",
-                connection_condition,
+                "buffered_message_sender: Waiting until ws is connected",
             )
-            async with connection_condition:
-                await connection_condition.wait()
+            await block_until_connected()
+
+        if get_state() in TerminalStates:
+            logger.debug("We're going away!")
+            return
+
+        if not ws:
+            logger.debug("ws is not connected, loop")
+            continue
+
         if msg := get_next_pending():
             logger.debug(
                 "buffered_message_sender: Dequeued %r to send over %r",
@@ -1025,6 +1051,7 @@ async def _buffered_message_sender(
 
 
 async def _setup_heartbeat(
+    block_until_connected: Callable[[], Awaitable[None]],
     session_id: str,
     heartbeat_ms: float,
     heartbeats_until_dead: int,
@@ -1035,11 +1062,8 @@ async def _setup_heartbeat(
     increment_and_get_heartbeat_misses: Callable[[], int],
 ) -> None:
     while True:
-        await asyncio.sleep(heartbeat_ms / 1000)
-        state = get_state()
-        if state == SessionState.CONNECTING:
-            logger.debug("Websocket is not connected, not sending heartbeat")
-            continue
+        while (state := get_state()) in ConnectingStates:
+            await block_until_connected()
         if state in TerminalStates:
             logger.debug(
                 "Session is closed, no need to send heartbeat, state : "
@@ -1048,7 +1072,13 @@ async def _setup_heartbeat(
                 {get_closing_grace_period()},
             )
             # session is closing / closed, no need to send heartbeat anymore
-            return
+            break
+
+        await asyncio.sleep(heartbeat_ms / 1000)
+        state = get_state()
+        if state == SessionState.CONNECTING:
+            logger.debug("Websocket is not connected, not sending heartbeat")
+            continue
         try:
             await send_message(
                 stream_id="heartbeat",
@@ -1080,6 +1110,7 @@ async def _setup_heartbeat(
 
 
 async def _serve(
+    block_until_connected: Callable[[], Awaitable[None]],
     transport_id: str,
     get_state: Callable[[], SessionState],
     get_ws: Callable[[], ClientConnection | None],
@@ -1103,7 +1134,7 @@ async def _serve(
             idx += 1
             while (ws := get_ws()) is None or get_state() == SessionState.CONNECTING:
                 logging.debug("_handle_messages_from_ws spinning while connecting")
-                await asyncio.sleep(1)
+                await block_until_connected()
             logger.debug(
                 "%s start handling messages from ws %s",
                 "client",
