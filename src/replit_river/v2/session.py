@@ -1077,11 +1077,10 @@ async def _serve(
     reset_session_close_countdown()
     our_task = asyncio.current_task()
     idx = 0
-    while our_task and not our_task.cancelling() and not our_task.cancelled():
-        logging.debug(f"_serve loop count={idx}")
-        idx += 1
-        try:
-            logging.debug("_handle_messages_from_ws started")
+    try:
+        while our_task and not our_task.cancelling() and not our_task.cancelled():
+            logging.debug(f"_serve loop count={idx}")
+            idx += 1
             while (ws := get_ws()) is None or get_state() == SessionState.CONNECTING:
                 logging.debug("_handle_messages_from_ws spinning while connecting")
                 await asyncio.sleep(1)
@@ -1190,16 +1189,16 @@ async def _serve(
                     logger.exception("caught exception at message iterator")
                     break
             logging.debug("_handle_messages_from_ws exiting")
-        except ExceptionGroup as eg:
-            _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))
-            if unhandled:
-                # We're in a task, there's not that much that can be done.
-                unhandled = ExceptionGroup(
-                    "Unhandled exceptions on River server", unhandled.exceptions
-                )
-                logger.exception(
-                    "caught exception at message iterator",
-                    exc_info=unhandled,
-                )
-                raise unhandled
+    except ExceptionGroup as eg:
+        _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))
+        if unhandled:
+            # We're in a task, there's not that much that can be done.
+            unhandled = ExceptionGroup(
+                "Unhandled exceptions on River server", unhandled.exceptions
+            )
+            logger.exception(
+                "caught exception at message iterator",
+                exc_info=unhandled,
+            )
+            raise unhandled
     logging.debug(f"_serve exiting normally after {idx} loops")
