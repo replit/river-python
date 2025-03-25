@@ -507,8 +507,7 @@ class Session:
                 return self._send_buffer[0]
             return None
 
-        # TODO: Just return _ws_unwrapped once we are no longer using the legacy client
-        def get_ws() -> WebSocketCommonProtocol | ClientConnection | None:
+        def get_ws() -> ClientConnection | None:
             if self.is_connected():
                 return self._ws_unwrapped
             return None
@@ -969,7 +968,7 @@ async def _check_to_close_session(
 async def _buffered_message_sender(
     connection_condition: asyncio.Condition,
     message_enqueued: asyncio.Semaphore,
-    get_ws: Callable[[], WebSocketCommonProtocol | ClientConnection | None],
+    get_ws: Callable[[], ClientConnection | None],
     websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
     get_next_pending: Callable[[], TransportMessage | None],
     commit: Callable[[TransportMessage], None],
