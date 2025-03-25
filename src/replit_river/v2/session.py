@@ -392,7 +392,7 @@ class Session:
             self._transport_id,
             self._to_id,
         )
-        self._state = SessionState.CONNECTING
+        self._state = SessionState.PENDING
         self._close_session_after_time_secs = close_session_after_time_secs
 
     async def _get_current_time(self) -> float:
@@ -574,7 +574,7 @@ class Session:
             self._state = SessionState.CONNECTING
 
         async def connection_interrupted() -> None:
-            self._state = SessionState.CONNECTING
+            self._state = SessionState.PENDING
             if self._ws_unwrapped:
                 self._task_manager.create_task(self._ws_unwrapped.close())
                 self._ws_unwrapped = None
