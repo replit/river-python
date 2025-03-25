@@ -24,7 +24,6 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from pydantic import ValidationError
 from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
-from websockets.legacy.protocol import WebSocketCommonProtocol
 
 from replit_river.common_session import (
     SendMessage,
@@ -523,7 +522,6 @@ class Session:
             )
         )
 
-
     def _start_close_session_checker(self) -> None:
         self._task_manager.create_task(
             _check_to_close_session(
@@ -535,7 +533,6 @@ class Session:
                 self.close,
             )
         )
-
 
     def _start_heartbeat(self) -> None:
         async def do_close_websocket() -> None:
@@ -889,7 +886,12 @@ class Session:
                     control_flags=0,
                     payload=request_serializer(item),
                 )
-            await self.send_close_stream(service_name, procedure_name, stream_id)
+            await self.send_close_stream(
+                service_name,
+                procedure_name,
+                stream_id,
+                extra_control_flags=0,
+            )
 
         self._task_manager.create_task(_encode_stream())
 
@@ -924,7 +926,7 @@ class Session:
         service_name: str,
         procedure_name: str,
         stream_id: str,
-        extra_control_flags: int = 0,
+        extra_control_flags: int,
     ) -> None:
         # close stream
         await self.send_message(
