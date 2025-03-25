@@ -1152,11 +1152,11 @@ async def _serve(
                 message = await ws.recv(decode=False)
                 try:
                     msg = parse_transport_msg(message)
-                    # logger.debug(
-                    #     "[%s] got a message %r",
-                    #     transport_id,
-                    #     msg,
-                    # )
+                    logger.debug(
+                        "[%s] got a message %r",
+                        transport_id,
+                        msg,
+                    )
 
                     if msg.controlFlags & STREAM_OPEN_BIT != 0:
                         raise InvalidMessageException(
@@ -1178,13 +1178,6 @@ async def _serve(
                             pass
                         case other:
                             assert_never(other)
-
-                    # TODO: Delete me
-                    logger.debug(
-                        "[%s] got a message %r",
-                        transport_id,
-                        msg,
-                    )
 
                     reset_session_close_countdown()
 
