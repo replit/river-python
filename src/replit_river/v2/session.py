@@ -473,6 +473,13 @@ class Session:
             # already closing
             return
         self._state = SessionState.CLOSING
+
+        # We need to wake up all tasks waiting for connection to be established
+        assert not self._connection_condition.locked()
+        await self._connection_condition.acquire()
+        self._connection_condition.notify_all()
+        self._connection_condition.release()
+
         await self._task_manager.cancel_all_tasks()
 
         # TODO: unexpected_close should close stream differently here to
