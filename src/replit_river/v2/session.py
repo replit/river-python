@@ -102,6 +102,7 @@ class Session:
 
     # ws state
     _ws_unwrapped: ClientConnection | None
+    _ensure_connected_condition: asyncio.Condition
     _heartbeat_misses: int
     _retry_connection_callback: RetryConnectionCallback | None
 
@@ -129,13 +130,14 @@ class Session:
         self.session_id = session_id
         self._transport_options = transport_options
 
-        # session state, only modified during closing
-        self._state = SessionState.CONNECTING
+        # session state
+        self._state = SessionState.NO_CONNECTION
         self._close_session_callback = close_session_callback
         self._close_session_after_time_secs: float | None = None
 
         # ws state
         self._ws_unwrapped = None
+        self._ensure_connected_condition = asyncio.Condition()
         self._heartbeat_misses = 0
         self._retry_connection_callback = retry_connection_callback
 
@@ -236,10 +238,21 @@ class Session:
         Either return immediately or establish a websocket connection and return
         once we can accept messages
         """
-        if self._ws_unwrapped and self._state == SessionState.ACTIVE:
-            return
         max_retry = self._transport_options.connection_retry_options.max_retry
         logger.info("Attempting to establish new ws connection")
+
+        if self.is_connected():
+            return
+
+        while True:
+            await self._ensure_connected_condition.acquire()
+            if self._state == SessionState.ACTIVE:
+                return
+            elif self._state == SessionState.NO_CONNECTION:
+                self._state = SessionState.CONNECTING
+                break
+            elif self._state in TerminalStates:
+                raise RiverException("SESSION_CLOSING", "Going away")
 
         last_error: Exception | None = None
         i = 0
@@ -349,6 +362,7 @@ class Session:
 
                     rate_limiter.start_restoring_budget(client_id)
                     self._state = SessionState.ACTIVE
+                    self._ensure_connected_condition.notify_all()
                 except RiverException as e:
                     await ws.close()
                     raise e
