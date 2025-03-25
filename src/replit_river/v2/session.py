@@ -656,41 +656,36 @@ class Session:
         )
         # Handle potential errors during communication
         try:
+            async with asyncio.timeout(timeout.total_seconds()):
+                response = await output.get()
+        except asyncio.TimeoutError as e:
+            await self.send_message(
+                stream_id=stream_id,
+                control_flags=STREAM_CANCEL_BIT,
+                payload={"type": "CANCEL"},
+                service_name=service_name,
+                procedure_name=procedure_name,
+                span=span,
+            )
+            raise RiverException(ERROR_CODE_CANCEL, str(e)) from e
+        except ChannelClosed as e:
+            raise RiverServiceException(
+                ERROR_CODE_STREAM_CLOSED,
+                "Stream closed before response",
+                service_name,
+                procedure_name,
+            ) from e
+        except RuntimeError as e:
+            raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
+        if not response.get("ok", False):
             try:
-                async with asyncio.timeout(timeout.total_seconds()):
-                    response = await output.get()
-            except asyncio.TimeoutError as e:
-                await self.send_message(
-                    stream_id=stream_id,
-                    control_flags=STREAM_CANCEL_BIT,
-                    payload={"type": "CANCEL"},
-                    service_name=service_name,
-                    procedure_name=procedure_name,
-                    span=span,
-                )
-                raise RiverException(ERROR_CODE_CANCEL, str(e)) from e
-            except ChannelClosed as e:
-                raise RiverServiceException(
-                    ERROR_CODE_STREAM_CLOSED,
-                    "Stream closed before response",
-                    service_name,
-                    procedure_name,
-                ) from e
-            except RuntimeError as e:
-                raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
-            if not response.get("ok", False):
-                try:
-                    error = error_deserializer(response["payload"])
-                except Exception as e:
-                    raise RiverException("error_deserializer", str(e)) from e
-                raise exception_from_message(error.code)(
-                    error.code, error.message, service_name, procedure_name
-                )
-            return response_deserializer(response["payload"])
-        except RiverException as e:
-            raise e
-        except Exception as e:
-            raise e
+                error = error_deserializer(response["payload"])
+            except Exception as e:
+                raise RiverException("error_deserializer", str(e)) from e
+            raise exception_from_message(error.code)(
+                error.code, error.message, service_name, procedure_name
+            )
+        return response_deserializer(response["payload"])
 
     async def send_upload[I, R, A](
         self,
@@ -751,31 +746,26 @@ class Session:
         # Handle potential errors during communication
         # TODO: throw a error when the transport is hard closed
         try:
+            response = await output.get()
+        except ChannelClosed as e:
+            raise RiverServiceException(
+                ERROR_CODE_STREAM_CLOSED,
+                "Stream closed before response",
+                service_name,
+                procedure_name,
+            ) from e
+        except RuntimeError as e:
+            raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
+        if not response.get("ok", False):
             try:
-                response = await output.get()
-            except ChannelClosed as e:
-                raise RiverServiceException(
-                    ERROR_CODE_STREAM_CLOSED,
-                    "Stream closed before response",
-                    service_name,
-                    procedure_name,
-                ) from e
-            except RuntimeError as e:
-                raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
-            if not response.get("ok", False):
-                try:
-                    error = error_deserializer(response["payload"])
-                except Exception as e:
-                    raise RiverException("error_deserializer", str(e)) from e
-                raise exception_from_message(error.code)(
-                    error.code, error.message, service_name, procedure_name
-                )
+                error = error_deserializer(response["payload"])
+            except Exception as e:
+                raise RiverException("error_deserializer", str(e)) from e
+            raise exception_from_message(error.code)(
+                error.code, error.message, service_name, procedure_name
+            )
 
-            return response_deserializer(response["payload"])
-        except RiverException as e:
-            raise e
-        except Exception as e:
-            raise e
+        return response_deserializer(response["payload"])
 
     async def send_subscription[R, E, A](
         self,
