@@ -99,10 +99,10 @@ class Session:
     _state: SessionState
     _close_session_callback: CloseSessionCallback
     _close_session_after_time_secs: float | None
+    _connecting_task: asyncio.Task[Literal[True]] | None
 
     # ws state
     _ws_unwrapped: ClientConnection | None
-    _ensure_connected_condition: asyncio.Condition
     _heartbeat_misses: int
     _retry_connection_callback: RetryConnectionCallback | None
 
@@ -134,10 +134,10 @@ class Session:
         self._state = SessionState.NO_CONNECTION
         self._close_session_callback = close_session_callback
         self._close_session_after_time_secs: float | None = None
+        self._connecting_task = None
 
         # ws state
         self._ws_unwrapped = None
-        self._ensure_connected_condition = asyncio.Condition()
         self._heartbeat_misses = 0
         self._retry_connection_callback = retry_connection_callback
 
@@ -236,23 +236,38 @@ class Session:
     ) -> None:
         """
         Either return immediately or establish a websocket connection and return
-        once we can accept messages
+        once we can accept messages.
+
+        One of the goals of this function is to gate exactly one call to the
+        logic that actually establishes the connection.
         """
-        max_retry = self._transport_options.connection_retry_options.max_retry
-        logger.info("Attempting to establish new ws connection")
 
         if self.is_connected():
             return
 
-        while True:
-            await self._ensure_connected_condition.acquire()
-            if self._state == SessionState.ACTIVE:
-                return
-            elif self._state == SessionState.NO_CONNECTION:
-                self._state = SessionState.CONNECTING
-                break
-            elif self._state in TerminalStates:
-                raise RiverException("SESSION_CLOSING", "Going away")
+        if not self._connecting_task:
+            self._connecting_task = asyncio.create_task(
+                self._do_ensure_connected(
+                    client_id,
+                    rate_limiter,
+                    uri_and_metadata_factory,
+                    protocol_version,
+                )
+            )
+
+        await self._connecting_task
+
+    async def _do_ensure_connected[HandshakeMetadata](
+        self,
+        client_id: str,
+        rate_limiter: LeakyBucketRateLimit,
+        uri_and_metadata_factory: Callable[
+            [], Awaitable[UriAndMetadata[HandshakeMetadata]]
+        ],  # noqa: E501
+        protocol_version: str,
+    ) -> Literal[True]:
+        max_retry = self._transport_options.connection_retry_options.max_retry
+        logger.info("Attempting to establish new ws connection")
 
         last_error: Exception | None = None
         i = 0
@@ -360,9 +375,9 @@ class Session:
                             + f"{handshake_response.status.reason}",
                         )
 
+                    last_error = None
                     rate_limiter.start_restoring_budget(client_id)
                     self._state = SessionState.ACTIVE
-                    self._ensure_connected_condition.notify_all()
                 except RiverException as e:
                     await ws.close()
                     raise e
@@ -374,10 +389,29 @@ class Session:
                 )
                 await asyncio.sleep(backoff_time / 1000)
 
-        raise RiverException(
-            ERROR_HANDSHAKE,
-            f"Failed to create ws after retrying {max_retry} number of times",
-        ) from last_error
+        # We are in a state where we may throw an exception.
+        #
+        # To permit subsequent calls to ensure_connected to pass, we clear ourselves.
+        # This is safe because each individual function that is waiting on this
+        # function completeing already has a reference, so we'll last a few ticks
+        # before GC.
+        #
+        # Let's do our best to avoid clobbering other tasks by comparing the .name
+        current_task = asyncio.current_task()
+        if (
+            self._connecting_task
+            and current_task
+            and self._connecting_task.get_name() == current_task.get_name()
+        ):
+            self._connecting_task = None
+
+        if last_error is not None:
+            raise RiverException(
+                ERROR_HANDSHAKE,
+                f"Failed to create ws after retrying {max_retry} number of times",
+            ) from last_error
+
+        return True
 
     def is_closed(self) -> bool:
         """
