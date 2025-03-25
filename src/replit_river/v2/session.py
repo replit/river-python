@@ -566,7 +566,7 @@ class Session:
         async def transition_connecting() -> None:
             self._state = SessionState.CONNECTING
 
-        async def transition_closed() -> None:
+        async def connection_interrupted() -> None:
             self._state = SessionState.CONNECTING
             if self._retry_connection_callback:
                 self._task_manager.create_task(self._retry_connection_callback())
@@ -614,7 +614,7 @@ class Session:
                 get_state=lambda: self._state,
                 get_ws=lambda: self._ws_unwrapped,
                 transition_connecting=transition_connecting,
-                transition_closed=transition_closed,
+                connection_interrupted=connection_interrupted,
                 reset_session_close_countdown=self._reset_session_close_countdown,
                 close_session=self.close,
                 assert_incoming_seq_bookkeeping=assert_incoming_seq_bookkeeping,
@@ -935,7 +935,7 @@ async def _serve(
     get_state: Callable[[], SessionState],
     get_ws: Callable[[], ClientConnection | None],
     transition_connecting: Callable[[], Awaitable[None]],
-    transition_closed: Callable[[], Awaitable[None]],
+    connection_interrupted: Callable[[], Awaitable[None]],
     reset_session_close_countdown: Callable[[], None],
     close_session: Callable[[], Awaitable[None]],
     assert_incoming_seq_bookkeeping: Callable[
@@ -952,117 +952,115 @@ async def _serve(
         logging.debug(f"_serve loop count={idx}")
         idx += 1
         try:
-            try:
-                logging.debug("_handle_messages_from_ws started")
-                while (
-                    ws := get_ws()
-                ) is None or get_state() == SessionState.CONNECTING:
-                    logging.debug("_handle_messages_from_ws spinning while connecting")
-                    await asyncio.sleep(1)
-                logger.debug(
-                    "%s start handling messages from ws %s",
-                    "client",
-                    ws.id,
-                )
+            logging.debug("_handle_messages_from_ws started")
+            while (ws := get_ws()) is None or get_state() == SessionState.CONNECTING:
+                logging.debug("_handle_messages_from_ws spinning while connecting")
+                await asyncio.sleep(1)
+            logger.debug(
+                "%s start handling messages from ws %s",
+                "client",
+                ws.id,
+            )
+            # We should not process messages if the websocket is closed.
+            while (ws := get_ws()) and get_state() == SessionState.ACTIVE:
+                # decode=False: Avoiding an unnecessary round-trip through str
+                # Ideally this should be type-ascripted to : bytes, but there
+                # is no @overrides in `websockets` to hint this.
+                message = await ws.recv(decode=False)
                 try:
-                    # We should not process messages if the websocket is closed.
-                    while ws := get_ws():
-                        # decode=False: Avoiding an unnecessary round-trip through str
-                        # Ideally this should be type-ascripted to : bytes, but there
-                        # is no @overrides in `websockets` to hint this.
-                        message = await ws.recv(decode=False)
-                        try:
-                            msg = parse_transport_msg(message)
+                    msg = parse_transport_msg(message)
+                    logger.debug(
+                        "[%s] got a message %r",
+                        transport_id,
+                        msg,
+                    )
+
+                    if msg.controlFlags & STREAM_OPEN_BIT != 0:
+                        raise InvalidMessageException(
+                            "Client should not receive stream open bit"
+                        )
+
+                    match assert_incoming_seq_bookkeeping(
+                        msg.from_,
+                        msg.seq,
+                        msg.ack,
+                    ):
+                        case _IgnoreMessage():
                             logger.debug(
-                                "[%s] got a message %r",
-                                transport_id,
-                                msg,
+                                "Ignoring transport message",
+                                exc_info=True,
                             )
+                            continue
+                        case True:
+                            pass
+                        case other:
+                            assert_never(other)
 
-                            if msg.controlFlags & STREAM_OPEN_BIT != 0:
-                                raise InvalidMessageException(
-                                    "Client should not receive stream open bit"
-                                )
+                    reset_session_close_countdown()
 
-                            match assert_incoming_seq_bookkeeping(
-                                msg.from_,
-                                msg.seq,
-                                msg.ack,
-                            ):
-                                case _IgnoreMessage():
-                                    logger.debug(
-                                        "Ignoring transport message",
-                                        exc_info=True,
-                                    )
-                                    continue
-                                case True:
-                                    pass
-                                case other:
-                                    assert_never(other)
+                    # Shortcut to avoid processing ack packets
+                    if msg.controlFlags & ACK_BIT != 0:
+                        continue
 
-                            reset_session_close_countdown()
+                    stream = get_stream(msg.streamId)
 
-                            # Shortcut to avoid processing ack packets
-                            if msg.controlFlags & ACK_BIT != 0:
-                                continue
+                    if not stream:
+                        logger.warning(
+                            "no stream for %s, ignoring message",
+                            msg.streamId,
+                        )
+                        continue
 
-                            stream = get_stream(msg.streamId)
+                    if (
+                        msg.controlFlags & STREAM_CLOSED_BIT != 0
+                        and msg.payload.get("type", None) == "CLOSE"
+                    ):
+                        # close message is not sent to the stream
+                        pass
+                    else:
+                        try:
+                            await stream.put(msg.payload)
+                        except ChannelClosed:
+                            # The client is no longer interested in this stream,
+                            # just drop the message.
+                            pass
+                        except RuntimeError as e:
+                            raise InvalidMessageException(e) from e
 
-                            if not stream:
-                                logger.warning(
-                                    "no stream for %s, ignoring message",
-                                    msg.streamId,
-                                )
-                                continue
-
-                            if (
-                                msg.controlFlags & STREAM_CLOSED_BIT != 0
-                                and msg.payload.get("type", None) == "CLOSE"
-                            ):
-                                # close message is not sent to the stream
-                                pass
-                            else:
-                                try:
-                                    await stream.put(msg.payload)
-                                except ChannelClosed:
-                                    # The client is no longer interested in this stream,
-                                    # just drop the message.
-                                    pass
-                                except RuntimeError as e:
-                                    raise InvalidMessageException(e) from e
-
-                            if msg.controlFlags & STREAM_CLOSED_BIT != 0:
-                                if stream:
-                                    stream.close()
-                                close_stream(msg.streamId)
-                        except OutOfOrderMessageException:
-                            logger.exception("Out of order message, closing connection")
-                            await close_session()
-                            return
-                        except InvalidMessageException:
-                            logger.exception(
-                                "Got invalid transport message, closing session",
-                            )
-                            await close_session()
-                            return
+                    if msg.controlFlags & STREAM_CLOSED_BIT != 0:
+                        if stream:
+                            stream.close()
+                        close_stream(msg.streamId)
+                except OutOfOrderMessageException:
+                    logger.exception("Out of order message, closing connection")
+                    await close_session()
+                    continue
+                except InvalidMessageException:
+                    logger.exception(
+                        "Got invalid transport message, closing session",
+                    )
+                    await close_session()
+                    continue
                 except ConnectionClosedOK:
                     # Exited normally
                     transition_connecting()
-                except ConnectionClosed as e:
-                    transition_connecting()
-                    raise e
-                logging.debug("_handle_messages_from_ws exiting")
-            except ConnectionClosed:
-                # Set ourselves to closed as soon as we get the signal
-                await transition_closed()
-                logger.debug("ConnectionClosed while serving", exc_info=True)
-            except FailedSendingMessageException:
-                # Expected error if the connection is closed.
-                logger.debug(
-                    "FailedSendingMessageException while serving", exc_info=True
-                )
-            except Exception:
-                logger.exception("caught exception at message iterator")
+                    break
+                except ConnectionClosed:
+                    # Set ourselves to closed as soon as we get the signal
+                    await connection_interrupted()
+                    logger.debug("ConnectionClosed while serving", exc_info=True)
+                    break
+                except FailedSendingMessageException:
+                    # Expected error if the connection is closed.
+                    await connection_interrupted()
+                    logger.debug(
+                        "FailedSendingMessageException while serving", exc_info=True
+                    )
+                    break
+                except Exception:
+                    logger.exception("caught exception at message iterator")
+                    break
+            logging.debug("_handle_messages_from_ws exiting")
         except ExceptionGroup as eg:
             _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))
             if unhandled:
