@@ -226,10 +226,9 @@ class Session:
 
                 try:
                     try:
-                        expectedSessionState = ExpectedSessionState(
-                            nextExpectedSeq=self.ack,
-                            nextSentSeq=self.seq,
-                        )
+                        next_seq = 0
+                        if self._send_buffer:
+                            next_seq = self._send_buffer[0].seq
                         handshake_request = ControlMessageHandshakeRequest[
                             HandshakeMetadata
                         ](  # noqa: E501
@@ -237,7 +236,10 @@ class Session:
                             protocolVersion=protocol_version,
                             sessionId=self.session_id,
                             metadata=uri_and_metadata["metadata"],
-                            expectedSessionState=expectedSessionState,
+                            expectedSessionState=ExpectedSessionState(
+                                nextExpectedSeq=self.ack,
+                                nextSentSeq=next_seq,
+                            ),
                         )
                         stream_id = nanoid.generate()
 
