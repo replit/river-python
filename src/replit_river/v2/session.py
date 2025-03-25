@@ -161,79 +161,10 @@ class Session:
         self.ack = 0
         self.seq = 0
 
-        async def do_close_websocket() -> None:
-            logger.debug(
-                "do_close called, _state=%r, _ws_unwrapped=%r",
-                self._state,
-                self._ws_unwrapped,
-            )
-            if self._ws_unwrapped:
-                self._task_manager.create_task(self._ws_unwrapped.close())
-                if self._retry_connection_callback:
-                    self._task_manager.create_task(self._retry_connection_callback())
-                self._ws_unwrapped = None
-            else:
-                self._state = SessionState.CLOSING
-            await self._begin_close_session_countdown()
-
-        def increment_and_get_heartbeat_misses() -> int:
-            self._heartbeat_misses += 1
-            return self._heartbeat_misses
-
-        self._task_manager.create_task(
-            _setup_heartbeat(
-                self.session_id,
-                self._transport_options.heartbeat_ms,
-                self._transport_options.heartbeats_until_dead,
-                lambda: self._state,
-                lambda: self._close_session_after_time_secs,
-                close_websocket=do_close_websocket,
-                send_message=self.send_message,
-                increment_and_get_heartbeat_misses=increment_and_get_heartbeat_misses,
-            )
-        )
-        self._task_manager.create_task(
-            _check_to_close_session(
-                self._transport_id,
-                self._transport_options.close_session_check_interval_ms,
-                lambda: self._state,
-                self._get_current_time,
-                lambda: self._close_session_after_time_secs,
-                self.close,
-            )
-        )
-
-        def commit(msg: TransportMessage) -> None:
-            pending = self._send_buffer.popleft()
-            if msg.seq != pending.seq:
-                logger.error("Out of sequence error")
-            self._ack_buffer.append(pending)
-
-            # On commit, release pending writers waiting for more buffer space
-            if self._queue_full_lock.locked():
-                self._queue_full_lock.release()
-
-        def get_next_pending() -> TransportMessage | None:
-            if self._send_buffer:
-                return self._send_buffer[0]
-            return None
-
-        # TODO: Just return _ws_unwrapped once we are no longer using the legacy client
-        def get_ws() -> WebSocketCommonProtocol | ClientConnection | None:
-            if self.is_connected():
-                return self._ws_unwrapped
-            return None
-
-        self._task_manager.create_task(
-            _buffered_message_sender(
-                self._connection_condition,
-                self._message_enqueued,
-                get_ws=get_ws,
-                websocket_closed_callback=self._begin_close_session_countdown,
-                get_next_pending=get_next_pending,
-                commit=commit,
-            )
-        )
+        self._start_heartbeat()
+        self._start_serve_responses()
+        self._start_close_session_checker()
+        self._start_buffered_message_sender()
 
     async def ensure_connected[HandshakeMetadata](
         self,
@@ -560,7 +491,87 @@ class Session:
         # This will get us GC'd, so this should be the last thing.
         await self._close_session_callback(self)
 
-    async def start_serve_responses(self) -> None:
+    def _start_buffered_message_sender(self) -> None:
+        def commit(msg: TransportMessage) -> None:
+            pending = self._send_buffer.popleft()
+            if msg.seq != pending.seq:
+                logger.error("Out of sequence error")
+            self._ack_buffer.append(pending)
+
+            # On commit, release pending writers waiting for more buffer space
+            if self._queue_full_lock.locked():
+                self._queue_full_lock.release()
+
+        def get_next_pending() -> TransportMessage | None:
+            if self._send_buffer:
+                return self._send_buffer[0]
+            return None
+
+        # TODO: Just return _ws_unwrapped once we are no longer using the legacy client
+        def get_ws() -> WebSocketCommonProtocol | ClientConnection | None:
+            if self.is_connected():
+                return self._ws_unwrapped
+            return None
+
+        self._task_manager.create_task(
+            _buffered_message_sender(
+                self._connection_condition,
+                self._message_enqueued,
+                get_ws=get_ws,
+                websocket_closed_callback=self._begin_close_session_countdown,
+                get_next_pending=get_next_pending,
+                commit=commit,
+            )
+        )
+
+
+    def _start_close_session_checker(self) -> None:
+        self._task_manager.create_task(
+            _check_to_close_session(
+                self._transport_id,
+                self._transport_options.close_session_check_interval_ms,
+                lambda: self._state,
+                self._get_current_time,
+                lambda: self._close_session_after_time_secs,
+                self.close,
+            )
+        )
+
+
+    def _start_heartbeat(self) -> None:
+        async def do_close_websocket() -> None:
+            logger.debug(
+                "do_close called, _state=%r, _ws_unwrapped=%r",
+                self._state,
+                self._ws_unwrapped,
+            )
+            if self._ws_unwrapped:
+                self._task_manager.create_task(self._ws_unwrapped.close())
+                if self._retry_connection_callback:
+                    self._task_manager.create_task(self._retry_connection_callback())
+                self._ws_unwrapped = None
+            else:
+                self._state = SessionState.CLOSING
+            await self._begin_close_session_countdown()
+
+        def increment_and_get_heartbeat_misses() -> int:
+            self._heartbeat_misses += 1
+            return self._heartbeat_misses
+
+        self._task_manager.create_task(
+            _setup_heartbeat(
+                self.session_id,
+                self._transport_options.heartbeat_ms,
+                self._transport_options.heartbeats_until_dead,
+                lambda: self._state,
+                lambda: self._close_session_after_time_secs,
+                close_websocket=do_close_websocket,
+                send_message=self.send_message,
+                increment_and_get_heartbeat_misses=increment_and_get_heartbeat_misses,
+            )
+        )
+
+    def _start_serve_responses(self) -> None:
         async def transition_connecting() -> None:
             self._state = SessionState.CONNECTING
 

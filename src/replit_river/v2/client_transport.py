@@ -72,7 +72,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
 
             self._session = new_session
             existing_session = new_session
-            await existing_session.start_serve_responses()
 
         await existing_session.ensure_connected(
             client_id=self._client_id,
