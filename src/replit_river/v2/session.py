@@ -953,17 +953,105 @@ async def _serve(
         idx += 1
         try:
             try:
-                await _handle_messages_from_ws(
-                    transport_id=transport_id,
-                    get_state=get_state,
-                    get_ws=get_ws,
-                    transition_connecting=transition_connecting,
-                    close_session=close_session,
-                    assert_incoming_seq_bookkeeping=assert_incoming_seq_bookkeeping,
-                    reset_session_close_countdown=reset_session_close_countdown,
-                    get_stream=get_stream,
-                    close_stream=close_stream,
+                logging.debug("_handle_messages_from_ws started")
+                while (
+                    ws := get_ws()
+                ) is None or get_state() == SessionState.CONNECTING:
+                    logging.debug("_handle_messages_from_ws spinning while connecting")
+                    await asyncio.sleep(1)
+                logger.debug(
+                    "%s start handling messages from ws %s",
+                    "client",
+                    ws.id,
                 )
+                try:
+                    # We should not process messages if the websocket is closed.
+                    while ws := get_ws():
+                        # decode=False: Avoiding an unnecessary round-trip through str
+                        # Ideally this should be type-ascripted to : bytes, but there
+                        # is no @overrides in `websockets` to hint this.
+                        message = await ws.recv(decode=False)
+                        try:
+                            msg = parse_transport_msg(message)
+                            logger.debug(
+                                "[%s] got a message %r",
+                                transport_id,
+                                msg,
+                            )
+
+                            if msg.controlFlags & STREAM_OPEN_BIT != 0:
+                                raise InvalidMessageException(
+                                    "Client should not receive stream open bit"
+                                )
+
+                            match assert_incoming_seq_bookkeeping(
+                                msg.from_,
+                                msg.seq,
+                                msg.ack,
+                            ):
+                                case _IgnoreMessage():
+                                    logger.debug(
+                                        "Ignoring transport message",
+                                        exc_info=True,
+                                    )
+                                    continue
+                                case True:
+                                    pass
+                                case other:
+                                    assert_never(other)
+
+                            reset_session_close_countdown()
+
+                            # Shortcut to avoid processing ack packets
+                            if msg.controlFlags & ACK_BIT != 0:
+                                continue
+
+                            stream = get_stream(msg.streamId)
+
+                            if not stream:
+                                logger.warning(
+                                    "no stream for %s, ignoring message",
+                                    msg.streamId,
+                                )
+                                continue
+
+                            if (
+                                msg.controlFlags & STREAM_CLOSED_BIT != 0
+                                and msg.payload.get("type", None) == "CLOSE"
+                            ):
+                                # close message is not sent to the stream
+                                pass
+                            else:
+                                try:
+                                    await stream.put(msg.payload)
+                                except ChannelClosed:
+                                    # The client is no longer interested in this stream,
+                                    # just drop the message.
+                                    pass
+                                except RuntimeError as e:
+                                    raise InvalidMessageException(e) from e
+
+                            if msg.controlFlags & STREAM_CLOSED_BIT != 0:
+                                if stream:
+                                    stream.close()
+                                close_stream(msg.streamId)
+                        except OutOfOrderMessageException:
+                            logger.exception("Out of order message, closing connection")
+                            await close_session()
+                            return
+                        except InvalidMessageException:
+                            logger.exception(
+                                "Got invalid transport message, closing session",
+                            )
+                            await close_session()
+                            return
+                except ConnectionClosedOK:
+                    # Exited normally
+                    transition_connecting()
+                except ConnectionClosed as e:
+                    transition_connecting()
+                    raise e
+                logging.debug("_handle_messages_from_ws exiting")
             except ConnectionClosed:
                 # Set ourselves to closed as soon as we get the signal
                 await transition_closed()
@@ -988,99 +1076,3 @@ async def _serve(
                 )
                 raise unhandled
     logging.debug(f"_serve exiting normally after {idx} loops")
-
-
-async def _handle_messages_from_ws(
-    transport_id: str,
-    get_state: Callable[[], SessionState],
-    get_ws: Callable[[], ClientConnection | None],
-    transition_connecting: Callable[[], Awaitable[None]],
-    close_session: Callable[[], Awaitable[None]],
-    assert_incoming_seq_bookkeeping: Callable[
-        [str, int, int], Literal[True] | _IgnoreMessage
-    ],  # noqa: E501
-    reset_session_close_countdown: Callable[[], None],
-    get_stream: Callable[[str], Channel[Any] | None],
-    close_stream: Callable[[str], None],
-) -> None:
-    logging.debug("_handle_messages_from_ws started")
-    while (ws := get_ws()) is None or get_state() == SessionState.CONNECTING:
-        logging.debug("_handle_messages_from_ws spinning while connecting")
-        await asyncio.sleep(1)
-    logger.debug(
-        "%s start handling messages from ws %s",
-        "client",
-        ws.id,
-    )
-    try:
-        # We should not process messages if the websocket is closed.
-        while ws := get_ws():
-            # decode=False: Avoiding an unnecessary round-trip through str
-            # Ideally this should be type-ascripted to : bytes, but there is no
-            # @overrides in `websockets` to hint this.
-            message = await ws.recv(decode=False)
-            try:
-                msg = parse_transport_msg(message)
-                logger.debug("[%s] got a message %r", transport_id, msg)
-
-                if msg.controlFlags & STREAM_OPEN_BIT != 0:
-                    raise InvalidMessageException(
-                        "Client should not receive stream open bit"
-                    )
-
-                match assert_incoming_seq_bookkeeping(msg.from_, msg.seq, msg.ack):
-                    case _IgnoreMessage():
-                        logger.debug("Ignoring transport message", exc_info=True)
-                        continue
-                    case True:
-                        pass
-                    case other:
-                        assert_never(other)
-
-                reset_session_close_countdown()
-
-                # Shortcut to avoid processing ack packets
-                if msg.controlFlags & ACK_BIT != 0:
-                    continue
-
-                stream = get_stream(msg.streamId)
-
-                if not stream:
-                    logger.warning("no stream for %s, ignoring message", msg.streamId)
-                    continue
-
-                if (
-                    msg.controlFlags & STREAM_CLOSED_BIT != 0
-                    and msg.payload.get("type", None) == "CLOSE"
-                ):
-                    # close message is not sent to the stream
-                    pass
-                else:
-                    try:
-                        await stream.put(msg.payload)
-                    except ChannelClosed:
-                        # The client is no longer interested in this stream,
-                        # just drop the message.
-                        pass
-                    except RuntimeError as e:
-                        raise InvalidMessageException(e) from e
-
-                if msg.controlFlags & STREAM_CLOSED_BIT != 0:
-                    if stream:
-                        stream.close()
-                    close_stream(msg.streamId)
-            except OutOfOrderMessageException:
-                logger.exception("Out of order message, closing connection")
-                await close_session()
-                return
-            except InvalidMessageException:
-                logger.exception("Got invalid transport message, closing session")
-                await close_session()
-                return
-    except ConnectionClosedOK:
-        # Exited normally
-        transition_connecting()
-    except ConnectionClosed as e:
-        transition_connecting()
-        raise e
-    logging.debug("_handle_messages_from_ws exiting")
