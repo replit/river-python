@@ -33,6 +33,7 @@ from replit_river.common_session import (
 )
 from replit_river.error_schema import (
     ERROR_CODE_CANCEL,
+    ERROR_CODE_SESSION_STATE_MISMATCH,
     ERROR_CODE_STREAM_CLOSED,
     ERROR_HANDSHAKE,
     RiverError,
@@ -314,6 +315,8 @@ class Session:
                         "river client get handshake response : %r", handshake_response
                     )  # noqa: E501
                     if not handshake_response.status.ok:
+                        if handshake_response.status.code == ERROR_CODE_SESSION_STATE_MISMATCH:
+                            await self.close()
                         raise RiverException(
                             ERROR_HANDSHAKE,
                             f"Handshake failed with code {handshake_response.status.code}: "  # noqa: E501

@@ -20,6 +20,9 @@ ERROR_CODE_CANCEL = "CANCEL"
 # ERROR_CODE_UNKNOWN is the code for the RiverUnknownError
 ERROR_CODE_UNKNOWN = "UNKNOWN"
 
+# SESSION_STATE_MISMATCH is the code when the remote server rejects the session's state
+ERROR_CODE_SESSION_STATE_MISMATCH = "SESSION_STATE_MISMATCH"
+
 
 class RiverError(BaseModel):
     """Error message from the server."""
