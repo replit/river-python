@@ -470,7 +470,6 @@ class Session:
             # already closing
             return
         self._state = SessionState.CLOSING
-        self._reset_session_close_countdown()
         await self._task_manager.cancel_all_tasks()
 
         # TODO: unexpected_close should close stream differently here to
@@ -535,7 +534,7 @@ class Session:
         )
 
     def _start_heartbeat(self) -> None:
-        async def do_close_websocket() -> None:
+        async def close_websocket() -> None:
             logger.debug(
                 "do_close called, _state=%r, _ws_unwrapped=%r",
                 self._state,
@@ -543,11 +542,13 @@ class Session:
             )
             if self._ws_unwrapped:
                 self._task_manager.create_task(self._ws_unwrapped.close())
-                if self._retry_connection_callback:
-                    self._task_manager.create_task(self._retry_connection_callback())
                 self._ws_unwrapped = None
+
+            if self._retry_connection_callback:
+                self._task_manager.create_task(self._retry_connection_callback())
             else:
                 self._state = SessionState.CLOSING
+
             await self._begin_close_session_countdown()
 
         def increment_and_get_heartbeat_misses() -> int:
@@ -561,7 +562,7 @@ class Session:
                 self._transport_options.heartbeats_until_dead,
                 lambda: self._state,
                 lambda: self._close_session_after_time_secs,
-                close_websocket=do_close_websocket,
+                close_websocket=close_websocket,
                 send_message=self.send_message,
                 increment_and_get_heartbeat_misses=increment_and_get_heartbeat_misses,
             )
@@ -573,6 +574,10 @@ class Session:
 
         async def connection_interrupted() -> None:
             self._state = SessionState.CONNECTING
+            if self._ws_unwrapped:
+                self._task_manager.create_task(self._ws_unwrapped.close())
+                self._ws_unwrapped = None
+
             if self._retry_connection_callback:
                 self._task_manager.create_task(self._retry_connection_callback())
 
