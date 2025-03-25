@@ -24,6 +24,7 @@ from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 from websockets.frames import CloseCode
 from websockets.legacy.protocol import WebSocketCommonProtocol
+from websockets.protocol import CONNECTING
 
 from replit_river.common_session import (
     SessionState,
@@ -557,40 +558,60 @@ class Session:
         await self._close_session_callback(self)
 
     async def start_serve_responses(self) -> None:
-        self._task_manager.create_task(self._serve())
+        async def transition_closed() -> None:
+            self._state = SessionState.CONNECTING
+            if self._retry_connection_callback:
+                self._task_manager.create_task(self._retry_connection_callback())
 
-    async def _serve(self) -> None:
+            await self._begin_close_session_countdown()
+        self._task_manager.create_task(self._serve(
+            get_state=lambda: self._state,
+            transition_closed=transition_closed,
+            reset_session_close_countdown=self._reset_session_close_countdown,
+        ))
+
+    async def _serve(
+        self,
+        get_state: Callable[[], SessionState],
+        transition_closed: Callable[[], Awaitable[None]],
+        reset_session_close_countdown: Callable[[], None],
+    ) -> None:
         """Serve messages from the websocket."""
-        self._reset_session_close_countdown()
-        try:
+        reset_session_close_countdown()
+        our_task = asyncio.current_task()
+        idx = 0
+        while our_task and not our_task.cancelling() and not our_task.cancelled():
+            logging.debug(f"_serve loop count={idx}")
+            idx += 1
             try:
-                await self._handle_messages_from_ws()
-            except ConnectionClosed:
-                # Set ourselves to closed as soon as we get the signal
-                self._state = SessionState.CONNECTING
-                if self._retry_connection_callback:
-                    self._task_manager.create_task(self._retry_connection_callback())
-
-                await self._begin_close_session_countdown()
-                logger.debug("ConnectionClosed while serving", exc_info=True)
-            except FailedSendingMessageException:
-                # Expected error if the connection is closed.
-                logger.debug(
-                    "FailedSendingMessageException while serving", exc_info=True
-                )
-            except Exception:
-                logger.exception("caught exception at message iterator")
-        except ExceptionGroup as eg:
-            _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))
-            if unhandled:
-                raise ExceptionGroup(
-                    "Unhandled exceptions on River server", unhandled.exceptions
-                )
+                try:
+                    await self._handle_messages_from_ws()
+                except ConnectionClosed:
+                    # Set ourselves to closed as soon as we get the signal
+                    await transition_closed()
+                    logger.debug("ConnectionClosed while serving", exc_info=True)
+                except FailedSendingMessageException:
+                    # Expected error if the connection is closed.
+                    logger.debug(
+                        "FailedSendingMessageException while serving", exc_info=True
+                    )
+                except Exception:
+                    logger.exception("caught exception at message iterator")
+            except ExceptionGroup as eg:
+                _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))
+                if unhandled:
+                    # We're in a task, there's not that much that can be done.
+                    unhandled = ExceptionGroup(
+                        "Unhandled exceptions on River server", unhandled.exceptions
+                    )
+                    logger.exception("caught exception at message iterator", exc_info=unhandled)
+                    raise unhandled
+        logging.debug(f"_serve exiting normally after {idx} loops")
 
     async def _handle_messages_from_ws(self) -> None:
         logging.debug("_handle_messages_from_ws started")
         while self._ws_unwrapped is None or self._state == SessionState.CONNECTING:
-            logging.debug("_handle_messages_from_ws started")
+            logging.debug("_handle_messages_from_ws spinning while connecting")
             await asyncio.sleep(1)
         logger.debug(
             "%s start handling messages from ws %s",
