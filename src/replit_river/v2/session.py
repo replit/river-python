@@ -828,7 +828,7 @@ class Session:
         # Handle potential errors during communication
         try:
             async for item in output:
-                if item.get("type", None) == "CLOSE":
+                if item.get("type") == "CLOSE":
                     break
                 if not item.get("ok", False):
                     try:
@@ -920,7 +920,7 @@ class Session:
         # Handle potential errors during communication
         try:
             async for item in output:
-                if "type" in item and item["type"] == "CLOSE":
+                if item.get("type") == "CLOSE":
                     break
                 if not item.get("ok", False):
                     try:
