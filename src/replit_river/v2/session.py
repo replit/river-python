@@ -975,7 +975,7 @@ async def _check_to_close_session(
         await asyncio.sleep(close_session_check_interval_ms / 1000)
         if get_state() in TerminalStates:
             # already closing
-            return
+            break
         # calculate the value now before comparing it so that there are no
         # await points between the check and the comparison to avoid a TOCTOU
         # race.
@@ -983,9 +983,6 @@ async def _check_to_close_session(
         close_session_after_time_secs = get_close_session_after_time_secs()
         if not close_session_after_time_secs:
             continue
-        logging.debug(
-            "_check_to_close_session: Preparing to close session if not interrupted"
-        )
         if current_time > close_session_after_time_secs:
             logger.info("Grace period ended for %s, closing session", transport_id)
             await do_close()
