@@ -50,7 +50,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
     async def close(self) -> None:
         self._rate_limiter.close()
         if self._session:
-            logger.info(f"start closing session {self._transport_id}")
             await self._session.close()
             logger.info(f"Transport closed {self._transport_id}")
 
@@ -60,7 +59,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         call ensure_connected on whatever session is active.
         """
         existing_session = self._session
-        logger.debug(f"if not existing_session={existing_session} or existing_session.is_closed()={existing_session and existing_session.is_closed()}:")
         if not existing_session or existing_session.is_closed():
             logger.info("Creating new session")
             new_session = Session(

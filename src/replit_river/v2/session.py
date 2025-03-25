@@ -11,7 +11,6 @@ from typing import (
     Coroutine,
     Literal,
     TypeAlias,
-    cast,
 )
 
 import nanoid  # type: ignore
@@ -217,7 +216,6 @@ class Session:
 
         # TODO: Just return _ws_unwrapped once we are no longer using the legacy client
         def get_ws() -> WebSocketCommonProtocol | ClientConnection | None:
-            logger.debug("get_ws: %r %r", self.is_connected(), self._ws_unwrapped)
             if self.is_connected():
                 return self._ws_unwrapped
             return None
@@ -250,7 +248,7 @@ class Session:
         logic that actually establishes the connection.
         """
 
-        logger.debug("ensure_connected: %r", self.is_connected())
+        logger.debug("ensure_connected: is_connected=%r", self.is_connected())
         if self.is_connected():
             return
 
@@ -264,9 +262,7 @@ class Session:
                 )
             )
 
-        logger.debug("BEFORE await _do_ensure_connected")
         await self._connecting_task
-        logger.debug("AFTER await _do_ensure_connected")
 
     async def _do_ensure_connected[HandshakeMetadata](
         self,
@@ -391,9 +387,7 @@ class Session:
                     rate_limiter.start_restoring_budget(client_id)
                     self._state = SessionState.ACTIVE
                     self._ws_unwrapped = ws
-                    logger.debug("Before notify_all: %r %r %r", self._state, self._ws_unwrapped, self._connection_condition)
                     self._connection_condition.notify_all()
-                    self._connection_condition.release()
                     break
                 except RiverException as e:
                     await ws.close()
@@ -422,13 +416,16 @@ class Session:
         ):
             self._connecting_task = None
 
+        # Release the lock we took earlier so we can use it again in the next
+        # connection attempt
+        self._connection_condition.release()
+
         if last_error is not None:
             raise RiverException(
                 ERROR_HANDSHAKE,
                 f"Failed to create ws after retrying {max_retry} number of times",
             ) from last_error
 
-        logger.debug("EXITING _do_ensure_connected")
         return True
 
     def is_closed(self) -> bool:
@@ -495,7 +492,6 @@ class Session:
             serviceName=service_name,
             procedureName=procedure_name,
         )
-        logger.debug("SENDING MESSAGE: %r", msg)
 
         if span:
             with use_span(span):
@@ -514,9 +510,7 @@ class Session:
             self._queue_full_lock.locked()
             or len(self._send_buffer) >= self._transport_options.buffer_size
         ):
-            logger.warning("LOCK ACQUIRED %r", repr(payload))
             await self._queue_full_lock.acquire()
-            logger.warning("LOCK RELEASED %r", repr(payload))
         self._send_buffer.append(msg)
         # Wake up buffered_message_sender
         self._message_enqueued.release()
