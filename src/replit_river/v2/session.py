@@ -316,7 +316,7 @@ class Session:
                         raise RiverException(
                             ERROR_HANDSHAKE,
                             f"Handshake failed with code {handshake_response.status.code}: "  # noqa: E501
-                            + f"{handshake_response.status.reason}",
+                            f"{handshake_response.status.reason}",
                         )
 
                     last_error = None
