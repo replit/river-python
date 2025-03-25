@@ -27,11 +27,9 @@ from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 from websockets.legacy.protocol import WebSocketCommonProtocol
 
 from replit_river.common_session import (
+    SendMessage,
     SessionState,
     TerminalStates,
-    buffered_message_sender,
-    check_to_close_session,
-    setup_heartbeat,
 )
 from replit_river.error_schema import (
     ERROR_CODE_CANCEL,
@@ -183,7 +181,7 @@ class Session:
             return self._heartbeat_misses
 
         self._task_manager.create_task(
-            setup_heartbeat(
+            _setup_heartbeat(
                 self.session_id,
                 self._transport_options.heartbeat_ms,
                 self._transport_options.heartbeats_until_dead,
@@ -195,7 +193,7 @@ class Session:
             )
         )
         self._task_manager.create_task(
-            check_to_close_session(
+            _check_to_close_session(
                 self._transport_id,
                 self._transport_options.close_session_check_interval_ms,
                 lambda: self._state,
@@ -227,7 +225,7 @@ class Session:
             return None
 
         self._task_manager.create_task(
-            buffered_message_sender(
+            _buffered_message_sender(
                 self._connection_condition,
                 self._message_enqueued,
                 get_ws=get_ws,
@@ -928,6 +926,137 @@ class Session:
                 "type": "CLOSE",
             },
         )
+
+
+async def _check_to_close_session(
+    transport_id: str,
+    close_session_check_interval_ms: float,
+    get_state: Callable[[], SessionState],
+    get_current_time: Callable[[], Awaitable[float]],
+    get_close_session_after_time_secs: Callable[[], float | None],
+    do_close: Callable[[], Awaitable[None]],
+) -> None:
+    our_task = asyncio.current_task()
+    while our_task and not our_task.cancelling() and not our_task.cancelled():
+        await asyncio.sleep(close_session_check_interval_ms / 1000)
+        if get_state() in TerminalStates:
+            # already closing
+            return
+        # calculate the value now before comparing it so that there are no
+        # await points between the check and the comparison to avoid a TOCTOU
+        # race.
+        current_time = await get_current_time()
+        close_session_after_time_secs = get_close_session_after_time_secs()
+        if not close_session_after_time_secs:
+            continue
+        if current_time > close_session_after_time_secs:
+            logger.info("Grace period ended for %s, closing session", transport_id)
+            await do_close()
+            return
+
+
+async def _buffered_message_sender(
+    connection_condition: asyncio.Condition,
+    message_enqueued: asyncio.Semaphore,
+    get_ws: Callable[[], WebSocketCommonProtocol | ClientConnection | None],
+    websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
+    get_next_pending: Callable[[], TransportMessage | None],
+    commit: Callable[[TransportMessage], None],
+) -> None:
+    while True:
+        await message_enqueued.acquire()
+        while (ws := get_ws()) is None:
+            # Block until we have a handle
+            logger.debug(
+                "buffered_message_sender: Waiting until ws is connected (condition=%r)",
+                connection_condition,
+            )
+            async with connection_condition:
+                await connection_condition.wait()
+        if msg := get_next_pending():
+            logger.debug(
+                "buffered_message_sender: Dequeued %r to send over %r",
+                msg,
+                ws,
+            )
+            try:
+                await send_transport_message(msg, ws, websocket_closed_callback)
+                commit(msg)
+            except WebsocketClosedException as e:
+                logger.debug(
+                    "Connection closed while sending message %r, waiting for "
+                    "retry from buffer",
+                    type(e),
+                    exc_info=e,
+                )
+                message_enqueued.release()
+                break
+            except FailedSendingMessageException:
+                logger.error(
+                    "Failed sending message, waiting for retry from buffer",
+                    exc_info=True,
+                )
+                message_enqueued.release()
+                break
+            except Exception:
+                logger.exception("Error attempting to send buffered messages")
+                message_enqueued.release()
+                break
+
+
+async def _setup_heartbeat(
+    session_id: str,
+    heartbeat_ms: float,
+    heartbeats_until_dead: int,
+    get_state: Callable[[], SessionState],
+    get_closing_grace_period: Callable[[], float | None],
+    close_websocket: Callable[[], Awaitable[None]],
+    send_message: SendMessage,
+    increment_and_get_heartbeat_misses: Callable[[], int],
+) -> None:
+    while True:
+        await asyncio.sleep(heartbeat_ms / 1000)
+        state = get_state()
+        if state == SessionState.CONNECTING:
+            logger.debug("Websocket is not connected, not sending heartbeat")
+            continue
+        if state in TerminalStates:
+            logger.debug(
+                "Session is closed, no need to send heartbeat, state : "
+                "%r close_session_after_this: %r",
+                {state},
+                {get_closing_grace_period()},
+            )
+            # session is closing / closed, no need to send heartbeat anymore
+            return
+        try:
+            await send_message(
+                stream_id="heartbeat",
+                # TODO: make this a message class
+                # https://github.com/replit/river/blob/741b1ea6d7600937ad53564e9cf8cd27a92ec36a/transport/message.ts#L42
+                payload={
+                    "type": "ACK",
+                    "ack": 0,
+                },
+                control_flags=ACK_BIT,
+                procedure_name=None,
+                service_name=None,
+                span=None,
+            )
+
+            if increment_and_get_heartbeat_misses() > heartbeats_until_dead:
+                if get_closing_grace_period() is not None:
+                    # already in grace period, no need to set again
+                    continue
+                logger.info(
+                    "%r closing websocket because of heartbeat misses",
+                    session_id,
+                )
+                await close_websocket()
+                continue
+        except FailedSendingMessageException:
+            # this is expected during websocket closed period
+            continue
 
 
 async def _serve(
