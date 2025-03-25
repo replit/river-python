@@ -91,7 +91,6 @@ class LeakyBucketRateLimit:
         Returns:
             bool: True if budget is available, False otherwise.
         """
-        logger.debug("self.get_budget_consumed(user)=%r < self.options.attempt_budget_capacity=%r", self.get_budget_consumed(user), self.options.attempt_budget_capacity)
         if self.get_budget_consumed(user) > self.options.attempt_budget_capacity:
             logger.debug("No retry budget for %s.", user)
             raise BudgetExhaustedException(
