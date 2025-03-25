@@ -82,7 +82,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         return existing_session
 
     async def _retry_connection(self) -> Session:
-        if not self._transport_options.transparent_reconnect and self._session:
+        if self._session and not self._transport_options.transparent_reconnect:
             logger.info("transparent_reconnect not set, closing {self._transport_id}")
             await self._session.close()
         return await self.get_or_create_session()
