@@ -519,6 +519,7 @@ class Session:
             self._queue_full_lock.locked()
             or len(self._send_buffer) >= self._transport_options.buffer_size
         ):
+            logging.debug("send_message: queue full, waiting")
             await self._queue_full_lock.acquire()
         self._send_buffer.append(msg)
         # Wake up buffered_message_sender
@@ -587,7 +588,9 @@ class Session:
                 )
 
     async def _handle_messages_from_ws(self) -> None:
+        logging.debug("_handle_messages_from_ws started")
         while self._ws_unwrapped is None or self._state == SessionState.CONNECTING:
+            logging.debug("_handle_messages_from_ws started")
             await asyncio.sleep(1)
         logger.debug(
             "%s start handling messages from ws %s",
@@ -690,6 +693,7 @@ class Session:
         except ConnectionClosed as e:
             self._state = SessionState.CONNECTING
             raise e
+        logging.debug("_handle_messages_from_ws exiting")  # When the network disconnects this Task exits and then we don't restart it.
 
     async def send_rpc[R, A](
         self,
