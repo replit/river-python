@@ -60,6 +60,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         call ensure_connected on whatever session is active.
         """
         existing_session = self._session
+        logger.debug(f"if not existing_session={existing_session} or existing_session.is_closed()={existing_session and existing_session.is_closed()}:")
         if not existing_session or existing_session.is_closed():
             logger.info("Creating new session")
             new_session = Session(

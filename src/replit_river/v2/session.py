@@ -100,6 +100,7 @@ class Session:
     _close_session_callback: CloseSessionCallback
     _close_session_after_time_secs: float | None
     _connecting_task: asyncio.Task[Literal[True]] | None
+    _connection_condition: asyncio.Condition
 
     # ws state
     _ws_unwrapped: ClientConnection | None
@@ -135,6 +136,7 @@ class Session:
         self._close_session_callback = close_session_callback
         self._close_session_after_time_secs: float | None = None
         self._connecting_task = None
+        self._connection_condition = asyncio.Condition()
 
         # ws state
         self._ws_unwrapped = None
@@ -162,11 +164,13 @@ class Session:
                 self._state,
                 self._ws_unwrapped,
             )
-            self._state = SessionState.CLOSING
             if self._ws_unwrapped:
                 self._task_manager.create_task(self._ws_unwrapped.close())
                 if self._retry_connection_callback:
                     self._task_manager.create_task(self._retry_connection_callback())
+                self._ws_unwrapped = None
+            else:
+                self._state = SessionState.CLOSING
             await self._begin_close_session_countdown()
 
         def increment_and_get_heartbeat_misses() -> int:
@@ -211,14 +215,18 @@ class Session:
                 return self._send_buffer[0]
             return None
 
+        # TODO: Just return _ws_unwrapped once we are no longer using the legacy client
+        def get_ws() -> WebSocketCommonProtocol | ClientConnection | None:
+            logger.debug("get_ws: %r %r", self.is_connected(), self._ws_unwrapped)
+            if self.is_connected():
+                return self._ws_unwrapped
+            return None
+
         self._task_manager.create_task(
             buffered_message_sender(
+                self._connection_condition,
                 self._message_enqueued,
-                get_ws=lambda: (
-                    cast(WebSocketCommonProtocol | ClientConnection, self._ws_unwrapped)
-                    if self.is_connected()
-                    else None
-                ),
+                get_ws=get_ws,
                 websocket_closed_callback=self._begin_close_session_countdown,
                 get_next_pending=get_next_pending,
                 commit=commit,
@@ -242,6 +250,7 @@ class Session:
         logic that actually establishes the connection.
         """
 
+        logger.debug("ensure_connected: %r", self.is_connected())
         if self.is_connected():
             return
 
@@ -255,7 +264,9 @@ class Session:
                 )
             )
 
+        logger.debug("BEFORE await _do_ensure_connected")
         await self._connecting_task
+        logger.debug("AFTER await _do_ensure_connected")
 
     async def _do_ensure_connected[HandshakeMetadata](
         self,
@@ -271,6 +282,7 @@ class Session:
 
         last_error: Exception | None = None
         i = 0
+        await self._connection_condition.acquire()
         while rate_limiter.has_budget_or_throw(client_id, ERROR_HANDSHAKE, last_error):
             if i > 0:
                 logger.info(f"Retrying build handshake number {i} times")
@@ -378,6 +390,11 @@ class Session:
                     last_error = None
                     rate_limiter.start_restoring_budget(client_id)
                     self._state = SessionState.ACTIVE
+                    self._ws_unwrapped = ws
+                    logger.debug("Before notify_all: %r %r %r", self._state, self._ws_unwrapped, self._connection_condition)
+                    self._connection_condition.notify_all()
+                    self._connection_condition.release()
+                    break
                 except RiverException as e:
                     await ws.close()
                     raise e
@@ -411,6 +428,7 @@ class Session:
                 f"Failed to create ws after retrying {max_retry} number of times",
             ) from last_error
 
+        logger.debug("EXITING _do_ensure_connected")
         return True
 
     def is_closed(self) -> bool:
@@ -419,7 +437,7 @@ class Session:
         Do not send messages, do not expect any more messages to be emitted,
         the state is expected to be stale.
         """
-        return self._state not in TerminalStates
+        return self._state in TerminalStates
 
     def is_connected(self) -> bool:
         return self._state == SessionState.ACTIVE
@@ -477,6 +495,7 @@ class Session:
             serviceName=service_name,
             procedureName=procedure_name,
         )
+        logger.debug("SENDING MESSAGE: %r", msg)
 
         if span:
             with use_span(span):
@@ -516,16 +535,16 @@ class Session:
         self._reset_session_close_countdown()
         await self._task_manager.cancel_all_tasks()
 
-        if self._ws_unwrapped:
-            # The Session isn't guaranteed to live much longer than this close()
-            # invocation, so let's await this close to avoid dropping the socket.
-            await self._ws_unwrapped.close()
-
         # TODO: unexpected_close should close stream differently here to
         # throw exception correctly.
         for stream in self._streams.values():
             stream.close()
         self._streams.clear()
+
+        if self._ws_unwrapped:
+            # The Session isn't guaranteed to live much longer than this close()
+            # invocation, so let's await this close to avoid dropping the socket.
+            await self._ws_unwrapped.close()
 
         self._state = SessionState.CLOSED
 
