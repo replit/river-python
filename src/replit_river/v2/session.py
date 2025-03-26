@@ -15,7 +15,7 @@ from typing import (
     assert_never,
 )
 
-import nanoid  # type: ignore
+import nanoid
 import websockets.asyncio.client
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
