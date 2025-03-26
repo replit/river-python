@@ -20,12 +20,6 @@ PROTOCOL_VERSION = "v2.0"
 logger = logging.getLogger(__name__)
 
 
-class HandshakeBudgetExhaustedException(RiverException):
-    def __init__(self, code: str, message: str, client_id: str) -> None:
-        super().__init__(code, message)
-        self.client_id = client_id
-
-
 class ClientTransport(Generic[HandshakeMetadataType]):
     _session: Session | None
 
