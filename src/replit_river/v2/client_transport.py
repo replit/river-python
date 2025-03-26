@@ -4,9 +4,6 @@ from typing import Generic
 
 import nanoid
 
-from replit_river.error_schema import (
-    RiverException,
-)
 from replit_river.rate_limiter import LeakyBucketRateLimit
 from replit_river.transport_options import (
     HandshakeMetadataType,

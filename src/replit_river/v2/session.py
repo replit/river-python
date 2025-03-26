@@ -258,17 +258,6 @@ class Session:
                             nextSentSeq=next_seq,
                         ),
                     )
-                    sb_state = None
-                    ab_state = None
-                    if self._send_buffer:
-                        sb_state = [self._send_buffer[0].seq, self._send_buffer[0].ack]
-                    if self._ack_buffer:
-                        ab_state = [self._ack_buffer[0].seq, self._ack_buffer[0].ack]
-                    logger.debug(
-                        f"STATE{{seq={self.seq}, ack={self.ack}, next_seq={next_seq}, "
-                        f"sb_state={sb_state}, ab_state={ab_state} }}"
-                    )
-                    stream_id = nanoid.generate()
 
                     async def websocket_closed_callback() -> None:
                         logger.error("websocket closed before handshake response")
@@ -277,7 +266,7 @@ class Session:
                         TransportMessage(
                             from_=self._transport_id,
                             to=self._to_id,
-                            streamId=stream_id,
+                            streamId=nanoid.generate(),
                             controlFlags=0,
                             id=nanoid.generate(),
                             seq=0,
@@ -499,8 +488,7 @@ class Session:
     async def close(self) -> None:
         """Close the session and all associated streams."""
         logger.info(
-            f"{self._transport_id} closing session "
-            f"to {self._to_id}, ws: {self._ws}"
+            f"{self._transport_id} closing session to {self._to_id}, ws: {self._ws}"
         )
         if self._state in TerminalStates:
             # already closing
@@ -573,9 +561,9 @@ class Session:
         def do_close() -> None:
             # Avoid closing twice
             if self._terminating_task is None:
-            # We can't just call self.close() directly because
-            # we're inside a thread that will eventually be awaited
-            # during the cleanup procedure.
+                # We can't just call self.close() directly because
+                # we're inside a thread that will eventually be awaited
+                # during the cleanup procedure.
                 self._terminating_task = asyncio.create_task(self.close())
 
         self._task_manager.create_task(
