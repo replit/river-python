@@ -603,7 +603,6 @@ class Session:
                 lambda: self._state,
                 lambda: self._close_session_after_time_secs,
                 close_websocket=close_websocket,
-                send_message=self.send_message,
                 increment_and_get_heartbeat_misses=increment_and_get_heartbeat_misses,
             )
         )
@@ -662,6 +661,9 @@ class Session:
             async with self._connection_condition:
                 await self._connection_condition.wait()
 
+        def received_message(message: TransportMessage) -> None:
+            pass
+
         self._task_manager.create_task(
             _serve(
                 block_until_connected=block_until_connected,
@@ -675,6 +677,8 @@ class Session:
                 assert_incoming_seq_bookkeeping=assert_incoming_seq_bookkeeping,
                 get_stream=lambda stream_id: self._streams.get(stream_id),
                 close_stream=close_stream,
+                received_message=received_message,
+                send_message=self.send_message,
             )
         )
 
@@ -1073,7 +1077,6 @@ async def _setup_heartbeat(
     get_state: Callable[[], SessionState],
     get_closing_grace_period: Callable[[], float | None],
     close_websocket: Callable[[], Awaitable[None]],
-    send_message: SendMessage,
     increment_and_get_heartbeat_misses: Callable[[], int],
 ) -> None:
     while True:
@@ -1092,36 +1095,18 @@ async def _setup_heartbeat(
         await asyncio.sleep(heartbeat_ms / 1000)
         state = get_state()
         if state in ConnectingStates:
-            logger.debug("Websocket is not connected, not sending heartbeat")
+            logger.debug("Websocket is not connected, don't expect heartbeat")
             continue
-        try:
-            await send_message(
-                stream_id="heartbeat",
-                # TODO: make this a message class
-                # https://github.com/replit/river/blob/741b1ea6d7600937ad53564e9cf8cd27a92ec36a/transport/message.ts#L42
-                payload={
-                    "type": "ACK",
-                    "ack": 0,
-                },
-                control_flags=ACK_BIT,
-                procedure_name=None,
-                service_name=None,
-                span=None,
-            )
 
-            if increment_and_get_heartbeat_misses() > heartbeats_until_dead:
-                if get_closing_grace_period() is not None:
-                    # already in grace period, no need to set again
-                    continue
-                logger.info(
-                    "%r closing websocket because of heartbeat misses",
-                    session_id,
-                )
-                await close_websocket()
+        if increment_and_get_heartbeat_misses() > heartbeats_until_dead:
+            if get_closing_grace_period() is not None:
+                # already in grace period, no need to set again
                 continue
-        except FailedSendingMessageException:
-            # this is expected during websocket closed period
-            continue
+            logger.info(
+                "%r closing websocket because of heartbeat misses",
+                session_id,
+            )
+            await close_websocket()
 
 
 async def _serve(
@@ -1138,6 +1123,8 @@ async def _serve(
     ],  # noqa: E501
     get_stream: Callable[[str], Channel[Any] | None],
     close_stream: Callable[[str], None],
+    received_message: Callable[[TransportMessage], None],
+    send_message: SendMessage,
 ) -> None:
     """Serve messages from the websocket."""
     reset_session_close_countdown()
@@ -1169,6 +1156,8 @@ async def _serve(
                         msg,
                     )
 
+                    received_message(msg)
+
                     if msg.controlFlags & STREAM_OPEN_BIT != 0:
                         raise InvalidMessageException(
                             "Client should not receive stream open bit"
@@ -1194,6 +1183,19 @@ async def _serve(
 
                     # Shortcut to avoid processing ack packets
                     if msg.controlFlags & ACK_BIT != 0:
+                        await send_message(
+                            stream_id="heartbeat",
+                            # TODO: make this a message class
+                            # https://github.com/replit/river/blob/741b1ea6d7600937ad53564e9cf8cd27a92ec36a/transport/message.ts#L42
+                            payload={
+                                "type": "ACK",
+                                "ack": 0,
+                            },
+                            control_flags=ACK_BIT,
+                            procedure_name=None,
+                            service_name=None,
+                            span=None,
+                        )
                         continue
 
                     stream = get_stream(msg.streamId)
