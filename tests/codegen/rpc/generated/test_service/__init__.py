@@ -11,7 +11,6 @@ import replit_river as river
 
 from .rpc_method import (
     Rpc_MethodInput,
-    Rpc_MethodInputTypeAdapter,
     Rpc_MethodOutput,
     Rpc_MethodOutputTypeAdapter,
     encode_Rpc_MethodInput,

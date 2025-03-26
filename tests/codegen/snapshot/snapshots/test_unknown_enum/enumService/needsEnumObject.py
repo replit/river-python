@@ -77,11 +77,6 @@ def encode_NeedsenumobjectInput(
     )
 
 
-NeedsenumobjectInputTypeAdapter: TypeAdapter[NeedsenumobjectInput] = TypeAdapter(
-    NeedsenumobjectInput
-)
-
-
 class NeedsenumobjectOutputFooOneOf_out_first(BaseModel):
     kind: Annotated[Literal["out_first"], Field(alias="$kind")] = "out_first"
     foo: int

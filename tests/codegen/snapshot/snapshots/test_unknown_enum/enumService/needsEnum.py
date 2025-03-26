@@ -29,8 +29,6 @@ def encode_NeedsenumInput(x: "NeedsenumInput") -> Any:
     return x
 
 
-NeedsenumInputTypeAdapter: TypeAdapter[NeedsenumInput] = TypeAdapter(NeedsenumInput)
-
 NeedsenumOutput = Annotated[
     Literal["out_first", "out_second"] | RiverUnknownValue,
     WrapValidator(translate_unknown_value),

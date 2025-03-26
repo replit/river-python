@@ -38,8 +38,3 @@ Emit_ErrorErrors = Annotated[
     | RiverUnknownError,
     WrapValidator(translate_unknown_error),
 ]
-
-
-Emit_ErrorErrorsTypeAdapter: TypeAdapter[Emit_ErrorErrors] = TypeAdapter(
-    Emit_ErrorErrors
-)
