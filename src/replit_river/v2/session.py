@@ -294,7 +294,7 @@ class Session:
         self._heartbeat_misses = 0
         self._close_session_after_time_secs = None
 
-    async def send_message(
+    async def _send_message(
         self,
         stream_id: str,
         payload: dict[Any, Any] | str,
@@ -308,7 +308,7 @@ class Session:
         if self._state in TerminalStates:
             return
         logger.debug(
-            "send_message(stream_id=%r, payload=%r, control_flags=%r, "
+            "_send_message(stream_id=%r, payload=%r, control_flags=%r, "
             "service_name=%r, procedure_name=%r)",
             stream_id,
             payload,
@@ -346,7 +346,7 @@ class Session:
             self._queue_full_lock.locked()
             or len(self._send_buffer) >= self._transport_options.buffer_size
         ):
-            logger.debug("send_message: queue full, waiting")
+            logger.debug("_send_message: queue full, waiting")
             await self._queue_full_lock.acquire()
         self._send_buffer.append(msg)
         # Wake up buffered_message_sender
@@ -551,7 +551,7 @@ class Session:
                 assert_incoming_seq_bookkeeping=assert_incoming_seq_bookkeeping,
                 get_stream=lambda stream_id: self._streams.get(stream_id),
                 close_stream=close_stream,
-                send_message=self.send_message,
+                send_message=self._send_message,
             )
         )
 
@@ -573,7 +573,7 @@ class Session:
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(1)
         self._streams[stream_id] = output
-        await self.send_message(
+        await self._send_message(
             stream_id=stream_id,
             control_flags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
             payload=request_serializer(request),
@@ -586,7 +586,7 @@ class Session:
             async with asyncio.timeout(timeout.total_seconds()):
                 response = await output.get()
         except asyncio.TimeoutError as e:
-            await self.send_message(
+            await self._send_message(
                 stream_id=stream_id,
                 control_flags=STREAM_CANCEL_BIT,
                 payload={"type": "CANCEL"},
@@ -635,7 +635,7 @@ class Session:
         output: Channel[Any] = Channel(1)
         self._streams[stream_id] = output
         try:
-            await self.send_message(
+            await self._send_message(
                 stream_id=stream_id,
                 control_flags=STREAM_OPEN_BIT,
                 service_name=service_name,
@@ -650,7 +650,7 @@ class Session:
                 # If this request is not closed and the session is killed, we should
                 # throw exception here
                 async for item in request:
-                    await self.send_message(
+                    await self._send_message(
                         stream_id=stream_id,
                         service_name=service_name,
                         procedure_name=procedure_name,
@@ -710,7 +710,7 @@ class Session:
         stream_id = nanoid.generate()
         output: Channel[Any] = Channel(MAX_MESSAGE_BUFFER_SIZE)
         self._streams[stream_id] = output
-        await self.send_message(
+        await self._send_message(
             service_name=service_name,
             procedure_name=procedure_name,
             stream_id=stream_id,
@@ -766,7 +766,7 @@ class Session:
         output: Channel[Any] = Channel(MAX_MESSAGE_BUFFER_SIZE)
         self._streams[stream_id] = output
         try:
-            await self.send_message(
+            await self._send_message(
                 service_name=service_name,
                 procedure_name=procedure_name,
                 stream_id=stream_id,
@@ -795,7 +795,7 @@ class Session:
             async for item in request:
                 if item is None:
                     continue
-                await self.send_message(
+                await self._send_message(
                     service_name=service_name,
                     procedure_name=procedure_name,
                     stream_id=stream_id,
@@ -845,7 +845,7 @@ class Session:
         extra_control_flags: int,
     ) -> None:
         # close stream
-        await self.send_message(
+        await self._send_message(
             service_name=service_name,
             procedure_name=procedure_name,
             stream_id=stream_id,
