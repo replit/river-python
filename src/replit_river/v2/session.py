@@ -70,6 +70,8 @@ from replit_river.transport_options import (
     UriAndMetadata,
 )
 
+PROTOCOL_VERSION = "v2.0"
+
 STREAM_CANCEL_BIT_TYPE = Literal[0b00100]
 STREAM_CANCEL_BIT: STREAM_CANCEL_BIT_TYPE = 0b00100
 STREAM_CLOSED_BIT_TYPE = Literal[0b01000]
@@ -180,7 +182,6 @@ class Session:
         uri_and_metadata_factory: Callable[
             [], Awaitable[UriAndMetadata[HandshakeMetadata]]
         ],  # noqa: E501
-        protocol_version: str,
     ) -> None:
         """
         Either return immediately or establish a websocket connection and return
@@ -208,7 +209,6 @@ class Session:
                     client_id,
                     rate_limiter,
                     uri_and_metadata_factory,
-                    protocol_version,
                     do_close,
                 )
             )
@@ -221,8 +221,7 @@ class Session:
         rate_limiter: LeakyBucketRateLimit,
         uri_and_metadata_factory: Callable[
             [], Awaitable[UriAndMetadata[HandshakeMetadata]]
-        ],  # noqa: E501
-        protocol_version: str,
+        ],
         do_close: Callable[[], None],
     ) -> Literal[True]:
         max_retry = self._transport_options.connection_retry_options.max_retry
@@ -250,7 +249,7 @@ class Session:
                         HandshakeMetadata
                     ](
                         type="HANDSHAKE_REQ",
-                        protocolVersion=protocol_version,
+                        protocolVersion=PROTOCOL_VERSION,
                         sessionId=self.session_id,
                         metadata=uri_and_metadata["metadata"],
                         expectedSessionState=ExpectedSessionState(
