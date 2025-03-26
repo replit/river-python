@@ -121,6 +121,9 @@ class Session:
     ack: int  # Most recently acknowledged seq
     seq: int  # Last sent sequence number
 
+    # Terminating
+    _terminating_task: asyncio.Task[None]
+
     def __init__(
         self,
         transport_id: str,
@@ -188,6 +191,12 @@ class Session:
         if self.is_connected():
             return
 
+        def do_close() -> None:
+            # We can't just call self.close() directly because
+            # we're inside a thread that will eventually be awaited
+            # during the cleanup procedure.
+            self._terminating_task = asyncio.create_task(self.close())
+
         if not self._connecting_task:
             self._connecting_task = asyncio.create_task(
                 self._do_ensure_connected(
@@ -195,6 +204,7 @@ class Session:
                     rate_limiter,
                     uri_and_metadata_factory,
                     protocol_version,
+                    do_close,
                 )
             )
 
@@ -208,6 +218,7 @@ class Session:
             [], Awaitable[UriAndMetadata[HandshakeMetadata]]
         ],  # noqa: E501
         protocol_version: str,
+        do_close: Callable[[], None],
     ) -> Literal[True]:
         max_retry = self._transport_options.connection_retry_options.max_retry
         logger.info("Attempting to establish new ws connection")
@@ -329,7 +340,8 @@ class Session:
                         handshake_response.status.code
                         == ERROR_CODE_SESSION_STATE_MISMATCH
                     ):
-                        await self.close()
+                        do_close()
+
                     raise RiverException(
                         ERROR_HANDSHAKE,
                         f"Handshake failed with code {handshake_response.status.code}: {
@@ -553,6 +565,12 @@ class Session:
         )
 
     def _start_close_session_checker(self) -> None:
+        def do_close() -> None:
+            # We can't just call self.close() directly because
+            # we're inside a thread that will eventually be awaited
+            # during the cleanup procedure.
+            self._terminating_task = asyncio.create_task(self.close())
+
         self._task_manager.create_task(
             _check_to_close_session(
                 self._transport_id,
@@ -560,7 +578,7 @@ class Session:
                 lambda: self._state,
                 self._get_current_time,
                 lambda: self._close_session_after_time_secs,
-                self.close,
+                do_close=do_close,
             )
         )
 
@@ -986,7 +1004,7 @@ async def _check_to_close_session(
     get_state: Callable[[], SessionState],
     get_current_time: Callable[[], Awaitable[float]],
     get_close_session_after_time_secs: Callable[[], float | None],
-    do_close: Callable[[], Awaitable[None]],
+    do_close: Callable[[], None],
 ) -> None:
     our_task = asyncio.current_task()
     while our_task and not our_task.cancelling() and not our_task.cancelled():
@@ -1003,8 +1021,8 @@ async def _check_to_close_session(
             continue
         if current_time > close_session_after_time_secs:
             logger.info("Grace period ended for %s, closing session", transport_id)
-            await do_close()
-            return
+            do_close()
+            our_task.cancel()
 
 
 async def _buffered_message_sender(
