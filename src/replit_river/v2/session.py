@@ -248,7 +248,7 @@ class Session:
                         next_seq = self._send_buffer[0].seq
                     handshake_request = ControlMessageHandshakeRequest[
                         HandshakeMetadata
-                    ](  # noqa: E501
+                    ](
                         type="HANDSHAKE_REQ",
                         protocolVersion=protocol_version,
                         sessionId=self.session_id,
@@ -478,7 +478,7 @@ class Session:
             self._queue_full_lock.locked()
             or len(self._send_buffer) >= self._transport_options.buffer_size
         ):
-            logging.debug("send_message: queue full, waiting")
+            logger.debug("send_message: queue full, waiting")
             await self._queue_full_lock.acquire()
         self._send_buffer.append(msg)
         # Wake up buffered_message_sender
@@ -638,7 +638,7 @@ class Session:
         ) -> Literal[True] | _IgnoreMessage:
             # Update bookkeeping
             if msg_seq < self.ack:
-                logging.info(
+                logger.info(
                     f"{msg_from} received duplicate msg, got {msg_seq}"
                     f" expected {self.ack}"
                 )
@@ -1135,10 +1135,10 @@ async def _serve(
     idx = 0
     try:
         while our_task and not our_task.cancelling() and not our_task.cancelled():
-            logging.debug(f"_serve loop count={idx}")
+            logger.debug(f"_serve loop count={idx}")
             idx += 1
             while (ws := get_ws()) is None or get_state() in ConnectingStates:
-                logging.debug("_handle_messages_from_ws spinning while connecting")
+                logger.debug("_handle_messages_from_ws spinning while connecting")
                 await block_until_connected()
             logger.debug(
                 "%s start handling messages from ws %s",
@@ -1257,7 +1257,7 @@ async def _serve(
                 except Exception:
                     logger.exception("caught exception at message iterator")
                     break
-            logging.debug("_handle_messages_from_ws exiting")
+            logger.debug("_handle_messages_from_ws exiting")
     except ExceptionGroup as eg:
         _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))
         if unhandled:
@@ -1270,4 +1270,4 @@ async def _serve(
                 exc_info=unhandled,
             )
             raise unhandled
-    logging.debug(f"_serve exiting normally after {idx} loops")
+    logger.debug(f"_serve exiting normally after {idx} loops")
