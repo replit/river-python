@@ -214,7 +214,6 @@ class Session:
 
         last_error: Exception | None = None
         i = 0
-        await self._connection_condition.acquire()
         while rate_limiter.has_budget_or_throw(client_id, ERROR_HANDSHAKE, last_error):
             if i > 0:
                 logger.info(f"Retrying build handshake number {i} times")
@@ -342,7 +341,10 @@ class Session:
                 rate_limiter.start_restoring_budget(client_id)
                 self._state = SessionState.ACTIVE
                 self._ws_unwrapped = ws
-                self._connection_condition.notify_all()
+
+                # We're connected, wake everybody up
+                async with self._connection_condition:
+                    self._connection_condition.notify_all()
                 break
             except Exception as e:
                 if ws:
@@ -369,10 +371,6 @@ class Session:
             and self._connecting_task.get_name() == current_task.get_name()
         ):
             self._connecting_task = None
-
-        # Release the lock we took earlier so we can use it again in the next
-        # connection attempt
-        self._connection_condition.release()
 
         if last_error is not None:
             raise RiverException(
@@ -493,10 +491,8 @@ class Session:
         self._state = SessionState.CLOSING
 
         # We need to wake up all tasks waiting for connection to be established
-        if not self._connection_condition.locked():
-            await self._connection_condition.acquire()
-        self._connection_condition.notify_all()
-        self._connection_condition.release()
+        async with self._connection_condition:
+            self._connection_condition.notify_all()
 
         await self._task_manager.cancel_all_tasks()
 
