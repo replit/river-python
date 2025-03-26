@@ -12,8 +12,6 @@ from replit_river.transport_options import (
 )
 from replit_river.v2.session import Session
 
-PROTOCOL_VERSION = "v2.0"
-
 logger = logging.getLogger(__name__)
 
 
@@ -68,7 +66,6 @@ class ClientTransport(Generic[HandshakeMetadataType]):
             client_id=self._client_id,
             rate_limiter=self._rate_limiter,
             uri_and_metadata_factory=self._uri_and_metadata_factory,
-            protocol_version=PROTOCOL_VERSION,
         )
         return existing_session
 
