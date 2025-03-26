@@ -210,19 +210,19 @@ def extract_inner_type(value: TypeExpression) -> TypeName:
         case ListTypeExpr(nested):
             return extract_inner_type(nested)
         case LiteralTypeExpr(_):
-            raise ValueError(f"Unexpected literal type: {value}")
+            raise ValueError(f"Unexpected literal type: {repr(value)}")
         case UnionTypeExpr(_):
             raise ValueError(
-                f"Attempting to extract from a union, currently not possible: {value}"
+                f"Attempting to extract from a union, currently not possible: {repr(value)}"
             )
         case OpenUnionTypeExpr(_):
             raise ValueError(
-                f"Attempting to extract from a union, currently not possible: {value}"
+                f"Attempting to extract from a union, currently not possible: {repr(value)}"
             )
         case TypeName(name):
             return TypeName(name)
         case NoneTypeExpr():
-            raise ValueError(f"Attempting to extract from a literal 'None': {value}")
+            raise ValueError(f"Attempting to extract from a literal 'None': {repr(value)}")
         case other:
             assert_never(other)
 
@@ -233,5 +233,5 @@ def ensure_literal_type(value: TypeExpression) -> TypeName:
             return TypeName(name)
         case other:
             raise ValueError(
-                f"Unexpected expression when expecting a type name: {other}"
+                f"Unexpected expression when expecting a type name: {repr(other)}"
             )
