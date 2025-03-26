@@ -195,6 +195,11 @@ class Session:
         if self.is_connected():
             return
 
+        def get_next_sent_seq() -> int:
+            if self._send_buffer:
+                return self._send_buffer[0].seq
+            return self.seq
+
         def do_close() -> None:
             # Avoid closing twice
             if self._terminating_task is None:
@@ -203,187 +208,51 @@ class Session:
                 # during the cleanup procedure.
                 self._terminating_task = asyncio.create_task(self.close())
 
+        async def transition_connected(ws: ClientConnection) -> None:
+            self._state = SessionState.ACTIVE
+            self._ws = ws
+
+            # We're connected, wake everybody up
+            async with self._connection_condition:
+                self._connection_condition.notify_all()
+
+        def finalize_attempt() -> None:
+            # We are in a state where we may throw an exception.
+            #
+            # To allow subsequent calls to ensure_connected to pass, we clear ourselves.
+            # This is safe because each individual function that is waiting on this
+            # function completeing already has a reference, so we'll last a few ticks
+            # before GC.
+            #
+            # Let's do our best to avoid clobbering other tasks by comparing the .name
+            current_task = asyncio.current_task()
+            if (
+                self._connecting_task
+                and current_task
+                and self._connecting_task.get_name() == current_task.get_name()
+            ):
+                self._connecting_task = None
+
         if not self._connecting_task:
             self._connecting_task = asyncio.create_task(
-                self._do_ensure_connected(
-                    client_id,
-                    rate_limiter,
-                    uri_and_metadata_factory,
-                    do_close,
+                _do_ensure_connected(
+                    transport_id=self._transport_id,
+                    client_id=client_id,
+                    to_id=self._to_id,
+                    session_id=self.session_id,
+                    max_retry=self._transport_options.connection_retry_options.max_retry,
+                    rate_limiter=rate_limiter,
+                    uri_and_metadata_factory=uri_and_metadata_factory,
+                    get_next_sent_seq=get_next_sent_seq,
+                    get_current_ack=lambda: self.ack,
+                    get_current_time=self._get_current_time,
+                    transition_connected=transition_connected,
+                    finalize_attempt=finalize_attempt,
+                    do_close=do_close,
                 )
             )
 
         await self._connecting_task
-
-    async def _do_ensure_connected[HandshakeMetadata](
-        self,
-        client_id: str,
-        rate_limiter: LeakyBucketRateLimit,
-        uri_and_metadata_factory: Callable[
-            [], Awaitable[UriAndMetadata[HandshakeMetadata]]
-        ],
-        do_close: Callable[[], None],
-    ) -> Literal[True]:
-        max_retry = self._transport_options.connection_retry_options.max_retry
-        logger.info("Attempting to establish new ws connection")
-
-        last_error: Exception | None = None
-        i = 0
-        while rate_limiter.has_budget_or_throw(client_id, ERROR_HANDSHAKE, last_error):
-            if i > 0:
-                logger.info(f"Retrying build handshake number {i} times")
-            i += 1
-
-            rate_limiter.consume_budget(client_id)
-
-            ws = None
-            try:
-                uri_and_metadata = await uri_and_metadata_factory()
-                ws = await websockets.asyncio.client.connect(uri_and_metadata["uri"])
-
-                try:
-                    next_seq = 0
-                    if self._send_buffer:
-                        next_seq = self._send_buffer[0].seq
-                    handshake_request = ControlMessageHandshakeRequest[
-                        HandshakeMetadata
-                    ](
-                        type="HANDSHAKE_REQ",
-                        protocolVersion=PROTOCOL_VERSION,
-                        sessionId=self.session_id,
-                        metadata=uri_and_metadata["metadata"],
-                        expectedSessionState=ExpectedSessionState(
-                            nextExpectedSeq=self.ack,
-                            nextSentSeq=next_seq,
-                        ),
-                    )
-
-                    async def websocket_closed_callback() -> None:
-                        logger.error("websocket closed before handshake response")
-
-                    await send_transport_message(
-                        TransportMessage(
-                            from_=self._transport_id,
-                            to=self._to_id,
-                            streamId=nanoid.generate(),
-                            controlFlags=0,
-                            id=nanoid.generate(),
-                            seq=0,
-                            ack=0,
-                            payload=handshake_request.model_dump(),
-                        ),
-                        ws=ws,
-                        websocket_closed_callback=websocket_closed_callback,
-                    )
-                except (
-                    WebsocketClosedException,
-                    FailedSendingMessageException,
-                ) as e:  # noqa: E501
-                    raise RiverException(
-                        ERROR_HANDSHAKE,
-                        "Handshake failed, conn closed while sending response",
-                    ) from e
-
-                startup_grace_deadline_ms = await self._get_current_time() + 60_000
-                while True:
-                    if await self._get_current_time() >= startup_grace_deadline_ms:
-                        raise RiverException(
-                            ERROR_HANDSHAKE,
-                            "Handshake response timeout, closing connection",
-                        )
-                    try:
-                        data = await ws.recv(decode=False)
-                    except ConnectionClosed as e:
-                        logger.debug(
-                            "Connection closed during waiting for handshake response",
-                            exc_info=True,
-                        )
-                        raise RiverException(
-                            ERROR_HANDSHAKE,
-                            "Handshake failed, conn closed while waiting for response",
-                        ) from e
-
-                    try:
-                        response_msg = parse_transport_msg(data)
-                        break
-                    except IgnoreMessageException:
-                        logger.debug("Ignoring transport message", exc_info=True)
-                        continue
-                    except InvalidMessageException as e:
-                        raise RiverException(
-                            ERROR_HANDSHAKE,
-                            "Got invalid transport message, closing connection",
-                        ) from e
-
-                try:
-                    handshake_response = ControlMessageHandshakeResponse(
-                        **response_msg.payload
-                    )
-                    logger.debug("river client waiting for handshake response")
-                except ValidationError as e:
-                    raise RiverException(
-                        ERROR_HANDSHAKE, "Failed to parse handshake response"
-                    ) from e
-
-                logger.debug(
-                    "river client get handshake response : %r", handshake_response
-                )  # noqa: E501
-                if not handshake_response.status.ok:
-                    if (
-                        handshake_response.status.code
-                        == ERROR_CODE_SESSION_STATE_MISMATCH
-                    ):
-                        do_close()
-
-                    raise RiverException(
-                        ERROR_HANDSHAKE,
-                        f"Handshake failed with code {handshake_response.status.code}: {
-                            handshake_response.status.reason
-                        }",
-                    )
-
-                last_error = None
-                rate_limiter.start_restoring_budget(client_id)
-                self._state = SessionState.ACTIVE
-                self._ws = ws
-
-                # We're connected, wake everybody up
-                async with self._connection_condition:
-                    self._connection_condition.notify_all()
-                break
-            except Exception as e:
-                if ws:
-                    await ws.close()
-                last_error = e
-                backoff_time = rate_limiter.get_backoff_ms(client_id)
-                logger.exception(
-                    f"Error connecting, retrying with {backoff_time}ms backoff"
-                )
-                await asyncio.sleep(backoff_time / 1000)
-
-        # We are in a state where we may throw an exception.
-        #
-        # To permit subsequent calls to ensure_connected to pass, we clear ourselves.
-        # This is safe because each individual function that is waiting on this
-        # function completeing already has a reference, so we'll last a few ticks
-        # before GC.
-        #
-        # Let's do our best to avoid clobbering other tasks by comparing the .name
-        current_task = asyncio.current_task()
-        if (
-            self._connecting_task
-            and current_task
-            and self._connecting_task.get_name() == current_task.get_name()
-        ):
-            self._connecting_task = None
-
-        if last_error is not None:
-            raise RiverException(
-                ERROR_HANDSHAKE,
-                f"Failed to create ws after retrying {max_retry} number of times",
-            ) from last_error
-
-        return True
 
     def is_closed(self) -> bool:
         """
@@ -987,33 +856,6 @@ class Session:
         )
 
 
-async def _check_to_close_session(
-    transport_id: str,
-    close_session_check_interval_ms: float,
-    get_state: Callable[[], SessionState],
-    get_current_time: Callable[[], Awaitable[float]],
-    get_close_session_after_time_secs: Callable[[], float | None],
-    do_close: Callable[[], None],
-) -> None:
-    our_task = asyncio.current_task()
-    while our_task and not our_task.cancelling() and not our_task.cancelled():
-        await asyncio.sleep(close_session_check_interval_ms / 1000)
-        if get_state() in TerminalStates:
-            # already closing
-            break
-        # calculate the value now before comparing it so that there are no
-        # await points between the check and the comparison to avoid a TOCTOU
-        # race.
-        current_time = await get_current_time()
-        close_session_after_time_secs = get_close_session_after_time_secs()
-        if not close_session_after_time_secs:
-            continue
-        if current_time > close_session_after_time_secs:
-            logger.info("Grace period ended for %s, closing session", transport_id)
-            do_close()
-            our_task.cancel()
-
-
 async def _buffered_message_sender(
     block_until_connected: Callable[[], Awaitable[None]],
     message_enqueued: asyncio.Semaphore,
@@ -1070,6 +912,182 @@ async def _buffered_message_sender(
                 logger.exception("Error attempting to send buffered messages")
                 message_enqueued.release()
                 break
+
+
+async def _check_to_close_session(
+    transport_id: str,
+    close_session_check_interval_ms: float,
+    get_state: Callable[[], SessionState],
+    get_current_time: Callable[[], Awaitable[float]],
+    get_close_session_after_time_secs: Callable[[], float | None],
+    do_close: Callable[[], None],
+) -> None:
+    our_task = asyncio.current_task()
+    while our_task and not our_task.cancelling() and not our_task.cancelled():
+        await asyncio.sleep(close_session_check_interval_ms / 1000)
+        if get_state() in TerminalStates:
+            # already closing
+            break
+        # calculate the value now before comparing it so that there are no
+        # await points between the check and the comparison to avoid a TOCTOU
+        # race.
+        current_time = await get_current_time()
+        close_session_after_time_secs = get_close_session_after_time_secs()
+        if not close_session_after_time_secs:
+            continue
+        if current_time > close_session_after_time_secs:
+            logger.info("Grace period ended for %s, closing session", transport_id)
+            do_close()
+            our_task.cancel()
+
+
+async def _do_ensure_connected[HandshakeMetadata](
+    transport_id: str,
+    client_id: str,
+    to_id: str,
+    session_id: str,
+    max_retry: int,
+    rate_limiter: LeakyBucketRateLimit,
+    uri_and_metadata_factory: Callable[
+        [], Awaitable[UriAndMetadata[HandshakeMetadata]]
+    ],
+    get_current_time: Callable[[], Awaitable[float]],
+    get_next_sent_seq: Callable[[], int],
+    get_current_ack: Callable[[], int],
+    transition_connected: Callable[[ClientConnection], Awaitable[None]],
+    finalize_attempt: Callable[[], None],
+    do_close: Callable[[], None],
+) -> Literal[True]:
+    logger.info("Attempting to establish new ws connection")
+
+    last_error: Exception | None = None
+    i = 0
+    while rate_limiter.has_budget_or_throw(client_id, ERROR_HANDSHAKE, last_error):
+        if i > 0:
+            logger.info(f"Retrying build handshake number {i} times")
+        i += 1
+
+        rate_limiter.consume_budget(client_id)
+
+        ws = None
+        try:
+            uri_and_metadata = await uri_and_metadata_factory()
+            ws = await websockets.asyncio.client.connect(uri_and_metadata["uri"])
+
+            try:
+                handshake_request = ControlMessageHandshakeRequest[HandshakeMetadata](
+                    type="HANDSHAKE_REQ",
+                    protocolVersion=PROTOCOL_VERSION,
+                    sessionId=session_id,
+                    metadata=uri_and_metadata["metadata"],
+                    expectedSessionState=ExpectedSessionState(
+                        nextExpectedSeq=get_current_ack(),
+                        nextSentSeq=get_next_sent_seq(),
+                    ),
+                )
+
+                async def websocket_closed_callback() -> None:
+                    logger.error("websocket closed before handshake response")
+
+                await send_transport_message(
+                    TransportMessage(
+                        from_=transport_id,
+                        to=to_id,
+                        streamId=nanoid.generate(),
+                        controlFlags=0,
+                        id=nanoid.generate(),
+                        seq=0,
+                        ack=0,
+                        payload=handshake_request.model_dump(),
+                    ),
+                    ws=ws,
+                    websocket_closed_callback=websocket_closed_callback,
+                )
+            except (
+                WebsocketClosedException,
+                FailedSendingMessageException,
+            ) as e:  # noqa: E501
+                raise RiverException(
+                    ERROR_HANDSHAKE,
+                    "Handshake failed, conn closed while sending response",
+                ) from e
+
+            startup_grace_deadline_ms = await get_current_time() + 60_000
+            while True:
+                if await get_current_time() >= startup_grace_deadline_ms:
+                    raise RiverException(
+                        ERROR_HANDSHAKE,
+                        "Handshake response timeout, closing connection",
+                    )
+                try:
+                    data = await ws.recv(decode=False)
+                except ConnectionClosed as e:
+                    logger.debug(
+                        "Connection closed during waiting for handshake response",
+                        exc_info=True,
+                    )
+                    raise RiverException(
+                        ERROR_HANDSHAKE,
+                        "Handshake failed, conn closed while waiting for response",
+                    ) from e
+
+                try:
+                    response_msg = parse_transport_msg(data)
+                    break
+                except IgnoreMessageException:
+                    logger.debug("Ignoring transport message", exc_info=True)
+                    continue
+                except InvalidMessageException as e:
+                    raise RiverException(
+                        ERROR_HANDSHAKE,
+                        "Got invalid transport message, closing connection",
+                    ) from e
+
+            try:
+                handshake_response = ControlMessageHandshakeResponse(
+                    **response_msg.payload
+                )
+                logger.debug("river client waiting for handshake response")
+            except ValidationError as e:
+                raise RiverException(
+                    ERROR_HANDSHAKE, "Failed to parse handshake response"
+                ) from e
+
+            logger.debug("river client get handshake response : %r", handshake_response)  # noqa: E501
+            if not handshake_response.status.ok:
+                if handshake_response.status.code == ERROR_CODE_SESSION_STATE_MISMATCH:
+                    do_close()
+
+                raise RiverException(
+                    ERROR_HANDSHAKE,
+                    f"Handshake failed with code {handshake_response.status.code}: {
+                        handshake_response.status.reason
+                    }",
+                )
+
+            last_error = None
+            rate_limiter.start_restoring_budget(client_id)
+            transition_connected(ws)
+            break
+        except Exception as e:
+            if ws:
+                await ws.close()
+            last_error = e
+            backoff_time = rate_limiter.get_backoff_ms(client_id)
+            logger.exception(
+                f"Error connecting, retrying with {backoff_time}ms backoff"
+            )
+            await asyncio.sleep(backoff_time / 1000)
+
+    finalize_attempt()
+
+    if last_error is not None:
+        raise RiverException(
+            ERROR_HANDSHAKE,
+            f"Failed to create ws after retrying {max_retry} number of times",
+        ) from last_error
+
+    return True
 
 
 async def _setup_heartbeat(
