@@ -107,7 +107,7 @@ class Session:
     _connection_condition: asyncio.Condition
 
     # ws state
-    _ws_unwrapped: ClientConnection | None
+    _ws: ClientConnection | None
     _heartbeat_misses: int
     _retry_connection_callback: RetryConnectionCallback | None
 
@@ -146,7 +146,7 @@ class Session:
         self._connection_condition = asyncio.Condition()
 
         # ws state
-        self._ws_unwrapped = None
+        self._ws = None
         self._heartbeat_misses = 0
         self._retry_connection_callback = retry_connection_callback
 
@@ -352,7 +352,7 @@ class Session:
                 last_error = None
                 rate_limiter.start_restoring_budget(client_id)
                 self._state = SessionState.ACTIVE
-                self._ws_unwrapped = ws
+                self._ws = ws
 
                 # We're connected, wake everybody up
                 async with self._connection_condition:
@@ -495,7 +495,7 @@ class Session:
         """Close the session and all associated streams."""
         logger.info(
             f"{self._transport_id} closing session "
-            f"to {self._to_id}, ws: {self._ws_unwrapped}"
+            f"to {self._to_id}, ws: {self._ws}"
         )
         if self._state in TerminalStates:
             # already closing
@@ -516,10 +516,10 @@ class Session:
         await asyncio.gather(*[x.join() for x in self._streams.values()])
         self._streams.clear()
 
-        if self._ws_unwrapped:
+        if self._ws:
             # The Session isn't guaranteed to live much longer than this close()
             # invocation, so let's await this close to avoid dropping the socket.
-            await self._ws_unwrapped.close()
+            await self._ws.close()
 
         self._state = SessionState.CLOSED
 
@@ -545,7 +545,7 @@ class Session:
 
         def get_ws() -> ClientConnection | None:
             if self.is_connected():
-                return self._ws_unwrapped
+                return self._ws
             return None
 
         async def block_until_connected() -> None:
@@ -585,13 +585,13 @@ class Session:
     def _start_heartbeat(self) -> None:
         async def close_websocket() -> None:
             logger.debug(
-                "do_close called, _state=%r, _ws_unwrapped=%r",
+                "do_close called, _state=%r, _ws=%r",
                 self._state,
-                self._ws_unwrapped,
+                self._ws,
             )
-            if self._ws_unwrapped:
-                self._task_manager.create_task(self._ws_unwrapped.close())
-                self._ws_unwrapped = None
+            if self._ws:
+                self._task_manager.create_task(self._ws.close())
+                self._ws = None
 
             if self._retry_connection_callback:
                 self._task_manager.create_task(self._retry_connection_callback())
@@ -627,9 +627,9 @@ class Session:
 
         async def connection_interrupted() -> None:
             self._state = SessionState.NO_CONNECTION
-            if self._ws_unwrapped:
-                self._task_manager.create_task(self._ws_unwrapped.close())
-                self._ws_unwrapped = None
+            if self._ws:
+                self._task_manager.create_task(self._ws.close())
+                self._ws = None
 
             if self._retry_connection_callback:
                 self._task_manager.create_task(self._retry_connection_callback())
@@ -683,7 +683,7 @@ class Session:
                 block_until_connected=block_until_connected,
                 transport_id=self._transport_id,
                 get_state=lambda: self._state,
-                get_ws=lambda: self._ws_unwrapped,
+                get_ws=lambda: self._ws,
                 transition_connecting=transition_connecting,
                 connection_interrupted=connection_interrupted,
                 reset_session_close_countdown=self._reset_session_close_countdown,
