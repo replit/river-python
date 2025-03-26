@@ -164,7 +164,6 @@ class ServerSession(Session):
                                 pass
                             except RuntimeError as e:
                                 raise InvalidMessageException(e) from e
-
                     else:
                         _stream = await self._open_stream_and_call_handler(msg, tg)
                         if isinstance(_stream, IgnoreMessage):

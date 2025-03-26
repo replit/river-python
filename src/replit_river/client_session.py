@@ -175,7 +175,6 @@ class ClientSession(Session):
                                 pass
                             except RuntimeError as e:
                                 raise InvalidMessageException(e) from e
-
                     else:
                         raise InvalidMessageException(
                             "Client should not receive stream open bit"
