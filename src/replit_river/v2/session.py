@@ -675,9 +675,6 @@ class Session:
             async with self._connection_condition:
                 await self._connection_condition.wait()
 
-        def received_message(message: TransportMessage) -> None:
-            pass
-
         self._task_manager.create_task(
             _serve(
                 block_until_connected=block_until_connected,
@@ -691,7 +688,6 @@ class Session:
                 assert_incoming_seq_bookkeeping=assert_incoming_seq_bookkeeping,
                 get_stream=lambda stream_id: self._streams.get(stream_id),
                 close_stream=close_stream,
-                received_message=received_message,
                 send_message=self.send_message,
             )
         )
@@ -1136,7 +1132,6 @@ async def _serve(
     ],  # noqa: E501
     get_stream: Callable[[str], Channel[Any] | None],
     close_stream: Callable[[str], None],
-    received_message: Callable[[TransportMessage], None],
     send_message: SendMessage,
 ) -> None:
     """Serve messages from the websocket."""
@@ -1168,8 +1163,6 @@ async def _serve(
                         transport_id,
                         msg,
                     )
-
-                    received_message(msg)
 
                     if msg.controlFlags & STREAM_OPEN_BIT != 0:
                         raise InvalidMessageException(
