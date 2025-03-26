@@ -181,7 +181,7 @@ class Session:
         rate_limiter: LeakyBucketRateLimit,
         uri_and_metadata_factory: Callable[
             [], Awaitable[UriAndMetadata[HandshakeMetadata]]
-        ],  # noqa: E501
+        ],
     ) -> None:
         """
         Either return immediately or establish a websocket connection and return
@@ -1006,7 +1006,7 @@ async def _do_ensure_connected[HandshakeMetadata](
             except (
                 WebsocketClosedException,
                 FailedSendingMessageException,
-            ) as e:  # noqa: E501
+            ) as e:
                 raise RiverException(
                     ERROR_HANDSHAKE,
                     "Handshake failed, conn closed while sending response",
@@ -1053,7 +1053,7 @@ async def _do_ensure_connected[HandshakeMetadata](
                     ERROR_HANDSHAKE, "Failed to parse handshake response"
                 ) from e
 
-            logger.debug("river client get handshake response : %r", handshake_response)  # noqa: E501
+            logger.debug("river client get handshake response : %r", handshake_response)
             if not handshake_response.status.ok:
                 if handshake_response.status.code == ERROR_CODE_SESSION_STATE_MISMATCH:
                     do_close()
@@ -1141,7 +1141,7 @@ async def _serve(
     close_session: Callable[[], Awaitable[None]],
     assert_incoming_seq_bookkeeping: Callable[
         [str, int, int], Literal[True] | _IgnoreMessage
-    ],  # noqa: E501
+    ],
     get_stream: Callable[[str], Channel[Any] | None],
     close_stream: Callable[[str], None],
     send_message: SendMessage,
