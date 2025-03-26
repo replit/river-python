@@ -122,7 +122,7 @@ class Session:
     seq: int  # Last sent sequence number
 
     # Terminating
-    _terminating_task: asyncio.Task[None]
+    _terminating_task: asyncio.Task[None] | None
 
     def __init__(
         self,
@@ -165,6 +165,9 @@ class Session:
         self.ack = 0
         self.seq = 0
 
+        # Terminating
+        self._terminating_task = None
+
         self._start_heartbeat()
         self._start_serve_responses()
         self._start_close_session_checker()
@@ -192,10 +195,12 @@ class Session:
             return
 
         def do_close() -> None:
-            # We can't just call self.close() directly because
-            # we're inside a thread that will eventually be awaited
-            # during the cleanup procedure.
-            self._terminating_task = asyncio.create_task(self.close())
+            # Avoid closing twice
+            if self._terminating_task is None:
+                # We can't just call self.close() directly because
+                # we're inside a thread that will eventually be awaited
+                # during the cleanup procedure.
+                self._terminating_task = asyncio.create_task(self.close())
 
         if not self._connecting_task:
             self._connecting_task = asyncio.create_task(
@@ -566,10 +571,12 @@ class Session:
 
     def _start_close_session_checker(self) -> None:
         def do_close() -> None:
+            # Avoid closing twice
+            if self._terminating_task is None:
             # We can't just call self.close() directly because
             # we're inside a thread that will eventually be awaited
             # during the cleanup procedure.
-            self._terminating_task = asyncio.create_task(self.close())
+                self._terminating_task = asyncio.create_task(self.close())
 
         self._task_manager.create_task(
             _check_to_close_session(
