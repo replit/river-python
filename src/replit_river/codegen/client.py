@@ -1006,7 +1006,7 @@ def render_library_call(
                 ]
             )
         else:
-            raise ValueError("Precondition failed")
+            assert_never(protocol_version)
     elif procedure.type == "stream":
         assert output_meta
         assert error_meta
@@ -1102,7 +1102,7 @@ def render_library_call(
                 ]
             )
         else:
-            raise ValueError("Precondition failed")
+            assert_never(protocol_version)
 
     current_chunks.append("")
     return current_chunks
