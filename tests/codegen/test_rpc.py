@@ -34,6 +34,7 @@ def generate_rpc_client() -> None:
         file_opener=file_opener,
         method_filter=None,
         protocol_version="v1.1",
+        method_filter=None,
     )
 
 

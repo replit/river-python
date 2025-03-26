@@ -37,6 +37,7 @@ def validate_codegen(
         typed_dict_inputs=typeddict_inputs,
         method_filter=None,
         protocol_version="v1.1",
+        method_filter=None,
     )
     for path, file in files.items():
         file.seek(0)

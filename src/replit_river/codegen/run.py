@@ -52,6 +52,12 @@ def main() -> None:
         default="v1.1",
         choices=["v1.1", "v2.0"],
     )
+    client.add_argument(
+        "--method-filter",
+        help="Only generate a subset of the specified methods",
+        action="store",
+        type=pathlib.Path,
+    )
     client.add_argument("schema", help="schema file")
     args = parser.parse_args()
 
@@ -83,6 +89,7 @@ def main() -> None:
             file_opener,
             method_filter=method_filter,
             protocol_version=args.protocol_version,
+            method_filter=method_filter,
         )
     else:
         raise NotImplementedError(f"Unknown command {args.command}")
