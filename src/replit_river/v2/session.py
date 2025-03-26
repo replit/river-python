@@ -791,12 +791,11 @@ class Session:
                 # If this request is not closed and the session is killed, we should
                 # throw exception here
                 async for item in request:
-                    control_flags = 0
                     await self.send_message(
                         stream_id=stream_id,
                         service_name=service_name,
                         procedure_name=procedure_name,
-                        control_flags=control_flags,
+                        control_flags=0,
                         payload=request_serializer(item),
                         span=span,
                     )
