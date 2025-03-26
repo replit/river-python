@@ -27,11 +27,12 @@ def generate_rpc_client() -> None:
         return open(path, "w")
 
     schema_to_river_client_codegen(
-        lambda: open("tests/codegen/rpc/schema.json"),
-        "tests/codegen/rpc/generated",
-        "RpcClient",
-        True,
-        file_opener,
+        read_schema=lambda: open("tests/codegen/rpc/schema.json"),
+        target_path="tests/codegen/rpc/generated",
+        client_name="RpcClient",
+        typed_dict_inputs=True,
+        file_opener=file_opener,
+        method_filter=None,
     )
     importlib.reload(tests.codegen.rpc.generated)
 

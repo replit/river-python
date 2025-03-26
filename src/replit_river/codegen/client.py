@@ -802,6 +802,7 @@ def generate_individual_service(
     schema_name: str,
     schema: RiverService,
     input_base_class: Literal["TypedDict"] | Literal["BaseModel"],
+    method_filter: set[str] | None,
 ) -> tuple[ModuleName, ClassName, dict[RenderedPath, FileContents]]:
     serdes: list[tuple[list[TypeName], list[ModuleName], list[FileContents]]] = []
 
@@ -837,6 +838,8 @@ def generate_individual_service(
         ),
     ]
     for name, procedure in schema.procedures.items():
+        if method_filter and (schema_name + "." + name) in method_filter:
+            continue
         module_names = [ModuleName(name)]
         init_type: TypeExpression | None = None
         if procedure.init:
@@ -1223,6 +1226,7 @@ def generate_river_client_module(
     client_name: str,
     schema_root: RiverSchema,
     typed_dict_inputs: bool,
+    method_filter: set[str] | None,
 ) -> dict[RenderedPath, FileContents]:
     files: dict[RenderedPath, FileContents] = {}
 
@@ -1247,10 +1251,15 @@ def generate_river_client_module(
     )
     for schema_name, schema in schema_root.services.items():
         module_name, class_name, emitted_files = generate_individual_service(
-            schema_name, schema, input_base_class
+            schema_name,
+            schema,
+            input_base_class,
+            method_filter,
         )
-        files.update(emitted_files)
-        modules.append((module_name, class_name))
+        if emitted_files:
+            # Short-cut if we didn't actually emit anything
+            files.update(emitted_files)
+            modules.append((module_name, class_name))
 
     main_contents = generate_common_client(
         client_name, handshake_type, handshake_chunks, modules
@@ -1266,12 +1275,16 @@ def schema_to_river_client_codegen(
     client_name: str,
     typed_dict_inputs: bool,
     file_opener: Callable[[Path], TextIO],
+    method_filter: set[str] | None,
 ) -> None:
     """Generates the lines of a River module."""
     with read_schema() as f:
         schemas = RiverSchemaFile(json.load(f))
     for subpath, contents in generate_river_client_module(
-        client_name, schemas.root, typed_dict_inputs
+        client_name,
+        schemas.root,
+        typed_dict_inputs,
+        method_filter,
     ).items():
         module_path = Path(target_path).joinpath(subpath)
         module_path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)

@@ -1,5 +1,6 @@
 import argparse
 import os.path
+import pathlib
 from pathlib import Path
 from typing import TextIO
 
@@ -38,8 +39,19 @@ def main() -> None:
         action="store_true",
         default=False,
     )
+    client.add_argument(
+        "--method-filter",
+        help="Only generate a subset of the specified methods",
+        action="store",
+        type=pathlib.Path,
+    )
     client.add_argument("schema", help="schema file")
     args = parser.parse_args()
+
+    method_filter: set[str] | None = None
+    if args.method_filter:
+        with open(args.method_filter) as handle:
+            method_filter = set(x.strip() for x in handle.readlines())
 
     if args.command == "server":
         proto_path = os.path.abspath(args.proto)
@@ -62,6 +74,7 @@ def main() -> None:
             args.client_name,
             args.typed_dict_inputs,
             file_opener,
+            method_filter=method_filter,
         )
     else:
         raise NotImplementedError(f"Unknown command {args.command}")
