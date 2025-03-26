@@ -40,11 +40,6 @@ class Stream_MethodInput(TypedDict):
     data: str
 
 
-Stream_MethodInputTypeAdapter: TypeAdapter[Stream_MethodInput] = TypeAdapter(
-    Stream_MethodInput
-)
-
-
 class Stream_MethodOutput(BaseModel):
     data: str
 

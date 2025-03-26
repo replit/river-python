@@ -11,7 +11,6 @@ import replit_river as river
 
 from .pathological_method import (
     Pathological_MethodInput,
-    Pathological_MethodInputTypeAdapter,
     encode_Pathological_MethodInput,
     encode_Pathological_MethodInputObj_Boolean,
     encode_Pathological_MethodInputObj_Date,

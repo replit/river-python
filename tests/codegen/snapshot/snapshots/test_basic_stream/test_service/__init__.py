@@ -11,17 +11,18 @@ import replit_river as river
 
 from .stream_method import (
     Stream_MethodInput,
-    Stream_MethodInputTypeAdapter,
     Stream_MethodOutput,
     Stream_MethodOutputTypeAdapter,
     encode_Stream_MethodInput,
 )
-from .emit_error import Emit_ErrorErrors, Emit_ErrorErrorsTypeAdapter
-
-intTypeAdapter: TypeAdapter[int] = TypeAdapter(int)
-
+from .emit_error import Emit_ErrorErrors
 
 boolTypeAdapter: TypeAdapter[bool] = TypeAdapter(bool)
+
+
+Emit_ErrorErrorsTypeAdapter: TypeAdapter[Emit_ErrorErrors] = TypeAdapter(
+    Emit_ErrorErrors
+)
 
 
 class Test_ServiceService:

@@ -476,8 +476,3 @@ class Pathological_MethodInput(TypedDict):
     req_undefined: None
     string: NotRequired[str | None]
     undefined: NotRequired[None]
-
-
-Pathological_MethodInputTypeAdapter: TypeAdapter[Pathological_MethodInput] = (
-    TypeAdapter(Pathological_MethodInput)
-)
