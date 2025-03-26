@@ -27,7 +27,7 @@ class SessionState(enum.Enum):
 
     Valid transitions:
     - NO_CONNECTION -> {CONNECTING}
-    - CONNECTING -> {ACTIVE, CLOSING}
+    - CONNECTING -> {NO_CONNECTION, ACTIVE, CLOSING}
     - ACTIVE -> {NO_CONNECTION, CONNECTING, CLOSING}
     - CLOSING -> {CLOSED}
     - CLOSED -> {}
