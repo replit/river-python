@@ -1245,7 +1245,6 @@ async def _serve(
                             # https://github.com/replit/river/blob/741b1ea6d7600937ad53564e9cf8cd27a92ec36a/transport/message.ts#L42
                             payload={
                                 "type": "ACK",
-                                "ack": 0,
                             },
                             control_flags=ACK_BIT,
                             procedure_name=None,
