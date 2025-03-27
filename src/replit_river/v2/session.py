@@ -331,6 +331,19 @@ class Session:
             service_name,
             procedure_name,
         )
+        # Ensure the buffer isn't full before we enqueue
+        await self._space_available.wait()
+
+        # Before we append, do an important check
+        if self._state in TerminalStates:
+            # session is closing / closed, raise
+            raise SessionClosedRiverServiceException(
+                "river session is closed, dropping message",
+                service_name,
+                procedure_name,
+            )
+
+        # Begin critical section: Avoid any await between here and _send_buffer.append
         msg = TransportMessage(
             streamId=stream_id,
             id=nanoid.generate(),
@@ -347,18 +360,6 @@ class Session:
         if span:
             with use_span(span):
                 trace_propagator.inject(msg, None, trace_setter)
-
-        # Ensure the buffer isn't full before we enqueue
-        await self._space_available.wait()
-
-        # Before we append, do an important check
-        if self._state in TerminalStates:
-            # session is closing / closed, raise
-            raise SessionClosedRiverServiceException(
-                "river session is closed, dropping message",
-                service_name,
-                procedure_name,
-            )
 
         self._send_buffer.append(msg)
 
