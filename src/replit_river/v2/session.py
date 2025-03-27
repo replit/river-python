@@ -39,6 +39,7 @@ from replit_river.error_schema import (
     RiverError,
     RiverException,
     RiverServiceException,
+    SessionClosedRiverServiceException,
     StreamClosedRiverServiceException,
     exception_from_message,
 )
@@ -154,8 +155,10 @@ class Session:
 
         # message state
         self._message_enqueued = asyncio.Semaphore()
-        self._space_available_cond = asyncio.Condition()
-        self._queue_full_lock = asyncio.Lock()
+        self._space_available = asyncio.Event()
+        # Ensure we initialize the above Event to "set" to avoid being blocked from
+        # the beginning.
+        self._space_available.set()
 
         # stream for tasks
         self._streams: dict[str, Channel[Any]] = {}
@@ -337,22 +340,24 @@ class Session:
             with use_span(span):
                 trace_propagator.inject(msg, None, trace_setter)
 
-        # As we prepare to push onto the buffer, if the buffer is full, we lock.
-        # This lock will be released by the buffered_message_sender task, so it's
-        # important that we don't release it here.
-        #
-        # The reason for this is that in Python, asyncio.Lock is "fair", first
-        # come, first served.
-        #
-        # If somebody else is already waiting or we've filled the buffer, we
-        # should get in line.
-        if (
-            self._queue_full_lock.locked()
-            or len(self._send_buffer) >= self._transport_options.buffer_size
-        ):
-            logger.debug("_send_message: queue full, waiting")
-            await self._queue_full_lock.acquire()
+        # Ensure the buffer isn't full before we enqueue
+        await self._space_available.wait()
+
+        # Before we append, do an important check
+        if self._state in TerminalStates:
+            # session is closing / closed, raise
+            raise SessionClosedRiverServiceException(
+                "river session is closed, dropping message",
+                service_name,
+                procedure_name,
+            )
+
         self._send_buffer.append(msg)
+
+        # If the buffer is now full, reset the block
+        if len(self._send_buffer) >= self._transport_options.buffer_size:
+            self._space_available.clear()
+
         # Wake up buffered_message_sender
         self._message_enqueued.release()
         self.seq += 1
@@ -368,7 +373,10 @@ class Session:
         self._state = SessionState.CLOSING
 
         # We need to wake up all tasks waiting for connection to be established
-        self._wait_for_connected.clear()
+        self._wait_for_connected.set()
+
+        # We also need to wake up consumers waiting to enqueue messages
+        self._space_available.set()
 
         await self._task_manager.cancel_all_tasks()
 
@@ -399,8 +407,7 @@ class Session:
             self._ack_buffer.append(pending)
 
             # On commit, release pending writers waiting for more buffer space
-            if self._queue_full_lock.locked():
-                self._queue_full_lock.release()
+            self._space_available.set()
 
         def get_next_pending() -> TransportMessage | None:
             if self._send_buffer:
@@ -1157,7 +1164,9 @@ async def _serve(
         while our_task and not our_task.cancelling() and not our_task.cancelled():
             logger.debug(f"_serve loop count={idx}")
             idx += 1
-            while (ws := get_ws()) is None or (state := get_state()) in ConnectingStates:
+            while (ws := get_ws()) is None or (
+                state := get_state()
+            ) in ConnectingStates:
                 logger.debug("_handle_messages_from_ws spinning while connecting")
                 await block_until_connected()
 

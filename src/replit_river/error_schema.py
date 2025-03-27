@@ -17,6 +17,10 @@ ERROR_CODE_INVALID_REQUEST = "INVALID_REQUEST"
 # ERROR_CODE_CANCEL is the code used when either server or client cancels the stream.
 ERROR_CODE_CANCEL = "CANCEL"
 
+# ERROR_CODE_SESSION_CLOSED is the code used when either server or client closes
+# the session.
+ERROR_CODE_SESSION_CLOSED = "CLOSED"
+
 # ERROR_CODE_UNKNOWN is the code for the RiverUnknownError
 ERROR_CODE_UNKNOWN = "UNKNOWN"
 
@@ -76,6 +80,16 @@ class CancelRiverServiceException(RiverServiceException):
 
 class StreamClosedRiverServiceException(RiverServiceException):
     pass
+
+
+class SessionClosedRiverServiceException(RiverServiceException):
+    def __init__(
+        self,
+        message: str,
+        service: str | None,
+        procedure: str | None,
+    ) -> None:
+        super().__init__(ERROR_CODE_SESSION_CLOSED, message, service, procedure)
 
 
 def exception_from_message(code: str) -> type[RiverServiceException]:
