@@ -226,6 +226,9 @@ class Session:
             # We're connected, wake everybody up using set()
             self._wait_for_connected.set()
 
+        def close_ws_in_background(ws: ClientConnection) -> None:
+            self._task_manager.create_task(ws.close())
+
         def finalize_attempt() -> None:
             # We are in a state where we may throw an exception.
             #
@@ -239,7 +242,7 @@ class Session:
             if (
                 self._connecting_task
                 and current_task
-                and self._connecting_task.get_name() == current_task.get_name()
+                and self._connecting_task is current_task
             ):
                 self._connecting_task = None
 
@@ -257,6 +260,7 @@ class Session:
                     get_current_ack=lambda: self.ack,
                     get_current_time=self._get_current_time,
                     transition_connecting=transition_connecting,
+                    close_ws_in_background=close_ws_in_background,
                     transition_connected=transition_connected,
                     finalize_attempt=finalize_attempt,
                     do_close=do_close,
@@ -973,6 +977,7 @@ async def _do_ensure_connected[HandshakeMetadata](
     get_next_sent_seq: Callable[[], int],
     get_current_ack: Callable[[], int],
     transition_connecting: Callable[[], None],
+    close_ws_in_background: Callable[[ClientConnection], None],
     transition_connected: Callable[[ClientConnection], None],
     finalize_attempt: Callable[[], None],
     do_close: Callable[[], None],
@@ -989,7 +994,7 @@ async def _do_ensure_connected[HandshakeMetadata](
         rate_limiter.consume_budget(client_id)
         transition_connecting()
 
-        ws = None
+        ws: ClientConnection | None = None
         try:
             uri_and_metadata = await uri_and_metadata_factory()
             ws = await websockets.asyncio.client.connect(uri_and_metadata["uri"])
@@ -1085,13 +1090,15 @@ async def _do_ensure_connected[HandshakeMetadata](
                     }",
                 )
 
+            # We did it! We're connected!
             last_error = None
             rate_limiter.start_restoring_budget(client_id)
             transition_connected(ws)
             break
         except Exception as e:
             if ws:
-                await ws.close()
+                close_ws_in_background(ws)
+                ws = None
             last_error = e
             backoff_time = rate_limiter.get_backoff_ms(client_id)
             logger.exception(
