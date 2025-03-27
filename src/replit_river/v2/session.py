@@ -114,6 +114,10 @@ class Session:
     _heartbeat_misses: int
     _retry_connection_callback: RetryConnectionCallback | None
 
+    # message state
+    _process_messages: asyncio.Event
+    _space_available: asyncio.Event
+
     # stream for tasks
     _streams: dict[str, Channel[Any]]
 
@@ -154,7 +158,7 @@ class Session:
         self._retry_connection_callback = retry_connection_callback
 
         # message state
-        self._message_enqueued = asyncio.Semaphore()
+        self._process_messages = asyncio.Event()
         self._space_available = asyncio.Event()
         # Ensure we initialize the above Event to "set" to avoid being blocked from
         # the beginning.
@@ -359,7 +363,7 @@ class Session:
             self._space_available.clear()
 
         # Wake up buffered_message_sender
-        self._message_enqueued.release()
+        self._process_messages.set()
         self.seq += 1
 
     async def close(self) -> None:
@@ -372,11 +376,13 @@ class Session:
             return
         self._state = SessionState.CLOSING
 
-        # We need to wake up all tasks waiting for connection to be established
+        # We're closing, so we need to wake up...
+        # ... tasks waiting for connection to be established
         self._wait_for_connected.set()
-
-        # We also need to wake up consumers waiting to enqueue messages
+        # ... consumers waiting to enqueue messages
         self._space_available.set()
+        # ... message processor so it can exit cleanly
+        self._process_messages.set()
 
         await self._task_manager.cancel_all_tasks()
 
@@ -406,8 +412,12 @@ class Session:
                 logger.error("Out of sequence error")
             self._ack_buffer.append(pending)
 
-            # On commit, release pending writers waiting for more buffer space
+            # On commit...
+            # ... release pending writers waiting for more buffer space
             self._space_available.set()
+            # ... tell the message sender to back off if there are no pending messages
+            if not self._send_buffer:
+                self._process_messages.clear()
 
         def get_next_pending() -> TransportMessage | None:
             if self._send_buffer:
@@ -422,10 +432,13 @@ class Session:
         async def block_until_connected() -> None:
             await self._wait_for_connected.wait()
 
+        async def block_until_message_available() -> None:
+            await self._process_messages.wait()
+
         self._task_manager.create_task(
             _buffered_message_sender(
                 block_until_connected=block_until_connected,
-                message_enqueued=self._message_enqueued,
+                block_until_message_available=block_until_message_available,
                 get_ws=get_ws,
                 websocket_closed_callback=self._begin_close_session_countdown,
                 get_next_pending=get_next_pending,
@@ -865,7 +878,7 @@ class Session:
 
 async def _buffered_message_sender(
     block_until_connected: Callable[[], Awaitable[None]],
-    message_enqueued: asyncio.Semaphore,
+    block_until_message_available: Callable[[], Awaitable[None]],
     get_ws: Callable[[], ClientConnection | None],
     websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
     get_next_pending: Callable[[], TransportMessage | None],
@@ -874,17 +887,18 @@ async def _buffered_message_sender(
 ) -> None:
     our_task = asyncio.current_task()
     while our_task and not our_task.cancelling() and not our_task.cancelled():
-        await message_enqueued.acquire()
+        await block_until_message_available()
+
+        if get_state() in TerminalStates:
+            logger.debug("buffered_message_sender: closing")
+            return
+
         while (ws := get_ws()) is None:
             # Block until we have a handle
             logger.debug(
                 "buffered_message_sender: Waiting until ws is connected",
             )
             await block_until_connected()
-
-        if get_state() in TerminalStates:
-            logger.debug("We're going away!")
-            return
 
         if not ws:
             logger.debug("ws is not connected, loop")
@@ -906,18 +920,15 @@ async def _buffered_message_sender(
                     type(e),
                     exc_info=e,
                 )
-                message_enqueued.release()
                 break
             except FailedSendingMessageException:
                 logger.error(
                     "Failed sending message, waiting for retry from buffer",
                     exc_info=True,
                 )
-                message_enqueued.release()
                 break
             except Exception:
                 logger.exception("Error attempting to send buffered messages")
-                message_enqueued.release()
                 break
 
 
