@@ -26,7 +26,7 @@ class SessionState(enum.Enum):
     """The state a session can be in.
 
     Valid transitions:
-    - NO_CONNECTION -> {CONNECTING}
+    - NO_CONNECTION -> {CONNECTING, CLOSING}
     - CONNECTING -> {NO_CONNECTION, ACTIVE, CLOSING}
     - ACTIVE -> {NO_CONNECTION, CONNECTING, CLOSING}
     - CLOSING -> {CLOSED}
