@@ -47,13 +47,13 @@ class MessageBuffer:
             return None
         return self.buffer[0]
 
-    async def remove_old_messages(self, min_seq: int) -> None:
+    def remove_old_messages(self, min_seq: int) -> None:
         """Remove messages in the buffer with a seq number less than min_seq."""
         self.buffer = [msg for msg in self.buffer if msg.seq >= min_seq]
         async with self._space_available_cond:
             self._space_available_cond.notify_all()
 
-    async def close(self) -> None:
+    def close(self) -> None:
         """
         Closes the message buffer and rejects any pending put operations.
         """
