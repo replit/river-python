@@ -106,7 +106,7 @@ class Session:
     _close_session_callback: CloseSessionCallback
     _close_session_after_time_secs: float | None
     _connecting_task: asyncio.Task[Literal[True]] | None
-    _connection_condition: asyncio.Condition
+    _wait_for_connected: asyncio.Event
 
     # ws state
     _ws: ClientConnection | None
@@ -145,7 +145,7 @@ class Session:
         self._close_session_callback = close_session_callback
         self._close_session_after_time_secs: float | None = None
         self._connecting_task = None
-        self._connection_condition = asyncio.Condition()
+        self._wait_for_connected = asyncio.Event()
 
         # ws state
         self._ws = None
@@ -208,13 +208,16 @@ class Session:
                 # during the cleanup procedure.
                 self._terminating_task = asyncio.create_task(self.close())
 
-        async def transition_connected(ws: ClientConnection) -> None:
+        def transition_connecting() -> None:
+            # "Clear" here means observers should wait until we are connected.
+            self._wait_for_connected.clear()
+
+        def transition_connected(ws: ClientConnection) -> None:
             self._state = SessionState.ACTIVE
             self._ws = ws
 
-            # We're connected, wake everybody up
-            async with self._connection_condition:
-                self._connection_condition.notify_all()
+            # We're connected, wake everybody up using set()
+            self._wait_for_connected.set()
 
         def finalize_attempt() -> None:
             # We are in a state where we may throw an exception.
@@ -246,6 +249,7 @@ class Session:
                     get_next_sent_seq=get_next_sent_seq,
                     get_current_ack=lambda: self.ack,
                     get_current_time=self._get_current_time,
+                    transition_connecting=transition_connecting,
                     transition_connected=transition_connected,
                     finalize_attempt=finalize_attempt,
                     do_close=do_close,
@@ -364,8 +368,7 @@ class Session:
         self._state = SessionState.CLOSING
 
         # We need to wake up all tasks waiting for connection to be established
-        async with self._connection_condition:
-            self._connection_condition.notify_all()
+        self._wait_for_connected.clear()
 
         await self._task_manager.cancel_all_tasks()
 
@@ -410,8 +413,7 @@ class Session:
             return None
 
         async def block_until_connected() -> None:
-            async with self._connection_condition:
-                await self._connection_condition.wait()
+            await self._wait_for_connected.wait()
 
         self._task_manager.create_task(
             _buffered_message_sender(
@@ -468,8 +470,7 @@ class Session:
             return self._heartbeat_misses
 
         async def block_until_connected() -> None:
-            async with self._connection_condition:
-                await self._connection_condition.wait()
+            await self._wait_for_connected.wait()
 
         self._task_manager.create_task(
             _setup_heartbeat(
@@ -535,8 +536,7 @@ class Session:
             del self._streams[stream_id]
 
         async def block_until_connected() -> None:
-            async with self._connection_condition:
-                await self._connection_condition.wait()
+            await self._wait_for_connected.wait()
 
         self._task_manager.create_task(
             _serve(
@@ -954,7 +954,8 @@ async def _do_ensure_connected[HandshakeMetadata](
     get_current_time: Callable[[], Awaitable[float]],
     get_next_sent_seq: Callable[[], int],
     get_current_ack: Callable[[], int],
-    transition_connected: Callable[[ClientConnection], Awaitable[None]],
+    transition_connecting: Callable[[], None],
+    transition_connected: Callable[[ClientConnection], None],
     finalize_attempt: Callable[[], None],
     do_close: Callable[[], None],
 ) -> Literal[True]:
@@ -968,6 +969,7 @@ async def _do_ensure_connected[HandshakeMetadata](
         i += 1
 
         rate_limiter.consume_budget(client_id)
+        transition_connecting()
 
         ws = None
         try:
