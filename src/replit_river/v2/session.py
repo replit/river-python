@@ -1105,6 +1105,7 @@ async def _setup_heartbeat(
     while True:
         while (state := get_state()) in ConnectingStates:
             await block_until_connected()
+
         if state in TerminalStates:
             logger.debug(
                 "Session is closed, no need to send heartbeat, state : "
@@ -1156,9 +1157,17 @@ async def _serve(
         while our_task and not our_task.cancelling() and not our_task.cancelled():
             logger.debug(f"_serve loop count={idx}")
             idx += 1
-            while (ws := get_ws()) is None or get_state() in ConnectingStates:
+            while (ws := get_ws()) is None or (state := get_state()) in ConnectingStates:
                 logger.debug("_handle_messages_from_ws spinning while connecting")
                 await block_until_connected()
+
+            if state in TerminalStates:
+                logger.debug(
+                    f"Session is {state}, shut down _serve",
+                )
+                # session is closing / closed, no need to serve anymore
+                break
+
             logger.debug(
                 "%s start handling messages from ws %s",
                 "client",
