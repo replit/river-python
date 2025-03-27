@@ -474,7 +474,7 @@ class Session:
     def _start_heartbeat(self) -> None:
         async def close_websocket() -> None:
             logger.debug(
-                "do_close called, _state=%r, _ws=%r",
+                "close_websocket called, _state=%r, _ws=%r",
                 self._state,
                 self._ws,
             )
@@ -894,23 +894,23 @@ async def _buffered_message_sender(
         await block_until_message_available()
 
         if get_state() in TerminalStates:
-            logger.debug("buffered_message_sender: closing")
+            logger.debug("_buffered_message_sender: closing")
             return
 
         while (ws := get_ws()) is None:
             # Block until we have a handle
             logger.debug(
-                "buffered_message_sender: Waiting until ws is connected",
+                "_buffered_message_sender: Waiting until ws is connected",
             )
             await block_until_connected()
 
         if not ws:
-            logger.debug("ws is not connected, loop")
+            logger.debug("_buffered_message_sender: ws is not connected, loop")
             continue
 
         if msg := get_next_pending():
             logger.debug(
-                "buffered_message_sender: Dequeued %r to send over %r",
+                "_buffered_message_sender: Dequeued %r to send over %r",
                 msg,
                 ws,
             )
@@ -919,8 +919,8 @@ async def _buffered_message_sender(
                 commit(msg)
             except WebsocketClosedException as e:
                 logger.debug(
-                    "Connection closed while sending message %r, waiting for "
-                    "retry from buffer",
+                    "_buffered_message_sender: Connection closed while sending "
+                    "message %r, waiting for retry from buffer",
                     type(e),
                     exc_info=e,
                 )
@@ -1048,7 +1048,8 @@ async def _do_ensure_connected[HandshakeMetadata](
                     data = await ws.recv(decode=False)
                 except ConnectionClosed as e:
                     logger.debug(
-                        "Connection closed during waiting for handshake response",
+                        "_do_ensure_connected: Connection closed during waiting "
+                        "for handshake response",
                         exc_info=True,
                     )
                     raise RiverException(
@@ -1060,7 +1061,10 @@ async def _do_ensure_connected[HandshakeMetadata](
                     response_msg = parse_transport_msg(data)
                     break
                 except IgnoreMessageException:
-                    logger.debug("Ignoring transport message", exc_info=True)
+                    logger.debug(
+                        "_do_ensure_connected: Ignoring transport message",
+                        exc_info=True,
+                    )
                     continue
                 except InvalidMessageException as e:
                     raise RiverException(
