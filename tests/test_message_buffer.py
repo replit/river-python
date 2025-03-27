@@ -45,7 +45,7 @@ async def test_message_buffer_backpressure() -> None:
         # Wait for the put call to return.
         await sync_events.get()
         assert len(buffer.buffer) == 1
-        buffer.remove_old_messages(i)
+        await buffer.remove_old_messages(i)
 
     await background_puts
 

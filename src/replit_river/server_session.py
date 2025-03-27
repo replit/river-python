@@ -136,7 +136,7 @@ class ServerSession(Session):
                             pass
                         case other:
                             assert_never(other)
-                    self._buffer.remove_old_messages(
+                    await self._buffer.remove_old_messages(
                         self._seq_manager.receiver_ack,
                     )
                     self._reset_session_close_countdown()
