@@ -30,6 +30,7 @@ from replit_river.common_session import (
     SendMessage,
     SessionState,
     TerminalStates,
+    buffered_message_sender,
 )
 from replit_river.error_schema import (
     ERROR_CODE_CANCEL,
@@ -439,7 +440,7 @@ class Session:
             await self._process_messages.wait()
 
         self._task_manager.create_task(
-            _buffered_message_sender(
+            buffered_message_sender(
                 block_until_connected=block_until_connected,
                 block_until_message_available=block_until_message_available,
                 get_ws=get_ws,
@@ -877,62 +878,6 @@ class Session:
                 "type": "CLOSE",
             },
         )
-
-
-async def _buffered_message_sender(
-    block_until_connected: Callable[[], Awaitable[None]],
-    block_until_message_available: Callable[[], Awaitable[None]],
-    get_ws: Callable[[], ClientConnection | None],
-    websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
-    get_next_pending: Callable[[], TransportMessage | None],
-    commit: Callable[[TransportMessage], None],
-    get_state: Callable[[], SessionState],
-) -> None:
-    our_task = asyncio.current_task()
-    while our_task and not our_task.cancelling() and not our_task.cancelled():
-        await block_until_message_available()
-
-        if get_state() in TerminalStates:
-            logger.debug("_buffered_message_sender: closing")
-            return
-
-        while (ws := get_ws()) is None:
-            # Block until we have a handle
-            logger.debug(
-                "_buffered_message_sender: Waiting until ws is connected",
-            )
-            await block_until_connected()
-
-        if not ws:
-            logger.debug("_buffered_message_sender: ws is not connected, loop")
-            continue
-
-        if msg := get_next_pending():
-            logger.debug(
-                "_buffered_message_sender: Dequeued %r to send over %r",
-                msg,
-                ws,
-            )
-            try:
-                await send_transport_message(msg, ws, websocket_closed_callback)
-                commit(msg)
-            except WebsocketClosedException as e:
-                logger.debug(
-                    "_buffered_message_sender: Connection closed while sending "
-                    "message %r, waiting for retry from buffer",
-                    type(e),
-                    exc_info=e,
-                )
-                break
-            except FailedSendingMessageException:
-                logger.error(
-                    "Failed sending message, waiting for retry from buffer",
-                    exc_info=True,
-                )
-                break
-            except Exception:
-                logger.exception("Error attempting to send buffered messages")
-                break
 
 
 async def _check_to_close_session(

@@ -89,7 +89,6 @@ def main() -> None:
             file_opener,
             method_filter=method_filter,
             protocol_version=args.protocol_version,
-            method_filter=method_filter,
         )
     else:
         raise NotImplementedError(f"Unknown command {args.command}")
