@@ -1096,7 +1096,6 @@ def generate_individual_service(
     input_base_class: Literal["TypedDict"] | Literal["BaseModel"],
     method_filter: set[str] | None,
     protocol_version: Literal["v1.1", "v2.0"],
-    method_filter: set[str] | None,
 ) -> tuple[ModuleName, ClassName, dict[RenderedPath, FileContents]]:
     serdes: list[tuple[list[TypeName], list[ModuleName], list[FileContents]]] = []
 
@@ -1395,7 +1394,6 @@ def generate_river_client_module(
     typed_dict_inputs: bool,
     method_filter: set[str] | None,
     protocol_version: Literal["v1.1", "v2.0"],
-    method_filter: set[str] | None,
 ) -> dict[RenderedPath, FileContents]:
     files: dict[RenderedPath, FileContents] = {}
 
@@ -1425,7 +1423,6 @@ def generate_river_client_module(
             input_base_class,
             method_filter,
             protocol_version,
-            method_filter,
         )
         if emitted_files:
             # Short-cut if we didn't actually emit anything
@@ -1452,7 +1449,6 @@ def schema_to_river_client_codegen(
     file_opener: Callable[[Path], TextIO],
     method_filter: set[str] | None,
     protocol_version: Literal["v1.1", "v2.0"],
-    method_filter: set[str] | None,
 ) -> None:
     """Generates the lines of a River module."""
     with read_schema() as f:
@@ -1463,7 +1459,6 @@ def schema_to_river_client_codegen(
         typed_dict_inputs,
         method_filter,
         protocol_version,
-        method_filter,
     ).items():
         module_path = Path(target_path).joinpath(subpath)
         module_path.parent.mkdir(mode=0o755, parents=True, exist_ok=True)
