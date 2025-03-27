@@ -52,12 +52,6 @@ def main() -> None:
         default="v1.1",
         choices=["v1.1", "v2.0"],
     )
-    client.add_argument(
-        "--method-filter",
-        help="Only generate a subset of the specified methods",
-        action="store",
-        type=pathlib.Path,
-    )
     client.add_argument("schema", help="schema file")
     args = parser.parse_args()
 
@@ -82,11 +76,11 @@ def main() -> None:
                 method_filter = set(x.strip() for x in handle.readlines())
 
         schema_to_river_client_codegen(
-            lambda: open(schema_path),
-            target_path,
-            args.client_name,
-            args.typed_dict_inputs,
-            file_opener,
+            read_schema=lambda: open(schema_path),
+            target_path=target_path,
+            client_name=args.client_name,
+            typed_dict_inputs=args.typed_dict_inputs,
+            file_opener=file_opener,
             method_filter=method_filter,
             protocol_version=args.protocol_version,
         )

@@ -303,7 +303,7 @@ class Session:
 
             await self.close_websocket(self._ws_wrapper, should_retry=False)
 
-            self._buffer.close()
+            await self._buffer.close()
 
             # Clear the session in transports
             await self._close_session_callback(self)
