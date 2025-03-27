@@ -60,7 +60,6 @@ from replit_river.rpc import (
     TransportMessageTracingSetter,
 )
 from replit_river.seq_manager import (
-    IgnoreMessageException,
     InvalidMessageException,
     OutOfOrderMessageException,
 )
@@ -1059,13 +1058,14 @@ async def _do_ensure_connected[HandshakeMetadata](
 
                 try:
                     response_msg = parse_transport_msg(data)
+                    if isinstance(response_msg, str):
+                        logger.debug(
+                            "_do_ensure_connected: Ignoring transport message",
+                            exc_info=True,
+                        )
+                        continue
+
                     break
-                except IgnoreMessageException:
-                    logger.debug(
-                        "_do_ensure_connected: Ignoring transport message",
-                        exc_info=True,
-                    )
-                    continue
                 except InvalidMessageException as e:
                     raise RiverException(
                         ERROR_HANDSHAKE,
@@ -1217,6 +1217,9 @@ async def _serve(
                         transport_id,
                         msg,
                     )
+                    if isinstance(msg, str):
+                        logger.debug("Ignoring transport message", exc_info=True)
+                        continue
 
                     if msg.controlFlags & STREAM_OPEN_BIT != 0:
                         raise InvalidMessageException(
