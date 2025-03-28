@@ -983,7 +983,7 @@ def generate_individual_service(
                 )
                 render_init_method = f"""\
                     lambda x: {render_type_expr(init_type_type_adapter_name)}
-                        .validate_python
+                        .validate_python(x)
                 """
 
         assert init_type is None or render_init_method, (
