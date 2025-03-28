@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Awaitable, Callable, Coroutine
+from typing import Any, Awaitable, Callable, Coroutine, TypeAlias
 
 import nanoid
 import websockets
@@ -37,9 +37,41 @@ logger = logging.getLogger(__name__)
 trace_propagator = TraceContextTextMapPropagator()
 trace_setter = TransportMessageTracingSetter()
 
+CloseSessionCallback: TypeAlias = Callable[["Session"], Coroutine[Any, Any, Any]]
+RetryConnectionCallback: TypeAlias = Callable[
+    [],
+    Coroutine[Any, Any, Any],
+]
+
 
 class Session:
     """Common functionality shared between client_session and server_session"""
+
+    _transport_id: str
+    _to_id: str
+    session_id: str
+    _transport_options: TransportOptions
+
+    # session state
+    _state: SessionState
+    _state_lock: asyncio.Lock
+    _close_session_callback: CloseSessionCallback
+    _close_session_after_time_secs: float | None
+
+    # ws state
+    _ws_lock: asyncio.Lock
+    _ws_wrapper: WebsocketWrapper
+    _heartbeat_misses: int
+    _retry_connection_callback: RetryConnectionCallback | None
+
+    # stream for tasks
+    _streams: dict[str, Channel[Any]]
+
+    # book keeping
+    _seq_manager: SeqManager
+    _msg_lock: asyncio.Lock
+    _buffer: MessageBuffer
+    _task_manager: BackgroundTaskManager
 
     def __init__(
         self,
@@ -48,14 +80,8 @@ class Session:
         session_id: str,
         websocket: websockets.WebSocketCommonProtocol,
         transport_options: TransportOptions,
-        close_session_callback: Callable[["Session"], Coroutine[Any, Any, Any]],
-        retry_connection_callback: (
-            Callable[
-                [],
-                Coroutine[Any, Any, Any],
-            ]
-            | None
-        ) = None,
+        close_session_callback: CloseSessionCallback,
+        retry_connection_callback: RetryConnectionCallback | None = None,
     ) -> None:
         self._transport_id = transport_id
         self._to_id = to_id
