@@ -40,5 +40,5 @@ class SessionState(enum.Enum):
     CLOSED = 4
 
 
-ConnectingStateta = set([SessionState.NO_CONNECTION, SessionState.CONNECTING])
+ConnectingStates = set([SessionState.NO_CONNECTION, SessionState.CONNECTING])
 TerminalStates = set([SessionState.CLOSING, SessionState.CLOSED])
