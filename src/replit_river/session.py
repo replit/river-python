@@ -185,10 +185,7 @@ class Session:
 
     async def get_next_sent_seq(self) -> int:
         """Get the next sequence number that the client will send."""
-        nextMessage = await self._buffer.peek()
-        if nextMessage:
-            return nextMessage.seq
-        return self._seq_manager.get_seq()
+        return self._buffer.get_next_sent_seq() or self._seq_manager.get_seq()
 
     async def get_next_expected_ack(self) -> int:
         """Get the next expected ack that the client expects."""

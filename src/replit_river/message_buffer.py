@@ -37,6 +37,11 @@ class MessageBuffer:
             raise MessageBufferClosedError("message buffer is closed")
         self.buffer.append(message)
 
+    def get_next_sent_seq(self) -> int | None:
+        if self.buffer:
+            return self.buffer[0].seq
+        return None
+
     async def peek(self) -> TransportMessage | None:
         """Peek the first message in the buffer, returns None if the buffer is empty."""
         async with self._lock:
