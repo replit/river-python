@@ -21,14 +21,13 @@ from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOpt
 
 from .rpc import (
     ACK_BIT,
-    STREAM_CLOSED_BIT,
     STREAM_OPEN_BIT,
     GenericRpcHandlerBuilder,
     TransportMessage,
     TransportMessageTracingSetter,
 )
 
-logger = logging.getLogger(__name__)
+STREAM_CLOSED_BIT = 0x0004  # Synonymous with the cancel bit in v2
 
 
 logger = logging.getLogger(__name__)

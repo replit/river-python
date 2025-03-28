@@ -48,7 +48,6 @@ GenericRpcHandlerBuilder = Callable[
 ]
 ACK_BIT = 0x0001
 STREAM_OPEN_BIT = 0x0002
-STREAM_CLOSED_BIT = 0x0004  # Synonymous with the cancel bit in v2
 
 # these codes are retriable
 # if the server sends a response with one of these codes,
