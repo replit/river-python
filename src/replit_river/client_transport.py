@@ -115,6 +115,8 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                 return existing_session
             else:
                 logger.info("Closing stale session %s", existing_session.session_id)
+                await new_ws.close()  # NB(dstewart): This wasn't there in the
+                #                       v1 transport, were we just leaking WS?
                 await existing_session.close()
                 return await self._create_new_session()
 
