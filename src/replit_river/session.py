@@ -12,6 +12,7 @@ from replit_river.common_session import (
     SendMessage,
     SessionState,
     check_to_close_session,
+    TerminalStates,
 )
 from replit_river.message_buffer import MessageBuffer, MessageBufferClosedError
 from replit_river.messages import (
@@ -62,7 +63,7 @@ class Session:
         self.session_id = session_id
         self._transport_options = transport_options
 
-        # session state, only modified during closing
+        # session state
         self._state = SessionState.ACTIVE
         self._state_lock = asyncio.Lock()
         self._close_session_callback = close_session_callback
@@ -319,11 +320,13 @@ async def setup_heartbeat(
     send_message: SendMessage,
     increment_and_get_heartbeat_misses: Callable[[], int],
 ) -> None:
-    logger.debug("Start heartbeat")
     while True:
         await asyncio.sleep(heartbeat_ms / 1000)
         state = get_state()
-        if state != SessionState.ACTIVE:
+        if state == SessionState.CONNECTING:
+            logger.debug("Websocket is not connected, not sending heartbeat")
+            continue
+        if state in TerminalStates:
             logger.debug(
                 "Session is closed, no need to send heartbeat, state : "
                 "%r close_session_after_this: %r",

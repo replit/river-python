@@ -24,13 +24,20 @@ class SendMessage(Protocol):
 class SessionState(enum.Enum):
     """The state a session can be in.
 
-    Can only transition from ACTIVE to CLOSING to CLOSED.
+    Valid transitions:
+    - NO_CONNECTION -> {ACTIVE}
+    - ACTIVE -> {NO_CONNECTION, CLOSING}
+    - CLOSING -> {CLOSED}
+    - CLOSED -> {}
     """
 
-    ACTIVE = 0
-    CLOSING = 1
-    CLOSED = 2
+    NO_CONNECTION = 0
+    ACTIVE = 1
+    CLOSING = 2
+    CLOSED = 3
 
+ConnectingStates = set([SessionState.NO_CONNECTION])
+TerminalStates = set([SessionState.CLOSING, SessionState.CLOSED])
 
 async def check_to_close_session(
     transport_id: str,
@@ -42,9 +49,11 @@ async def check_to_close_session(
 ) -> None:
     while True:
         await asyncio.sleep(close_session_check_interval_ms / 1000)
-        if get_state() != SessionState.ACTIVE:
+
+        if get_state() in TerminalStates:
             # already closing
             return
+
         # calculate the value now before comparing it so that there are no
         # await points between the check and the comparison to avoid a TOCTOU
         # race.
