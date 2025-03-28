@@ -226,8 +226,9 @@ class Session:
             # We need this lock to ensure the buffer order and message sending order
             # are the same.
             async with self._msg_lock:
+                await self._buffer.has_capacity()
                 try:
-                    await self._buffer.put(msg)
+                    self._buffer.put(msg)
                 except MessageBufferClosedError:
                     # The session is closed and is no longer accepting new messages.
                     return

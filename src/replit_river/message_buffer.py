@@ -21,19 +21,21 @@ class MessageBuffer:
         self._space_available_cond = asyncio.Condition(lock=self._lock)
         self._closed = False
 
-    async def put(self, message: TransportMessage) -> None:
+    async def has_capacity(self) -> None:
+        async with self._space_available_cond:
+            await self._space_available_cond.wait_for(
+                lambda: len(self.buffer) < self.max_size or self._closed
+            )
+
+    def put(self, message: TransportMessage) -> None:
         """Add a message to the buffer. Blocks until there is space in the buffer.
 
         Raises:
             MessageBufferClosedError: if the buffer is closed.
         """
-        async with self._space_available_cond:
-            await self._space_available_cond.wait_for(
-                lambda: len(self.buffer) < self.max_size or self._closed
-            )
-            if self._closed:
-                raise MessageBufferClosedError("message buffer is closed")
-            self.buffer.append(message)
+        if self._closed:
+            raise MessageBufferClosedError("message buffer is closed")
+        self.buffer.append(message)
 
     async def peek(self) -> TransportMessage | None:
         """Peek the first message in the buffer, returns None if the buffer is empty."""
