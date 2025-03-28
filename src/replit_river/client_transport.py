@@ -19,7 +19,6 @@ from replit_river.error_schema import (
     RiverException,
 )
 from replit_river.messages import (
-    PROTOCOL_VERSION,
     FailedSendingMessageException,
     WebsocketClosedException,
     parse_transport_msg,
@@ -42,6 +41,8 @@ from replit_river.transport_options import (
     TransportOptions,
     UriAndMetadata,
 )
+
+PROTOCOL_VERSION = "v1.1"
 
 logger = logging.getLogger(__name__)
 

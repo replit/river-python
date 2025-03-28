@@ -27,9 +27,6 @@ class FailedSendingMessageException(Exception):
     pass
 
 
-PROTOCOL_VERSION = "v1.1"
-
-
 async def send_transport_message(
     msg: TransportMessage,
     ws: WebSocketCommonProtocol,

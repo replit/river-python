@@ -11,7 +11,6 @@ from websockets import (
 from websockets.exceptions import ConnectionClosed
 
 from replit_river.messages import (
-    PROTOCOL_VERSION,
     FailedSendingMessageException,
     WebsocketClosedException,
     parse_transport_msg,
@@ -31,6 +30,8 @@ from replit_river.seq_manager import (
 from replit_river.server_session import ServerSession
 from replit_river.session import Session
 from replit_river.transport_options import TransportOptions
+
+PROTOCOL_VERSION = "v1.1"
 
 logger = logging.getLogger(__name__)
 
