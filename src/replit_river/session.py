@@ -121,7 +121,7 @@ class Session:
 
     async def is_websocket_open(self) -> bool:
         async with self._ws_lock:
-            return await self._ws_wrapper.is_open()
+            return self._ws_wrapper.is_open()
 
     async def _begin_close_session_countdown(self) -> None:
         """Begin the countdown to close session, this should be called when
@@ -194,18 +194,18 @@ class Session:
 
     async def get_next_expected_seq(self) -> int:
         """Get the next expected sequence number from the server."""
-        return await self._seq_manager.get_ack()
+        return self._seq_manager.get_ack()
 
     async def get_next_sent_seq(self) -> int:
         """Get the next sequence number that the client will send."""
         nextMessage = await self._buffer.peek()
         if nextMessage:
             return nextMessage.seq
-        return await self._seq_manager.get_seq()
+        return self._seq_manager.get_seq()
 
     async def get_next_expected_ack(self) -> int:
         """Get the next expected ack that the client expects."""
-        return await self._seq_manager.get_seq()
+        return self._seq_manager.get_seq()
 
     async def send_message(
         self,
@@ -225,8 +225,8 @@ class Session:
             id=nanoid.generate(),
             from_=self._transport_id,  # type: ignore
             to=self._to_id,
-            seq=await self._seq_manager.get_seq_and_increment(),
-            ack=await self._seq_manager.get_ack(),
+            seq=self._seq_manager.get_seq_and_increment(),
+            ack=self._seq_manager.get_ack(),
             controlFlags=control_flags,
             payload=payload,
             serviceName=service_name,
@@ -245,7 +245,7 @@ class Session:
                     # The session is closed and is no longer accepting new messages.
                     return
                 async with self._ws_lock:
-                    if not await self._ws_wrapper.is_open():
+                    if not self._ws_wrapper.is_open():
                         # If the websocket is closed, we should not send the message
                         # and wait for the retry from the buffer.
                         return
@@ -271,7 +271,7 @@ class Session:
         """Mark the websocket as closed, close the websocket, and retry if needed."""
         async with self._ws_lock:
             # Already closed.
-            if not await ws_wrapper.is_open():
+            if not ws_wrapper.is_open():
                 return
             await ws_wrapper.close()
         if should_retry and self._retry_connection_callback:
@@ -348,7 +348,7 @@ async def setup_heartbeat(
     while True:
         await asyncio.sleep(heartbeat_ms / 1000)
         state = get_state()
-        if state == SessionState.CONNECTING:
+        if state != SessionState.ACTIVE:
             logger.debug("Websocket is not connected, not sending heartbeat")
             continue
         if state in TerminalStates:

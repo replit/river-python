@@ -117,7 +117,7 @@ class ServerSession(Session):
             ws_wrapper = self._ws_wrapper
             async for message in ws_wrapper.ws:
                 try:
-                    if not await ws_wrapper.is_open():
+                    if not ws_wrapper.is_open():
                         # We should not process messages if the websocket is closed.
                         break
                     msg = parse_transport_msg(message)
@@ -128,7 +128,7 @@ class ServerSession(Session):
                     logger.debug(f"{self._transport_id} got a message %r", msg)
 
                     # Update bookkeeping
-                    match await self._seq_manager.check_seq_and_update(msg):
+                    match self._seq_manager.check_seq_and_update(msg):
                         case IgnoreMessage():
                             continue
                         case None:

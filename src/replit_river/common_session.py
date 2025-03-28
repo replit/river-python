@@ -1,7 +1,6 @@
-import asyncio
 import enum
 import logging
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Any, Protocol
 
 from opentelemetry.trace import Span
 
@@ -36,6 +35,6 @@ class SessionState(enum.Enum):
     CLOSING = 2
     CLOSED = 3
 
+
 ConnectingStates = set([SessionState.NO_CONNECTION])
 TerminalStates = set([SessionState.CLOSING, SessionState.CLOSED])
-
