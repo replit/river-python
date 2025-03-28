@@ -7,7 +7,6 @@ from aiochannel import Channel, ChannelClosed
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from websockets.exceptions import ConnectionClosed
 
-from replit_river.common_session import add_msg_to_stream
 from replit_river.messages import (
     FailedSendingMessageException,
     parse_transport_msg,
@@ -143,7 +142,22 @@ class ServerSession(Session):
                             raise IgnoreMessageException(
                                 "no stream for message, ignoring"
                             )
-                        await add_msg_to_stream(msg, stream)
+                        if (
+                            msg.controlFlags & STREAM_CLOSED_BIT != 0
+                            and msg.payload.get("type", None) == "CLOSE"
+                        ):
+                            # close message is not sent to the stream
+                            pass
+                        else:
+                            try:
+                                await stream.put(msg.payload)
+                            except ChannelClosed:
+                                # The client is no longer interested in this stream,
+                                # just drop the message.
+                                pass
+                            except RuntimeError as e:
+                                raise InvalidMessageException(e) from e
+
                     else:
                         _stream = await self._open_stream_and_call_handler(msg, tg)
                         if not stream:

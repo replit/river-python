@@ -11,7 +11,6 @@ from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span
 from websockets.exceptions import ConnectionClosed
 
-from replit_river.common_session import add_msg_to_stream
 from replit_river.error_schema import (
     ERROR_CODE_CANCEL,
     ERROR_CODE_STREAM_CLOSED,
@@ -144,7 +143,22 @@ class ClientSession(Session):
                             raise IgnoreMessageException(
                                 "no stream for message, ignoring"
                             )
-                        await add_msg_to_stream(msg, stream)
+                        if (
+                            msg.controlFlags & STREAM_CLOSED_BIT != 0
+                            and msg.payload.get("type", None) == "CLOSE"
+                        ):
+                            # close message is not sent to the stream
+                            pass
+                        else:
+                            try:
+                                await stream.put(msg.payload)
+                            except ChannelClosed:
+                                # The client is no longer interested in this stream,
+                                # just drop the message.
+                                pass
+                            except RuntimeError as e:
+                                raise InvalidMessageException(e) from e
+
                     else:
                         raise InvalidMessageException(
                             "Client should not receive stream open bit"
