@@ -72,7 +72,9 @@ class ServerTransport:
     ) -> ServerSession:
         async for message in websocket:
             try:
-                msg = parse_transport_msg(message, self._transport_options)
+                msg = parse_transport_msg(message)
+                if isinstance(msg, str):
+                    continue
                 (
                     handshake_request,
                     handshake_response,

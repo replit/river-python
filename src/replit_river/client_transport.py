@@ -34,7 +34,6 @@ from replit_river.rpc import (
     TransportMessage,
 )
 from replit_river.seq_manager import (
-    IgnoreMessageException,
     InvalidMessageException,
 )
 from replit_river.session import Session
@@ -293,10 +292,11 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                     "Handshake failed, conn closed while waiting for response",
                 ) from e
             try:
-                return parse_transport_msg(data, self._transport_options)
-            except IgnoreMessageException:
-                logger.debug("Ignoring transport message", exc_info=True)
-                continue
+                msg = parse_transport_msg(data)
+                if isinstance(msg, str):
+                    logger.debug("Ignoring transport message", exc_info=True)
+                    continue
+                return msg
             except InvalidMessageException as e:
                 raise RiverException(
                     ERROR_HANDSHAKE,

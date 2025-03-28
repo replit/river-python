@@ -120,7 +120,10 @@ class ServerSession(Session):
                     if not await ws_wrapper.is_open():
                         # We should not process messages if the websocket is closed.
                         break
-                    msg = parse_transport_msg(message, self._transport_options)
+                    msg = parse_transport_msg(message)
+                    if isinstance(msg, str):
+                        logger.debug("Ignoring transport message", exc_info=True)
+                        continue
 
                     logger.debug(f"{self._transport_id} got a message %r", msg)
 
