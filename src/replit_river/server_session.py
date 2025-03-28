@@ -143,7 +143,7 @@ class ServerSession(Session):
                     if msg.controlFlags & ACK_BIT != 0:
                         continue
                     async with self._stream_lock:
-                        stream = self._streams.get(msg.streamId, None)
+                        stream = self._streams.get(msg.streamId)
                     if msg.controlFlags & STREAM_OPEN_BIT == 0:
                         if not stream:
                             logger.warning("no stream for %s", msg.streamId)
