@@ -2,6 +2,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable, AsyncIterator
 from typing import (
+    Annotated,
     Any,
     Awaitable,
     Callable,
@@ -91,7 +92,7 @@ class PropagationContext(BaseModel):
 class TransportMessage(BaseModel):
     id: str
     # from_ is used instead of from because from is a reserved keyword in Python
-    from_: str = Field(..., alias="from")
+    from_: Annotated[str, Field(alias="from")]
     to: str
     seq: int
     ack: int
