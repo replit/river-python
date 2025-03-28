@@ -69,7 +69,6 @@ class Session:
 
     # book keeping
     _seq_manager: SeqManager
-    _msg_lock: asyncio.Lock
     _buffer: MessageBuffer
     _task_manager: BackgroundTaskManager
 
@@ -105,7 +104,6 @@ class Session:
 
         # book keeping
         self._seq_manager = SeqManager()
-        self._msg_lock = asyncio.Lock()
         self._buffer = MessageBuffer(self._transport_options.buffer_size)
         self._task_manager = BackgroundTaskManager()
 
@@ -229,6 +227,8 @@ class Session:
         # if the session is not active, we should not do anything
         if self._state != SessionState.ACTIVE:
             return
+        await self._buffer.has_capacity()
+        # Start of critical section. No await between here and buffer.put()!
         msg = TransportMessage(
             streamId=stream_id,
             id=nanoid.generate(),
@@ -245,23 +245,19 @@ class Session:
             with use_span(span):
                 trace_propagator.inject(msg, None, trace_setter)
         try:
-            # We need this lock to ensure the buffer order and message sending order
-            # are the same.
-            async with self._msg_lock:
-                await self._buffer.has_capacity()
-                try:
-                    self._buffer.put(msg)
-                except MessageBufferClosedError:
-                    # The session is closed and is no longer accepting new messages.
+            try:
+                self._buffer.put(msg)
+            except MessageBufferClosedError:
+                # The session is closed and is no longer accepting new messages.
+                return
+            async with self._ws_lock:
+                if not self._ws_wrapper.is_open():
+                    # If the websocket is closed, we should not send the message
+                    # and wait for the retry from the buffer.
                     return
-                async with self._ws_lock:
-                    if not self._ws_wrapper.is_open():
-                        # If the websocket is closed, we should not send the message
-                        # and wait for the retry from the buffer.
-                        return
-                await send_transport_message(
-                    msg, self._ws_wrapper.ws, self._begin_close_session_countdown
-                )
+            await send_transport_message(
+                msg, self._ws_wrapper.ws, self._begin_close_session_countdown
+            )
         except WebsocketClosedException as e:
             logger.debug(
                 "Connection closed while sending message %r, waiting for "
