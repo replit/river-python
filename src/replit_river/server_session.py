@@ -191,7 +191,7 @@ class ServerSession(Session):
     async def _open_stream_and_call_handler(
         self,
         msg: TransportMessage,
-        tg: asyncio.TaskGroup | None,
+        tg: asyncio.TaskGroup,
     ) -> Channel | IgnoreMessage:
         if not msg.serviceName or not msg.procedureName:
             logger.warning(
