@@ -39,29 +39,3 @@ class SessionState(enum.Enum):
 ConnectingStates = set([SessionState.NO_CONNECTION])
 TerminalStates = set([SessionState.CLOSING, SessionState.CLOSED])
 
-async def check_to_close_session(
-    transport_id: str,
-    close_session_check_interval_ms: float,
-    get_state: Callable[[], SessionState],
-    get_current_time: Callable[[], Awaitable[float]],
-    get_close_session_after_time_secs: Callable[[], float | None],
-    do_close: Callable[[], Awaitable[None]],
-) -> None:
-    while True:
-        await asyncio.sleep(close_session_check_interval_ms / 1000)
-
-        if get_state() in TerminalStates:
-            # already closing
-            return
-
-        # calculate the value now before comparing it so that there are no
-        # await points between the check and the comparison to avoid a TOCTOU
-        # race.
-        current_time = await get_current_time()
-        close_session_after_time_secs = get_close_session_after_time_secs()
-        if not close_session_after_time_secs:
-            continue
-        if current_time > close_session_after_time_secs:
-            logger.info("Grace period ended for %s, closing session", transport_id)
-            await do_close()
-            return
