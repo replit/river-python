@@ -21,11 +21,6 @@ class MessageBuffer:
         self._space_available_cond = asyncio.Condition(lock=self._lock)
         self._closed = False
 
-    async def empty(self) -> bool:
-        """Check if the buffer is empty"""
-        async with self._lock:
-            return len(self.buffer) == 0
-
     async def put(self, message: TransportMessage) -> None:
         """Add a message to the buffer. Blocks until there is space in the buffer.
 
