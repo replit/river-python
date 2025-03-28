@@ -4,7 +4,7 @@ from collections.abc import AsyncIterable
 from datetime import timedelta
 from typing import Any, AsyncGenerator, Callable, Coroutine, assert_never
 
-import nanoid  # type: ignore
+import nanoid
 import websockets
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed

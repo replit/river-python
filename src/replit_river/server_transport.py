@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import Any
 
-import nanoid  # type: ignore  # type: ignore
+import nanoid
 from pydantic import ValidationError
 from websockets import (
     WebSocketCommonProtocol,

@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import Any, Awaitable, Callable, Coroutine
 
-import nanoid  # type: ignore
+import nanoid
 import websockets
 from aiochannel import Channel
 from opentelemetry.trace import Span, use_span
