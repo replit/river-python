@@ -158,9 +158,10 @@ class Session:
         buffered_messages = list(self._buffer.buffer)
         for msg in buffered_messages:
             try:
-                await self._send_transport_message(
+                await send_transport_message(
                     msg,
                     new_ws,
+                    self._begin_close_session_countdown,
                 )
             except WebsocketClosedException:
                 logger.info(
@@ -177,20 +178,6 @@ class Session:
     def _reset_session_close_countdown(self) -> None:
         self._heartbeat_misses = 0
         self._close_session_after_time_secs = None
-
-    async def _send_transport_message(
-        self,
-        msg: TransportMessage,
-        websocket: websockets.WebSocketCommonProtocol,
-    ) -> None:
-        try:
-            await send_transport_message(
-                msg, websocket, self._begin_close_session_countdown
-            )
-        except WebsocketClosedException as e:
-            raise e
-        except FailedSendingMessageException as e:
-            raise e
 
     async def get_next_expected_seq(self) -> int:
         """Get the next expected sequence number from the server."""
@@ -249,9 +236,8 @@ class Session:
                         # If the websocket is closed, we should not send the message
                         # and wait for the retry from the buffer.
                         return
-                await self._send_transport_message(
-                    msg,
-                    self._ws_wrapper.ws,
+                await send_transport_message(
+                    msg, self._ws_wrapper.ws, self._begin_close_session_countdown
                 )
         except WebsocketClosedException as e:
             logger.debug(
