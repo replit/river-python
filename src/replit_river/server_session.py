@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable, Coroutine, assert_never
 
 import websockets
 from aiochannel import Channel, ChannelClosed
@@ -12,7 +12,7 @@ from replit_river.messages import (
     parse_transport_msg,
 )
 from replit_river.seq_manager import (
-    IgnoreMessageException,
+    IgnoreMessage,
     InvalidMessageException,
     OutOfOrderMessageException,
 )
@@ -128,7 +128,13 @@ class ServerSession(Session):
                     logger.debug(f"{self._transport_id} got a message %r", msg)
 
                     # Update bookkeeping
-                    await self._seq_manager.check_seq_and_update(msg)
+                    match await self._seq_manager.check_seq_and_update(msg):
+                        case IgnoreMessage():
+                            continue
+                        case None:
+                            pass
+                        case other:
+                            assert_never(other)
                     await self._buffer.remove_old_messages(
                         self._seq_manager.receiver_ack,
                     )
@@ -141,9 +147,8 @@ class ServerSession(Session):
                     if msg.controlFlags & STREAM_OPEN_BIT == 0:
                         if not stream:
                             logger.warning("no stream for %s", msg.streamId)
-                            raise IgnoreMessageException(
-                                "no stream for message, ignoring"
-                            )
+                            continue
+
                         if (
                             msg.controlFlags & STREAM_CLOSED_BIT != 0
                             and msg.payload.get("type", None) == "CLOSE"
@@ -162,6 +167,8 @@ class ServerSession(Session):
 
                     else:
                         _stream = await self._open_stream_and_call_handler(msg, tg)
+                        if isinstance(_stream, IgnoreMessage):
+                            continue
                         if not stream:
                             async with self._stream_lock:
                                 self._streams[msg.streamId] = _stream
@@ -172,9 +179,6 @@ class ServerSession(Session):
                             stream.close()
                         async with self._stream_lock:
                             del self._streams[msg.streamId]
-                except IgnoreMessageException:
-                    logger.debug("Ignoring transport message", exc_info=True)
-                    continue
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
                     await ws_wrapper.close()
@@ -190,17 +194,22 @@ class ServerSession(Session):
         self,
         msg: TransportMessage,
         tg: asyncio.TaskGroup | None,
-    ) -> Channel:
+    ) -> Channel | IgnoreMessage:
         if not msg.serviceName or not msg.procedureName:
-            raise IgnoreMessageException(
-                f"Service name or procedure name is missing in the message {msg}"
+            logger.warning(
+                "Service name or procedure name is missing in the message %r",
+                msg,
             )
+            return IgnoreMessage()
         key = (msg.serviceName, msg.procedureName)
         handler = self._handlers.get(key, None)
         if not handler:
-            raise IgnoreMessageException(
-                f"No handler for {key} handlers : {self._handlers.keys()}"
+            logger.warning(
+                "No handler for %r handlers: %r",
+                key,
+                self._handlers.keys(),
             )
+            return IgnoreMessage()
         method_type, handler_func = handler
         is_streaming_output = method_type in (
             "subscription-stream",  # subscription

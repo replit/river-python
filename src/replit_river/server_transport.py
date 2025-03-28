@@ -25,7 +25,6 @@ from replit_river.rpc import (
     TransportMessage,
 )
 from replit_river.seq_manager import (
-    IgnoreMessageException,
     InvalidMessageException,
     SessionStateMismatchException,
 )
@@ -79,8 +78,6 @@ class ServerTransport:
                     handshake_request,
                     handshake_response,
                 ) = await self._establish_handshake(msg, websocket)
-            except IgnoreMessageException:
-                continue
             except InvalidMessageException as e:
                 error_msg = "Got invalid transport message, closing connection"
                 raise InvalidMessageException(error_msg) from e

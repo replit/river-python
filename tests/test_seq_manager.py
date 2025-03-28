@@ -3,7 +3,7 @@ import asyncio
 import pytest
 
 from replit_river.seq_manager import (
-    IgnoreMessageException,
+    IgnoreMessage,
     OutOfOrderMessageException,
     SeqManager,
 )
@@ -42,8 +42,7 @@ async def test_message_reception(no_logging_error: NoErrors) -> None:
     no_logging_error()
 
     # Test duplicate message
-    with pytest.raises(IgnoreMessageException):
-        await manager.check_seq_and_update(msg)
+    assert isinstance(await manager.check_seq_and_update(msg), IgnoreMessage)
 
     # Test out of order message
     msg.seq = 2

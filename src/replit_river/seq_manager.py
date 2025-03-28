@@ -1,15 +1,10 @@
 import asyncio
 import logging
+from dataclasses import dataclass
 
 from replit_river.rpc import TransportMessage
 
 logger = logging.getLogger(__name__)
-
-
-class IgnoreMessageException(Exception):
-    """Exception to ignore a transport message, but good to continue."""
-
-    pass
 
 
 class InvalidMessageException(Exception):
@@ -31,6 +26,11 @@ class SessionStateMismatchException(Exception):
     """Error when the session state mismatch, we reject handshake and
     close the connection"""
 
+    pass
+
+
+@dataclass
+class IgnoreMessage:
     pass
 
 
@@ -68,14 +68,11 @@ class SeqManager:
         async with self._ack_lock:
             return self.ack
 
-    async def check_seq_and_update(self, msg: TransportMessage) -> None:
+    async def check_seq_and_update(self, msg: TransportMessage) -> IgnoreMessage | None:
         async with self._ack_lock:
             if msg.seq != self.ack:
                 if msg.seq < self.ack:
-                    raise IgnoreMessageException(
-                        f"{msg.from_} received duplicate msg, got {msg.seq}"
-                        f" expected {self.ack}"
-                    )
+                    return IgnoreMessage()
                 else:
                     logger.warn(
                         f"Out of order message received got {msg.seq} expected "
@@ -88,6 +85,7 @@ class SeqManager:
                     )
             self.receiver_ack = msg.ack
         await self._set_ack(msg.seq + 1)
+        return None
 
     async def _set_ack(self, new_ack: int) -> int:
         async with self._ack_lock:

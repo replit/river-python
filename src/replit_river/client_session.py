@@ -2,7 +2,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable
 from datetime import timedelta
-from typing import Any, AsyncGenerator, Callable, Coroutine
+from typing import Any, AsyncGenerator, Callable, Coroutine, assert_never
 
 import nanoid  # type: ignore
 import websockets
@@ -24,7 +24,7 @@ from replit_river.messages import (
     parse_transport_msg,
 )
 from replit_river.seq_manager import (
-    IgnoreMessageException,
+    IgnoreMessage,
     InvalidMessageException,
     OutOfOrderMessageException,
 )
@@ -132,7 +132,14 @@ class ClientSession(Session):
                     logger.debug(f"{self._transport_id} got a message %r", msg)
 
                     # Update bookkeeping
-                    await self._seq_manager.check_seq_and_update(msg)
+                    match await self._seq_manager.check_seq_and_update(msg):
+                        case IgnoreMessage():
+                            continue
+                        case None:
+                            pass
+                        case other:
+                            assert_never(other)
+
                     await self._buffer.remove_old_messages(
                         self._seq_manager.receiver_ack,
                     )
@@ -145,9 +152,8 @@ class ClientSession(Session):
                     if msg.controlFlags & STREAM_OPEN_BIT == 0:
                         if not stream:
                             logger.warning("no stream for %s", msg.streamId)
-                            raise IgnoreMessageException(
-                                "no stream for message, ignoring"
-                            )
+                            continue
+
                         if (
                             msg.controlFlags & STREAM_CLOSED_BIT != 0
                             and msg.payload.get("type", None) == "CLOSE"
@@ -174,9 +180,6 @@ class ClientSession(Session):
                             stream.close()
                         async with self._stream_lock:
                             del self._streams[msg.streamId]
-                except IgnoreMessageException:
-                    logger.debug("Ignoring transport message", exc_info=True)
-                    continue
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
                     await ws_wrapper.close()
