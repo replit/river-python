@@ -147,8 +147,7 @@ class ClientSession(Session):
 
                     if msg.controlFlags & ACK_BIT != 0:
                         continue
-                    async with self._stream_lock:
-                        stream = self._streams.get(msg.streamId, None)
+                    stream = self._streams.get(msg.streamId, None)
                     if msg.controlFlags & STREAM_OPEN_BIT == 0:
                         if not stream:
                             logger.warning("no stream for %s", msg.streamId)
@@ -178,8 +177,7 @@ class ClientSession(Session):
                     if msg.controlFlags & STREAM_CLOSED_BIT != 0:
                         if stream:
                             stream.close()
-                        async with self._stream_lock:
-                            del self._streams[msg.streamId]
+                        del self._streams[msg.streamId]
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
                     await ws_wrapper.close()

@@ -75,7 +75,6 @@ class Session:
         self._retry_connection_callback = retry_connection_callback
 
         # stream for tasks
-        self._stream_lock = asyncio.Lock()
         self._streams: dict[str, Channel[Any]] = {}
 
         # book keeping
@@ -287,8 +286,7 @@ class Session:
             # throw exception correctly.
             for stream in self._streams.values():
                 stream.close()
-            async with self._stream_lock:
-                self._streams.clear()
+            self._streams.clear()
 
             self._state = SessionState.CLOSED
 

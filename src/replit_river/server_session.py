@@ -32,6 +32,7 @@ STREAM_CLOSED_BIT = 0x0004  # Synonymous with the cancel bit in v2
 
 logger = logging.getLogger(__name__)
 
+
 trace_propagator = TraceContextTextMapPropagator()
 trace_setter = TransportMessageTracingSetter()
 
@@ -142,8 +143,7 @@ class ServerSession(Session):
 
                     if msg.controlFlags & ACK_BIT != 0:
                         continue
-                    async with self._stream_lock:
-                        stream = self._streams.get(msg.streamId)
+                    stream = self._streams.get(msg.streamId)
                     if msg.controlFlags & STREAM_OPEN_BIT == 0:
                         if not stream:
                             logger.warning("no stream for %s", msg.streamId)
@@ -170,15 +170,13 @@ class ServerSession(Session):
                         if isinstance(_stream, IgnoreMessage):
                             continue
                         if not stream:
-                            async with self._stream_lock:
-                                self._streams[msg.streamId] = _stream
+                            self._streams[msg.streamId] = _stream
                         stream = _stream
 
                     if msg.controlFlags & STREAM_CLOSED_BIT != 0:
                         if stream:
                             stream.close()
-                        async with self._stream_lock:
-                            del self._streams[msg.streamId]
+                        del self._streams[msg.streamId]
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
                     await ws_wrapper.close()
