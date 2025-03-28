@@ -17,8 +17,7 @@ class MessageBuffer:
     def __init__(self, max_num_messages: int = MAX_MESSAGE_BUFFER_SIZE):
         self.max_size = max_num_messages
         self.buffer: list[TransportMessage] = []
-        self._lock = asyncio.Lock()
-        self._space_available_cond = asyncio.Condition(lock=self._lock)
+        self._space_available_cond = asyncio.Condition()
         self._closed = False
 
     async def has_capacity(self) -> None:
@@ -42,23 +41,22 @@ class MessageBuffer:
             return self.buffer[0].seq
         return None
 
-    async def peek(self) -> TransportMessage | None:
+    def peek(self) -> TransportMessage | None:
         """Peek the first message in the buffer, returns None if the buffer is empty."""
-        async with self._lock:
-            if len(self.buffer) == 0:
-                return None
-            return self.buffer[0]
+        if len(self.buffer) == 0:
+            return None
+        return self.buffer[0]
 
     async def remove_old_messages(self, min_seq: int) -> None:
         """Remove messages in the buffer with a seq number less than min_seq."""
-        async with self._lock:
-            self.buffer = [msg for msg in self.buffer if msg.seq >= min_seq]
+        self.buffer = [msg for msg in self.buffer if msg.seq >= min_seq]
+        async with self._space_available_cond:
             self._space_available_cond.notify_all()
 
     async def close(self) -> None:
         """
         Closes the message buffer and rejects any pending put operations.
         """
-        async with self._lock:
-            self._closed = True
+        self._closed = True
+        async with self._space_available_cond:
             self._space_available_cond.notify_all()
