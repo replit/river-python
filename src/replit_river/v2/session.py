@@ -339,8 +339,6 @@ class Session:
             # session is closing / closed, raise
             raise SessionClosedRiverServiceException(
                 "river session is closed, dropping message",
-                service_name,
-                procedure_name,
             )
 
         # Begin critical section: Avoid any await between here and _send_buffer.append
