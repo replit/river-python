@@ -19,7 +19,6 @@ from replit_river.error_schema import (
     RiverException,
 )
 from replit_river.messages import (
-    PROTOCOL_VERSION,
     FailedSendingMessageException,
     WebsocketClosedException,
     parse_transport_msg,
@@ -34,7 +33,6 @@ from replit_river.rpc import (
     TransportMessage,
 )
 from replit_river.seq_manager import (
-    IgnoreMessageException,
     InvalidMessageException,
 )
 from replit_river.session import Session
@@ -43,6 +41,8 @@ from replit_river.transport_options import (
     TransportOptions,
     UriAndMetadata,
 )
+
+PROTOCOL_VERSION = "v1.1"
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,8 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                 return existing_session
             else:
                 logger.info("Closing stale session %s", existing_session.session_id)
+                await new_ws.close()  # NB(dstewart): This wasn't there in the
+                #                       v1 transport, were we just leaking WS?
                 await existing_session.close()
                 return await self._create_new_session()
 
@@ -293,10 +295,11 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                     "Handshake failed, conn closed while waiting for response",
                 ) from e
             try:
-                return parse_transport_msg(data, self._transport_options)
-            except IgnoreMessageException:
-                logger.debug("Ignoring transport message", exc_info=True)
-                continue
+                msg = parse_transport_msg(data)
+                if isinstance(msg, str):
+                    logger.debug("Ignoring transport message", exc_info=True)
+                    continue
+                return msg
             except InvalidMessageException as e:
                 raise RiverException(
                     ERROR_HANDSHAKE,

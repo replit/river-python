@@ -2,16 +2,15 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable
 from datetime import timedelta
-from typing import Any, AsyncGenerator, Callable, Coroutine
+from typing import Any, AsyncGenerator, Callable, Coroutine, assert_never
 
-import nanoid  # type: ignore
+import nanoid
 import websockets
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span
 from websockets.exceptions import ConnectionClosed
 
-from replit_river.common_session import add_msg_to_stream
 from replit_river.error_schema import (
     ERROR_CODE_CANCEL,
     ERROR_CODE_STREAM_CLOSED,
@@ -25,7 +24,7 @@ from replit_river.messages import (
     parse_transport_msg,
 )
 from replit_river.seq_manager import (
-    IgnoreMessageException,
+    IgnoreMessage,
     InvalidMessageException,
     OutOfOrderMessageException,
 )
@@ -34,7 +33,6 @@ from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOpt
 
 from .rpc import (
     ACK_BIT,
-    STREAM_CLOSED_BIT,
     STREAM_OPEN_BIT,
     ErrorType,
     InitType,
@@ -43,6 +41,9 @@ from .rpc import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+STREAM_CLOSED_BIT = 0x0004  # Synonymous with the cancel bit in v2
 
 
 class ClientSession(Session):
@@ -80,6 +81,13 @@ class ClientSession(Session):
             await self._begin_close_session_countdown()
 
         self._setup_heartbeats_task(do_close_websocket)
+
+    async def replace_with_new_websocket(
+        self, new_ws: websockets.WebSocketCommonProtocol
+    ) -> None:
+        await super().replace_with_new_websocket(new_ws)
+        # serve() terminates itself when the ws dies, so we need to start it again
+        await self.start_serve_responses()
 
     async def start_serve_responses(self) -> None:
         self._task_manager.create_task(self.serve())
@@ -120,15 +128,25 @@ class ClientSession(Session):
             ws_wrapper = self._ws_wrapper
             async for message in ws_wrapper.ws:
                 try:
-                    if not await ws_wrapper.is_open():
+                    if not ws_wrapper.is_open():
                         # We should not process messages if the websocket is closed.
                         break
-                    msg = parse_transport_msg(message, self._transport_options)
+                    msg = parse_transport_msg(message)
+                    if isinstance(msg, str):
+                        logger.debug("Ignoring transport message", exc_info=True)
+                        continue
 
                     logger.debug(f"{self._transport_id} got a message %r", msg)
 
                     # Update bookkeeping
-                    await self._seq_manager.check_seq_and_update(msg)
+                    match self._seq_manager.check_seq_and_update(msg):
+                        case IgnoreMessage():
+                            continue
+                        case None:
+                            pass
+                        case other:
+                            assert_never(other)
+
                     await self._buffer.remove_old_messages(
                         self._seq_manager.receiver_ack,
                     )
@@ -136,15 +154,28 @@ class ClientSession(Session):
 
                     if msg.controlFlags & ACK_BIT != 0:
                         continue
-                    async with self._stream_lock:
-                        stream = self._streams.get(msg.streamId, None)
+                    stream = self._streams.get(msg.streamId, None)
                     if msg.controlFlags & STREAM_OPEN_BIT == 0:
                         if not stream:
                             logger.warning("no stream for %s", msg.streamId)
-                            raise IgnoreMessageException(
-                                "no stream for message, ignoring"
-                            )
-                        await add_msg_to_stream(msg, stream)
+                            continue
+
+                        if (
+                            msg.controlFlags & STREAM_CLOSED_BIT != 0
+                            and msg.payload.get("type", None) == "CLOSE"
+                        ):
+                            # close message is not sent to the stream
+                            pass
+                        else:
+                            try:
+                                await stream.put(msg.payload)
+                            except ChannelClosed:
+                                # The client is no longer interested in this stream,
+                                # just drop the message.
+                                pass
+                            except RuntimeError as e:
+                                raise InvalidMessageException(e) from e
+
                     else:
                         raise InvalidMessageException(
                             "Client should not receive stream open bit"
@@ -153,11 +184,7 @@ class ClientSession(Session):
                     if msg.controlFlags & STREAM_CLOSED_BIT != 0:
                         if stream:
                             stream.close()
-                        async with self._stream_lock:
-                            del self._streams[msg.streamId]
-                except IgnoreMessageException:
-                    logger.debug("Ignoring transport message", exc_info=True)
-                    continue
+                        del self._streams[msg.streamId]
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
                     await ws_wrapper.close()

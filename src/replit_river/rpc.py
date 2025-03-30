@@ -2,6 +2,7 @@ import asyncio
 import logging
 from collections.abc import AsyncIterable, AsyncIterator
 from typing import (
+    Annotated,
     Any,
     Awaitable,
     Callable,
@@ -46,9 +47,8 @@ _MetadataType: TypeAlias = grpc.aio.Metadata | Sequence[tuple[str, str | bytes]]
 GenericRpcHandlerBuilder = Callable[
     [str, Channel[Any], Channel[Any]], Coroutine[None, None, None]
 ]
-ACK_BIT = 0x0001
-STREAM_OPEN_BIT = 0x0002
-STREAM_CLOSED_BIT = 0x0004  # Synonymous with the cancel bit in v2
+ACK_BIT = 0b00001
+STREAM_OPEN_BIT = 0b00010
 
 # these codes are retriable
 # if the server sends a response with one of these codes,
@@ -92,7 +92,7 @@ class PropagationContext(BaseModel):
 class TransportMessage(BaseModel):
     id: str
     # from_ is used instead of from because from is a reserved keyword in Python
-    from_: str = Field(..., alias="from")
+    from_: Annotated[str, Field(alias="from")]
     to: str
     seq: int
     ack: int

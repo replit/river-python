@@ -1,5 +1,6 @@
 import argparse
 import os.path
+import pathlib
 from pathlib import Path
 from typing import TextIO
 
@@ -38,6 +39,12 @@ def main() -> None:
         action="store_true",
         default=False,
     )
+    client.add_argument(
+        "--method-filter",
+        help="Only generate a subset of the specified methods",
+        action="store",
+        type=pathlib.Path,
+    )
     client.add_argument("schema", help="schema file")
     args = parser.parse_args()
 
@@ -56,12 +63,18 @@ def main() -> None:
         def file_opener(path: Path) -> TextIO:
             return open(path, "w")
 
+        method_filter: set[str] | None = None
+        if args.method_filter:
+            with open(args.method_filter) as handle:
+                method_filter = set(x.strip() for x in handle.readlines())
+
         schema_to_river_client_codegen(
             lambda: open(schema_path),
             target_path,
             args.client_name,
             args.typed_dict_inputs,
             file_opener,
+            method_filter=method_filter,
         )
     else:
         raise NotImplementedError(f"Unknown command {args.command}")

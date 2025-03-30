@@ -1,5 +1,6 @@
 import asyncio
 import importlib
+import os
 import shutil
 from datetime import timedelta
 from pathlib import Path
@@ -19,20 +20,26 @@ from tests.conftest import HandlerMapping, deserialize_request, serialize_respon
 
 @pytest.fixture(scope="session", autouse=True)
 def generate_rpc_client() -> None:
-    import tests.codegen.rpc.generated
-
-    shutil.rmtree("tests/codegen/rpc/generated")
+    shutil.rmtree("tests/codegen/rpc/generated", ignore_errors=True)
+    os.makedirs("tests/codegen/rpc/generated")
 
     def file_opener(path: Path) -> TextIO:
         return open(path, "w")
 
     schema_to_river_client_codegen(
-        lambda: open("tests/codegen/rpc/schema.json"),
-        "tests/codegen/rpc/generated",
-        "RpcClient",
-        True,
-        file_opener,
+        read_schema=lambda: open("tests/codegen/rpc/schema.json"),
+        target_path="tests/codegen/rpc/generated",
+        client_name="RpcClient",
+        typed_dict_inputs=True,
+        file_opener=file_opener,
+        method_filter=None,
     )
+
+
+@pytest.fixture(scope="session", autouse=True)
+def reload_rpc_import(generate_rpc_client: None) -> None:
+    import tests.codegen.rpc.generated
+
     importlib.reload(tests.codegen.rpc.generated)
 
 

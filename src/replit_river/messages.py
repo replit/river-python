@@ -13,10 +13,8 @@ from replit_river.rpc import (
     TransportMessage,
 )
 from replit_river.seq_manager import (
-    IgnoreMessageException,
     InvalidMessageException,
 )
-from replit_river.transport_options import TransportOptions
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +25,6 @@ class WebsocketClosedException(Exception):
 
 class FailedSendingMessageException(Exception):
     pass
-
-
-PROTOCOL_VERSION = "v1.1"
 
 
 async def send_transport_message(
@@ -62,13 +57,9 @@ def formatted_bytes(message: bytes) -> str:
     return " ".join(f"{b:02x}" for b in message)
 
 
-def parse_transport_msg(
-    message: str | bytes, transport_options: TransportOptions
-) -> TransportMessage:
+def parse_transport_msg(message: str | bytes) -> TransportMessage | str:
     if isinstance(message, str):
-        raise IgnoreMessageException(
-            f"ignored a message beacuse it was a text frame: {message}"
-        )
+        return message
     try:
         # :param int timestamp:
         #     Control how timestamp type is unpacked:

@@ -35,7 +35,8 @@ async def test_message_buffer_backpressure() -> None:
 
     async def put_messages() -> None:
         for i in range(0, iterations):
-            await buffer.put(mock_transport_message(seq=i))
+            await buffer.has_capacity()
+            buffer.put(mock_transport_message(seq=i))
             await sync_events.put(None)
 
     background_puts = asyncio.create_task(put_messages())
@@ -55,10 +56,17 @@ async def test_message_buffer_close() -> None:
     is closed while the put operation is waiting for space in the buffer.
     """
     buffer = MessageBuffer(max_num_messages=1)
-    await buffer.put(mock_transport_message(seq=1))
-    background_put = asyncio.create_task(buffer.put(mock_transport_message(seq=1)))
+    await buffer.has_capacity()
+    buffer.put(mock_transport_message(seq=1))
+
+    async def bg_put(msg: TransportMessage) -> None:
+        await buffer.has_capacity()
+        buffer.put(msg)
+
+    background_put = asyncio.create_task(bg_put(mock_transport_message(seq=1)))
     await buffer.close()
     with pytest.raises(MessageBufferClosedError):
         await background_put
     with pytest.raises(MessageBufferClosedError):
-        await buffer.put(mock_transport_message(seq=1))
+        await buffer.has_capacity()
+        buffer.put(mock_transport_message(seq=1))

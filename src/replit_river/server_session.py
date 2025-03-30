@@ -1,19 +1,18 @@
 import asyncio
 import logging
-from typing import Any, Callable, Coroutine
+from typing import Any, Callable, Coroutine, assert_never
 
 import websockets
 from aiochannel import Channel, ChannelClosed
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from websockets.exceptions import ConnectionClosed
 
-from replit_river.common_session import add_msg_to_stream
 from replit_river.messages import (
     FailedSendingMessageException,
     parse_transport_msg,
 )
 from replit_river.seq_manager import (
-    IgnoreMessageException,
+    IgnoreMessage,
     InvalidMessageException,
     OutOfOrderMessageException,
 )
@@ -22,17 +21,17 @@ from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE, TransportOpt
 
 from .rpc import (
     ACK_BIT,
-    STREAM_CLOSED_BIT,
     STREAM_OPEN_BIT,
     GenericRpcHandlerBuilder,
     TransportMessage,
     TransportMessageTracingSetter,
 )
 
-logger = logging.getLogger(__name__)
+STREAM_CLOSED_BIT = 0x0004  # Synonymous with the cancel bit in v2
 
 
 logger = logging.getLogger(__name__)
+
 
 trace_propagator = TraceContextTextMapPropagator()
 trace_setter = TransportMessageTracingSetter()
@@ -119,15 +118,24 @@ class ServerSession(Session):
             ws_wrapper = self._ws_wrapper
             async for message in ws_wrapper.ws:
                 try:
-                    if not await ws_wrapper.is_open():
+                    if not ws_wrapper.is_open():
                         # We should not process messages if the websocket is closed.
                         break
-                    msg = parse_transport_msg(message, self._transport_options)
+                    msg = parse_transport_msg(message)
+                    if isinstance(msg, str):
+                        logger.debug("Ignoring transport message", exc_info=True)
+                        continue
 
                     logger.debug(f"{self._transport_id} got a message %r", msg)
 
                     # Update bookkeeping
-                    await self._seq_manager.check_seq_and_update(msg)
+                    match self._seq_manager.check_seq_and_update(msg):
+                        case IgnoreMessage():
+                            continue
+                        case None:
+                            pass
+                        case other:
+                            assert_never(other)
                     await self._buffer.remove_old_messages(
                         self._seq_manager.receiver_ack,
                     )
@@ -135,30 +143,40 @@ class ServerSession(Session):
 
                     if msg.controlFlags & ACK_BIT != 0:
                         continue
-                    async with self._stream_lock:
-                        stream = self._streams.get(msg.streamId, None)
+                    stream = self._streams.get(msg.streamId)
                     if msg.controlFlags & STREAM_OPEN_BIT == 0:
                         if not stream:
                             logger.warning("no stream for %s", msg.streamId)
-                            raise IgnoreMessageException(
-                                "no stream for message, ignoring"
-                            )
-                        await add_msg_to_stream(msg, stream)
+                            continue
+
+                        if (
+                            msg.controlFlags & STREAM_CLOSED_BIT != 0
+                            and msg.payload.get("type", None) == "CLOSE"
+                        ):
+                            # close message is not sent to the stream
+                            pass
+                        else:
+                            try:
+                                await stream.put(msg.payload)
+                            except ChannelClosed:
+                                # The client is no longer interested in this stream,
+                                # just drop the message.
+                                pass
+                            except RuntimeError as e:
+                                raise InvalidMessageException(e) from e
+
                     else:
                         _stream = await self._open_stream_and_call_handler(msg, tg)
+                        if isinstance(_stream, IgnoreMessage):
+                            continue
                         if not stream:
-                            async with self._stream_lock:
-                                self._streams[msg.streamId] = _stream
+                            self._streams[msg.streamId] = _stream
                         stream = _stream
 
                     if msg.controlFlags & STREAM_CLOSED_BIT != 0:
                         if stream:
                             stream.close()
-                        async with self._stream_lock:
-                            del self._streams[msg.streamId]
-                except IgnoreMessageException:
-                    logger.debug("Ignoring transport message", exc_info=True)
-                    continue
+                        del self._streams[msg.streamId]
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
                     await ws_wrapper.close()
@@ -173,18 +191,23 @@ class ServerSession(Session):
     async def _open_stream_and_call_handler(
         self,
         msg: TransportMessage,
-        tg: asyncio.TaskGroup | None,
-    ) -> Channel:
+        tg: asyncio.TaskGroup,
+    ) -> Channel | IgnoreMessage:
         if not msg.serviceName or not msg.procedureName:
-            raise IgnoreMessageException(
-                f"Service name or procedure name is missing in the message {msg}"
+            logger.warning(
+                "Service name or procedure name is missing in the message %r",
+                msg,
             )
+            return IgnoreMessage()
         key = (msg.serviceName, msg.procedureName)
         handler = self._handlers.get(key, None)
         if not handler:
-            raise IgnoreMessageException(
-                f"No handler for {key} handlers : {self._handlers.keys()}"
+            logger.warning(
+                "No handler for %r handlers: %r",
+                key,
+                self._handlers.keys(),
             )
+            return IgnoreMessage()
         method_type, handler_func = handler
         is_streaming_output = method_type in (
             "subscription-stream",  # subscription

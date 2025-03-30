@@ -18,18 +18,15 @@ class WebsocketWrapper:
     def __init__(self, ws: WebSocketCommonProtocol) -> None:
         self.ws = ws
         self.ws_state = WsState.OPEN
-        self.ws_lock = asyncio.Lock()
         self.id = ws.id
 
-    async def is_open(self) -> bool:
-        async with self.ws_lock:
-            return self.ws_state == WsState.OPEN
+    def is_open(self) -> bool:
+        return self.ws_state == WsState.OPEN
 
     async def close(self) -> None:
-        async with self.ws_lock:
-            if self.ws_state == WsState.OPEN:
-                self.ws_state = WsState.CLOSING
-                task = asyncio.create_task(self.ws.close())
-                _background_tasks.add(task)
-                task.add_done_callback(_background_tasks.discard)
-                self.ws_state = WsState.CLOSED
+        if self.ws_state == WsState.OPEN:
+            self.ws_state = WsState.CLOSING
+            task = asyncio.create_task(self.ws.close())
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
+            self.ws_state = WsState.CLOSED

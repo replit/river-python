@@ -2,7 +2,7 @@ import asyncio
 import logging
 from typing import Any
 
-import nanoid  # type: ignore  # type: ignore
+import nanoid
 from pydantic import ValidationError
 from websockets import (
     WebSocketCommonProtocol,
@@ -11,7 +11,6 @@ from websockets import (
 from websockets.exceptions import ConnectionClosed
 
 from replit_river.messages import (
-    PROTOCOL_VERSION,
     FailedSendingMessageException,
     WebsocketClosedException,
     parse_transport_msg,
@@ -25,13 +24,14 @@ from replit_river.rpc import (
     TransportMessage,
 )
 from replit_river.seq_manager import (
-    IgnoreMessageException,
     InvalidMessageException,
     SessionStateMismatchException,
 )
 from replit_river.server_session import ServerSession
 from replit_river.session import Session
 from replit_river.transport_options import TransportOptions
+
+PROTOCOL_VERSION = "v1.1"
 
 logger = logging.getLogger(__name__)
 
@@ -72,13 +72,13 @@ class ServerTransport:
     ) -> ServerSession:
         async for message in websocket:
             try:
-                msg = parse_transport_msg(message, self._transport_options)
+                msg = parse_transport_msg(message)
+                if isinstance(msg, str):
+                    continue
                 (
                     handshake_request,
                     handshake_response,
                 ) = await self._establish_handshake(msg, websocket)
-            except IgnoreMessageException:
-                continue
             except InvalidMessageException as e:
                 error_msg = "Got invalid transport message, closing connection"
                 raise InvalidMessageException(error_msg) from e
