@@ -82,6 +82,13 @@ class ClientSession(Session):
 
         self._setup_heartbeats_task(do_close_websocket)
 
+    async def replace_with_new_websocket(
+        self, new_ws: websockets.WebSocketCommonProtocol
+    ) -> None:
+        await super().replace_with_new_websocket(new_ws)
+        # serve() terminates itself when the ws dies, so we need to start it again
+        await self.start_serve_responses()
+
     async def start_serve_responses(self) -> None:
         self._task_manager.create_task(self.serve())
 
