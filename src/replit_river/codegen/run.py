@@ -48,11 +48,6 @@ def main() -> None:
     client.add_argument("schema", help="schema file")
     args = parser.parse_args()
 
-    method_filter: set[str] | None = None
-    if args.method_filter:
-        with open(args.method_filter) as handle:
-            method_filter = set(x.strip() for x in handle.readlines())
-
     if args.command == "server":
         proto_path = os.path.abspath(args.proto)
         target_directory = os.path.abspath(args.output)
@@ -67,6 +62,11 @@ def main() -> None:
 
         def file_opener(path: Path) -> TextIO:
             return open(path, "w")
+
+        method_filter: set[str] | None = None
+        if args.method_filter:
+            with open(args.method_filter) as handle:
+                method_filter = set(x.strip() for x in handle.readlines())
 
         schema_to_river_client_codegen(
             lambda: open(schema_path),
