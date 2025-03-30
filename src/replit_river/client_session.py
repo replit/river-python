@@ -8,6 +8,7 @@ import nanoid  # type: ignore
 from aiochannel import Channel
 from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span
+import websockets
 
 from replit_river.error_schema import (
     ERROR_CODE_CANCEL,
@@ -33,6 +34,12 @@ logger = logging.getLogger(__name__)
 
 
 class ClientSession(Session):
+    async def replace_with_new_websocket(
+        self, new_ws: websockets.WebSocketCommonProtocol
+    ) -> None:
+        await super().replace_with_new_websocket(new_ws)
+        await self.start_serve_responses()
+
     async def send_rpc(
         self,
         service_name: str,

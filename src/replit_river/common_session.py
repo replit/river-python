@@ -11,6 +11,7 @@ from replit_river.rpc import ACK_BIT
 
 logger = logging.getLogger(__name__)
 
+
 class SendMessage(Protocol):
     async def __call__(
         self,
