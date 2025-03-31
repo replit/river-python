@@ -359,7 +359,11 @@ class Session:
             with use_span(span):
                 trace_propagator.inject(msg, None, trace_setter)
 
+        # We're clear to add to the send buffer
         self._send_buffer.append(msg)
+
+        # Increment immediately so we maintain consistency
+        self.seq += 1
 
         # If the buffer is now full, reset the block
         if len(self._send_buffer) >= self._transport_options.buffer_size:
@@ -367,7 +371,6 @@ class Session:
 
         # Wake up buffered_message_sender
         self._process_messages.set()
-        self.seq += 1
 
     async def close(self) -> None:
         """Close the session and all associated streams."""
