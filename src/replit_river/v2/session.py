@@ -869,7 +869,6 @@ class Session:
         extra_control_flags: int,
         span: Span,
     ) -> None:
-        # close stream
         await self._send_message(
             stream_id=stream_id,
             control_flags=STREAM_CANCEL_BIT | extra_control_flags,
@@ -885,7 +884,6 @@ class Session:
         extra_control_flags: int,
         span: Span,
     ) -> None:
-        # close stream
         await self._send_message(
             service_name=service_name,
             procedure_name=procedure_name,
