@@ -685,7 +685,7 @@ class Session:
             raise RiverServiceException(
                 ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
             ) from e
-        await self.send_close_stream(
+        await self._send_close_stream(
             service_name,
             procedure_name,
             stream_id,
@@ -805,7 +805,7 @@ class Session:
         # Create the encoder task
         async def _encode_stream() -> None:
             if not request:
-                await self.send_close_stream(
+                await self._send_close_stream(
                     service_name,
                     procedure_name,
                     stream_id,
@@ -825,7 +825,7 @@ class Session:
                     control_flags=0,
                     payload=request_serializer(item),
                 )
-            await self.send_close_stream(
+            await self._send_close_stream(
                 service_name,
                 procedure_name,
                 stream_id,
@@ -860,7 +860,7 @@ class Session:
         finally:
             output.close()
 
-    async def send_close_stream(
+    async def _send_close_stream(
         self,
         service_name: str,
         procedure_name: str,
