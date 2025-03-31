@@ -350,7 +350,7 @@ async def setup_heartbeat(
     get_state: Callable[[], SessionState],
     get_closing_grace_period: Callable[[], float | None],
     close_websocket: Callable[[], Awaitable[None]],
-    send_message: SendMessage,
+    send_message: SendMessage[None],
     increment_and_get_heartbeat_misses: Callable[[], int],
 ) -> None:
     while True:

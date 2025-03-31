@@ -17,7 +17,7 @@ from replit_river.rpc import TransportMessage
 logger = logging.getLogger(__name__)
 
 
-class SendMessage(Protocol):
+class SendMessage[Result](Protocol):
     async def __call__(
         self,
         *,
@@ -27,7 +27,7 @@ class SendMessage(Protocol):
         service_name: str | None,
         procedure_name: str | None,
         span: Span | None,
-    ) -> None: ...
+    ) -> Result: ...
 
 
 class SessionState(enum.Enum):
