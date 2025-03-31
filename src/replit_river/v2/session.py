@@ -1146,7 +1146,7 @@ async def _serve(
     ],
     get_stream: Callable[[str], Channel[Any] | None],
     close_stream: Callable[[str], None],
-    send_message: SendMessage,
+    send_message: SendMessage[None],
 ) -> None:
     """Serve messages from the websocket."""
     reset_session_close_countdown()
