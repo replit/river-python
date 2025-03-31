@@ -108,7 +108,7 @@ class Session:
     _state: SessionState
     _close_session_callback: CloseSessionCallback
     _close_session_after_time_secs: float | None
-    _connecting_task: asyncio.Task[Literal[True]] | None
+    _connecting_task: asyncio.Task[None] | None
     _wait_for_connected: asyncio.Event
 
     # ws state
@@ -979,12 +979,12 @@ async def _do_ensure_connected[HandshakeMetadata](
     transition_connected: Callable[[ClientConnection], None],
     finalize_attempt: Callable[[], None],
     do_close: Callable[[], None],
-) -> Literal[True]:
+) -> None:
     logger.info("Attempting to establish new ws connection")
 
     last_error: Exception | None = None
     i = 0
-    while rate_limiter.has_budget_or_throw(client_id, ERROR_HANDSHAKE, last_error):
+    while rate_limiter.has_budget(client_id):
         if i > 0:
             logger.info(f"Retrying build handshake number {i} times")
         i += 1
@@ -1108,16 +1108,17 @@ async def _do_ensure_connected[HandshakeMetadata](
                 f"Error connecting, retrying with {backoff_time}ms backoff"
             )
             await asyncio.sleep(backoff_time / 1000)
-
     finalize_attempt()
 
     if last_error is not None:
+        logger.debug("Handshake attempts exhausted, terminating")
+        do_close()
         raise RiverException(
             ERROR_HANDSHAKE,
             f"Failed to create ws after retrying {max_retry} number of times",
         ) from last_error
 
-    return True
+    return None
 
 
 async def _setup_heartbeat(

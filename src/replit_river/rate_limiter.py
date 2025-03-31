@@ -2,7 +2,6 @@ import asyncio
 import logging
 import random
 from contextvars import Context
-from typing import Literal
 
 from replit_river.error_schema import RiverException
 from replit_river.transport_options import ConnectionRetryOptions
@@ -74,31 +73,6 @@ class LeakyBucketRateLimit:
             bool: True if budget is available, False otherwise.
         """
         return self.get_budget_consumed(user) < self.options.attempt_budget_capacity
-
-    def has_budget_or_throw(
-        self,
-        user: str,
-        error_code: str,
-        last_error: Exception | None,
-    ) -> Literal[True]:
-        """
-        Check if the user has remaining budget to make a retry.
-        If they do not, explode.
-
-        Args:
-            user (str): The identifier for the user.
-
-        Returns:
-            bool: True if budget is available, False otherwise.
-        """
-        if self.get_budget_consumed(user) > self.options.attempt_budget_capacity:
-            logger.debug("No retry budget for %s.", user)
-            raise BudgetExhaustedException(
-                error_code,
-                "No retry budget",
-                client_id=user,
-            ) from last_error
-        return True
 
     def consume_budget(self, user: str) -> None:
         """Increment the budget consumed for the user by 1, indicating a retry attempt.
