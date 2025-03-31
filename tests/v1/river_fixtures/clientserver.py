@@ -9,7 +9,7 @@ from replit_river.client_transport import UriAndMetadata
 from replit_river.server import Server
 from replit_river.transport_options import TransportOptions
 from tests.conftest import HandlerMapping
-from tests.river_fixtures.logging import NoErrors  # noqa: E402
+from tests.v1.river_fixtures.logging import NoErrors  # noqa: E402
 
 
 @pytest.fixture

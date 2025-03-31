@@ -14,21 +14,21 @@ from replit_river.client import Client
 from replit_river.codegen.client import schema_to_river_client_codegen
 from replit_river.error_schema import RiverException
 from replit_river.rpc import rpc_method_handler
-from tests.common_handlers import basic_rpc_method
 from tests.conftest import HandlerMapping, deserialize_request, serialize_response
+from tests.v1.common_handlers import basic_rpc_method
 
 
 @pytest.fixture(scope="session", autouse=True)
 def generate_rpc_client() -> None:
-    shutil.rmtree("tests/codegen/rpc/generated", ignore_errors=True)
-    os.makedirs("tests/codegen/rpc/generated")
+    shutil.rmtree("tests/v1/codegen/rpc/generated", ignore_errors=True)
+    os.makedirs("tests/v1/codegen/rpc/generated")
 
     def file_opener(path: Path) -> TextIO:
         return open(path, "w")
 
     schema_to_river_client_codegen(
-        read_schema=lambda: open("tests/codegen/rpc/schema.json"),
-        target_path="tests/codegen/rpc/generated",
+        read_schema=lambda: open("tests/v1/codegen/rpc/schema.json"),
+        target_path="tests/v1/codegen/rpc/generated",
         client_name="RpcClient",
         typed_dict_inputs=True,
         file_opener=file_opener,
@@ -39,15 +39,15 @@ def generate_rpc_client() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def reload_rpc_import(generate_rpc_client: None) -> None:
-    import tests.codegen.rpc.generated
+    import tests.v1.codegen.rpc.generated
 
-    importlib.reload(tests.codegen.rpc.generated)
+    importlib.reload(tests.v1.codegen.rpc.generated)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("handlers", [{**basic_rpc_method}])
 async def test_basic_rpc(client: Client) -> None:
-    from tests.codegen.rpc.generated import RpcClient
+    from tests.v1.codegen.rpc.generated import RpcClient
 
     res = await RpcClient(client).test_service.rpc_method(
         {
@@ -76,7 +76,7 @@ rpc_timeout_method: HandlerMapping = {
 @pytest.mark.asyncio
 @pytest.mark.parametrize("handlers", [{**rpc_timeout_method}])
 async def test_rpc_timeout(client: Client) -> None:
-    from tests.codegen.rpc.generated import RpcClient
+    from tests.v1.codegen.rpc.generated import RpcClient
 
     with pytest.raises(RiverException):
         await RpcClient(client).test_service.rpc_method(

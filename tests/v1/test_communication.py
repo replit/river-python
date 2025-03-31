@@ -9,12 +9,6 @@ from replit_river.client import Client
 from replit_river.error_schema import RiverError
 from replit_river.rpc import subscription_method_handler
 from replit_river.transport_options import MAX_MESSAGE_BUFFER_SIZE
-from tests.common_handlers import (
-    basic_rpc_method,
-    basic_stream,
-    basic_subscription,
-    basic_upload,
-)
 from tests.conftest import (
     HandlerMapping,
     deserialize_error,
@@ -22,6 +16,12 @@ from tests.conftest import (
     deserialize_response,
     serialize_request,
     serialize_response,
+)
+from tests.v1.common_handlers import (
+    basic_rpc_method,
+    basic_stream,
+    basic_subscription,
+    basic_upload,
 )
 
 

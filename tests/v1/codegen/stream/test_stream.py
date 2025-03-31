@@ -5,8 +5,8 @@ import pytest
 from pytest_snapshot.plugin import Snapshot
 
 from replit_river.client import Client, RiverUnknownError
-from tests.codegen.snapshot.codegen_snapshot_fixtures import validate_codegen
-from tests.common_handlers import basic_stream, error_stream
+from tests.fixtures.codegen_snapshot_fixtures import validate_codegen
+from tests.v1.common_handlers import basic_stream, error_stream
 
 _AlreadyGenerated = False
 
@@ -17,15 +17,17 @@ def stream_client_codegen(snapshot: Snapshot) -> Literal[True]:
     if not _AlreadyGenerated:
         validate_codegen(
             snapshot=snapshot,
-            read_schema=lambda: open("tests/codegen/stream/schema.json"),
+            snapshot_dir="tests/v1/codegen/snapshot/snapshots",
+            read_schema=lambda: open("tests/v1/codegen/stream/schema.json"),
             target_path="test_basic_stream",
             client_name="StreamClient",
+            protocol_version="v1.1",
         )
         _AlreadyGenerated = True
 
-    import tests.codegen.snapshot.snapshots.test_basic_stream
+    import tests.v1.codegen.snapshot.snapshots.test_basic_stream
 
-    importlib.reload(tests.codegen.snapshot.snapshots.test_basic_stream)
+    importlib.reload(tests.v1.codegen.snapshot.snapshots.test_basic_stream)
     return True
 
 
@@ -34,10 +36,10 @@ async def test_basic_stream(
     stream_client_codegen: Literal[True],
     client: Client,
 ) -> None:
-    from tests.codegen.snapshot.snapshots.test_basic_stream import (
+    from tests.v1.codegen.snapshot.snapshots.test_basic_stream import (
         StreamClient,  # noqa: E501
     )
-    from tests.codegen.snapshot.snapshots.test_basic_stream.test_service.stream_method import (  # noqa: E501
+    from tests.v1.codegen.snapshot.snapshots.test_basic_stream.test_service.stream_method import (  # noqa: E501
         Stream_MethodInput,
         Stream_MethodOutput,
     )
@@ -63,7 +65,7 @@ async def test_error_stream(
     erroringClient: Client,
     phase: int,
 ) -> None:
-    from tests.codegen.snapshot.snapshots.test_basic_stream import (
+    from tests.v1.codegen.snapshot.snapshots.test_basic_stream import (
         StreamClient,  # noqa: E501
     )
 

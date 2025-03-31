@@ -6,7 +6,7 @@ from replit_river.seq_manager import (
     SeqManager,
 )
 from tests.conftest import transport_message
-from tests.river_fixtures.logging import NoErrors
+from tests.v1.river_fixtures.logging import NoErrors
 
 
 @pytest.mark.asyncio
