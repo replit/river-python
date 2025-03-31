@@ -4,7 +4,7 @@ from io import StringIO
 
 from pytest_snapshot.plugin import Snapshot
 
-from tests.codegen.snapshot.codegen_snapshot_fixtures import validate_codegen
+from tests.fixtures.codegen_snapshot_fixtures import validate_codegen
 
 test_unknown_enum_schema = """
 {
@@ -173,15 +173,17 @@ test_unknown_enum_schema = """
 def test_unknown_enum(snapshot: Snapshot) -> None:
     validate_codegen(
         snapshot=snapshot,
+        snapshot_dir="tests/v1/codegen/snapshot/snapshots",
         read_schema=lambda: StringIO(test_unknown_enum_schema),
         target_path="test_unknown_enum",
         client_name="foo",
+        protocol_version="v1.1",
     )
 
-    import tests.codegen.snapshot.snapshots.test_unknown_enum
+    import tests.v1.codegen.snapshot.snapshots.test_unknown_enum
 
-    importlib.reload(tests.codegen.snapshot.snapshots.test_unknown_enum)
-    from tests.codegen.snapshot.snapshots.test_unknown_enum.enumService.needsEnum import (  # noqa
+    importlib.reload(tests.v1.codegen.snapshot.snapshots.test_unknown_enum)
+    from tests.v1.codegen.snapshot.snapshots.test_unknown_enum.enumService.needsEnum import (  # noqa
         NeedsenumErrorsTypeAdapter,
     )
 
@@ -209,15 +211,17 @@ def test_unknown_enum(snapshot: Snapshot) -> None:
 def test_unknown_enum_field_aliases(snapshot: Snapshot) -> None:
     validate_codegen(
         snapshot=snapshot,
+        snapshot_dir="tests/v1/codegen/snapshot/snapshots",
         read_schema=lambda: StringIO(test_unknown_enum_schema),
         target_path="test_unknown_enum",
         client_name="foo",
+        protocol_version="v1.1",
     )
 
-    import tests.codegen.snapshot.snapshots.test_unknown_enum
+    import tests.v1.codegen.snapshot.snapshots.test_unknown_enum
 
-    importlib.reload(tests.codegen.snapshot.snapshots.test_unknown_enum)
-    from tests.codegen.snapshot.snapshots.test_unknown_enum.enumService.needsEnumObject import (  # noqa
+    importlib.reload(tests.v1.codegen.snapshot.snapshots.test_unknown_enum)
+    from tests.v1.codegen.snapshot.snapshots.test_unknown_enum.enumService.needsEnumObject import (  # noqa
         NeedsenumobjectOutputTypeAdapter,
         NeedsenumobjectOutput,
         NeedsenumobjectOutputFooOneOf_out_first,

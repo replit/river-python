@@ -1,6 +1,6 @@
 from io import StringIO
 from pathlib import Path
-from typing import Callable, TextIO
+from typing import Callable, Literal, TextIO
 
 from pytest_snapshot.plugin import Snapshot
 
@@ -15,12 +15,14 @@ class UnclosableStringIO(StringIO):
 def validate_codegen(
     *,
     snapshot: Snapshot,
+    snapshot_dir: str,
     read_schema: Callable[[], TextIO],
     target_path: str,
     client_name: str,
+    protocol_version: Literal["v1.1", "v2.0"],
     typeddict_inputs: bool = True,
 ) -> None:
-    snapshot.snapshot_dir = "tests/codegen/snapshot/snapshots"
+    snapshot.snapshot_dir = snapshot_dir
     files: dict[Path, UnclosableStringIO] = {}
 
     def file_opener(path: Path) -> TextIO:
@@ -36,7 +38,7 @@ def validate_codegen(
         file_opener=file_opener,
         typed_dict_inputs=typeddict_inputs,
         method_filter=None,
-        protocol_version="v1.1",
+        protocol_version=protocol_version,
     )
     for path, file in files.items():
         file.seek(0)

@@ -7,14 +7,14 @@ import pytest
 
 from replit_river.client import Client
 from replit_river.error_schema import ERROR_CODE_CANCEL, RiverException
-from tests.common_handlers import (
-    rpc_method_handler,
-)
 from tests.conftest import (
     HandlerMapping,
     deserialize_error,
     deserialize_response,
     serialize_response,
+)
+from tests.v1.common_handlers import (
+    rpc_method_handler,
 )
 
 

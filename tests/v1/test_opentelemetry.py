@@ -11,12 +11,6 @@ from opentelemetry.trace import StatusCode
 from replit_river.client import Client
 from replit_river.error_schema import RiverError, RiverException
 from replit_river.rpc import stream_method_handler
-from tests.common_handlers import (
-    basic_rpc_method,
-    basic_stream,
-    basic_subscription,
-    basic_upload,
-)
 from tests.conftest import (
     HandlerMapping,
     deserialize_error,
@@ -25,7 +19,13 @@ from tests.conftest import (
     serialize_request,
     serialize_response,
 )
-from tests.river_fixtures.logging import NoErrors
+from tests.v1.common_handlers import (
+    basic_rpc_method,
+    basic_stream,
+    basic_subscription,
+    basic_upload,
+)
+from tests.v1.river_fixtures.logging import NoErrors
 
 
 @pytest.mark.asyncio

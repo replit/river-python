@@ -14,7 +14,10 @@ from replit_river.rpc import (
 )
 
 # Modular fixtures
-pytest_plugins = ["tests.river_fixtures.logging", "tests.river_fixtures.clientserver"]
+pytest_plugins = [
+    "tests.v1.river_fixtures.logging",
+    "tests.v1.river_fixtures.clientserver",
+]
 
 HandlerKind = Literal["rpc", "subscription-stream", "upload-stream", "stream"]
 HandlerMapping = Mapping[tuple[str, str], tuple[HandlerKind, GenericRpcHandlerBuilder]]
