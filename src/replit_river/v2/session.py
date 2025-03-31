@@ -2,11 +2,13 @@ import asyncio
 import logging
 from collections import deque
 from collections.abc import AsyncIterable
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import timedelta
 from typing import (
     Any,
     AsyncGenerator,
+    AsyncIterator,
     Awaitable,
     Callable,
     Coroutine,
@@ -119,7 +121,7 @@ class Session:
     _space_available: asyncio.Event
 
     # stream for tasks
-    _streams: dict[str, Channel[Any]]
+    _streams: dict[str, tuple[asyncio.Event, Channel[Any]]]
 
     # book keeping
     _ack_buffer: deque[TransportMessage]
@@ -165,7 +167,7 @@ class Session:
         self._space_available.set()
 
         # stream for tasks
-        self._streams: dict[str, Channel[Any]] = {}
+        self._streams: dict[str, tuple[asyncio.Event, Channel[Any]]] = {}
 
         # book keeping
         self._ack_buffer = deque()
@@ -394,10 +396,12 @@ class Session:
 
         # TODO: unexpected_close should close stream differently here to
         # throw exception correctly.
-        for stream in self._streams.values():
+        for event, stream in self._streams.values():
             stream.close()
+            # Wake up backpressured writers
+            event.set()
         # Before we GC the streams, let's wait for all tasks to be closed gracefully.
-        await asyncio.gather(*[x.join() for x in self._streams.values()])
+        await asyncio.gather(*[stream.join() for _, stream in self._streams.values()])
         self._streams.clear()
 
         if self._ws:
@@ -558,9 +562,6 @@ class Session:
 
             return True
 
-        def close_stream(stream_id: str) -> None:
-            del self._streams[stream_id]
-
         async def block_until_connected() -> None:
             await self._wait_for_connected.wait()
 
@@ -576,10 +577,23 @@ class Session:
                 close_session=self.close,
                 assert_incoming_seq_bookkeeping=assert_incoming_seq_bookkeeping,
                 get_stream=lambda stream_id: self._streams.get(stream_id),
-                close_stream=close_stream,
                 send_message=self._send_message,
             )
         )
+
+    @asynccontextmanager
+    async def _with_stream(
+        self,
+        session_id: str,
+        maxsize: int,
+    ) -> AsyncIterator[tuple[asyncio.Event, Channel[Any]]]:
+        output: Channel[Any] = Channel(maxsize=maxsize)
+        event = asyncio.Event()
+        self._streams[session_id] = (event, output)
+        try:
+            yield (event, output)
+        finally:
+            del self._streams[session_id]
 
     async def send_rpc[R, A](
         self,
@@ -597,45 +611,48 @@ class Session:
         Expects the input and output be messages that will be msgpacked.
         """
         stream_id = nanoid.generate()
-        output: Channel[Any] = Channel(1)
-        self._streams[stream_id] = output
-        await self._send_message(
-            stream_id=stream_id,
-            control_flags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
-            payload=request_serializer(request),
-            service_name=service_name,
-            procedure_name=procedure_name,
-            span=span,
-        )
-        # Handle potential errors during communication
-        try:
-            async with asyncio.timeout(timeout.total_seconds()):
-                response = await output.get()
-        except asyncio.TimeoutError as e:
-            await self._send_cancel_stream(
+        async with self._with_stream(stream_id, 1) as (event, output):
+            await self._send_message(
                 stream_id=stream_id,
-                extra_control_flags=0,
+                control_flags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
+                payload=request_serializer(request),
+                service_name=service_name,
+                procedure_name=procedure_name,
                 span=span,
             )
-            raise RiverException(ERROR_CODE_CANCEL, str(e)) from e
-        except ChannelClosed as e:
-            raise RiverServiceException(
-                ERROR_CODE_STREAM_CLOSED,
-                "Stream closed before response",
-                service_name,
-                procedure_name,
-            ) from e
-        except RuntimeError as e:
-            raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
-        if not response.get("ok", False):
+            # Handle potential errors during communication
             try:
-                error = error_deserializer(response["payload"])
-            except Exception as e:
-                raise RiverException("error_deserializer", str(e)) from e
-            raise exception_from_message(error.code)(
-                error.code, error.message, service_name, procedure_name
-            )
-        return response_deserializer(response["payload"])
+                async with asyncio.timeout(timeout.total_seconds()):
+                    # Block for event for symmetry with backpressured producers
+                    # Here this should be trivially true.
+                    await event.wait()
+                    response = await output.get()
+            except asyncio.TimeoutError as e:
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    extra_control_flags=0,
+                    span=span,
+                )
+                raise RiverException(ERROR_CODE_CANCEL, str(e)) from e
+            except ChannelClosed as e:
+                raise RiverServiceException(
+                    ERROR_CODE_STREAM_CLOSED,
+                    "Stream closed before response",
+                    service_name,
+                    procedure_name,
+                ) from e
+            except RuntimeError as e:
+                raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
+            if not response.get("ok", False):
+                try:
+                    error = error_deserializer(response["payload"])
+                except Exception as e:
+                    raise RiverException("error_deserializer", str(e)) from e
+                raise exception_from_message(error.code)(
+                    error.code, error.message, service_name, procedure_name
+                )
+
+            return response_deserializer(response["payload"])
 
     async def send_upload[I, R, A](
         self,
@@ -655,78 +672,82 @@ class Session:
         """
 
         stream_id = nanoid.generate()
-        output: Channel[Any] = Channel(1)
-        self._streams[stream_id] = output
-        try:
-            await self._send_message(
-                stream_id=stream_id,
-                control_flags=STREAM_OPEN_BIT,
-                service_name=service_name,
-                procedure_name=procedure_name,
-                payload=init_serializer(init),
-                span=span,
-            )
+        async with self._with_stream(stream_id, 1) as (event, output):
+            try:
+                await self._send_message(
+                    stream_id=stream_id,
+                    control_flags=STREAM_OPEN_BIT,
+                    service_name=service_name,
+                    procedure_name=procedure_name,
+                    payload=init_serializer(init),
+                    span=span,
+                )
 
-            if request:
-                assert request_serializer, "send_stream missing request_serializer"
+                if request:
+                    assert request_serializer, "send_stream missing request_serializer"
 
-                # If this request is not closed and the session is killed, we should
-                # throw exception here
-                async for item in request:
-                    await self._send_message(
-                        stream_id=stream_id,
-                        service_name=service_name,
-                        procedure_name=procedure_name,
-                        control_flags=0,
-                        payload=request_serializer(item),
-                        span=span,
-                    )
-        except WebsocketClosedException as e:
-            raise RiverServiceException(
-                ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
-            ) from e
-        except Exception as e:
-            # If we get any exception other than WebsocketClosedException,
-            # cancel the stream.
-            await self._send_cancel_stream(
-                stream_id=stream_id,
+                    # If this request is not closed and the session is killed, we should
+                    # throw exception here
+                    async for item in request:
+                        # Block for backpressure
+                        await event.wait()
+                        if output.closed():
+                            logger.debug("Stream is closed, avoid sending the rest")
+                            break
+                        await self._send_message(
+                            stream_id=stream_id,
+                            service_name=service_name,
+                            procedure_name=procedure_name,
+                            control_flags=0,
+                            payload=request_serializer(item),
+                            span=span,
+                        )
+            except WebsocketClosedException as e:
+                raise RiverServiceException(
+                    ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
+                ) from e
+            except Exception as e:
+                # If we get any exception other than WebsocketClosedException,
+                # cancel the stream.
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    extra_control_flags=0,
+                    span=span,
+                )
+                raise RiverServiceException(
+                    ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
+                ) from e
+            await self._send_close_stream(
+                service_name,
+                procedure_name,
+                stream_id,
                 extra_control_flags=0,
                 span=span,
             )
-            raise RiverServiceException(
-                ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
-            ) from e
-        await self._send_close_stream(
-            service_name,
-            procedure_name,
-            stream_id,
-            extra_control_flags=0,
-            span=span,
-        )
 
-        # Handle potential errors during communication
-        # TODO: throw a error when the transport is hard closed
-        try:
-            response = await output.get()
-        except ChannelClosed as e:
-            raise RiverServiceException(
-                ERROR_CODE_STREAM_CLOSED,
-                "Stream closed before response",
-                service_name,
-                procedure_name,
-            ) from e
-        except RuntimeError as e:
-            raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
-        if not response.get("ok", False):
+            # Handle potential errors during communication
+            # TODO: throw a error when the transport is hard closed
             try:
-                error = error_deserializer(response["payload"])
-            except Exception as e:
-                raise RiverException("error_deserializer", str(e)) from e
-            raise exception_from_message(error.code)(
-                error.code, error.message, service_name, procedure_name
-            )
+                response = await output.get()
+            except ChannelClosed as e:
+                raise RiverServiceException(
+                    ERROR_CODE_STREAM_CLOSED,
+                    "Stream closed before response",
+                    service_name,
+                    procedure_name,
+                ) from e
+            except RuntimeError as e:
+                raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
+            if not response.get("ok", False):
+                try:
+                    error = error_deserializer(response["payload"])
+                except Exception as e:
+                    raise RiverException("error_deserializer", str(e)) from e
+                raise exception_from_message(error.code)(
+                    error.code, error.message, service_name, procedure_name
+                )
 
-        return response_deserializer(response["payload"])
+            return response_deserializer(response["payload"])
 
     async def send_subscription[R, E, A](
         self,
@@ -743,42 +764,42 @@ class Session:
         Expects the input and output be messages that will be msgpacked.
         """
         stream_id = nanoid.generate()
-        output: Channel[Any] = Channel(MAX_MESSAGE_BUFFER_SIZE)
-        self._streams[stream_id] = output
-        await self._send_message(
-            service_name=service_name,
-            procedure_name=procedure_name,
-            stream_id=stream_id,
-            control_flags=STREAM_OPEN_BIT,
-            payload=request_serializer(request),
-            span=span,
-        )
+        async with self._with_stream(stream_id, MAX_MESSAGE_BUFFER_SIZE) as (_, output):
+            await self._send_message(
+                service_name=service_name,
+                procedure_name=procedure_name,
+                stream_id=stream_id,
+                control_flags=STREAM_OPEN_BIT,
+                payload=request_serializer(request),
+                span=span,
+            )
 
-        # Handle potential errors during communication
-        try:
-            async for item in output:
-                if item.get("type") == "CLOSE":
-                    break
-                if not item.get("ok", False):
-                    try:
-                        yield error_deserializer(item["payload"])
-                    except Exception:
-                        logger.exception(
-                            f"Error during subscription error deserialization: {item}"
-                        )
-                    continue
-                yield response_deserializer(item["payload"])
-        except (RuntimeError, ChannelClosed) as e:
-            raise RiverServiceException(
-                ERROR_CODE_STREAM_CLOSED,
-                "Stream closed before response",
-                service_name,
-                procedure_name,
-            ) from e
-        except Exception as e:
-            raise e
-        finally:
-            output.close()
+            # Handle potential errors during communication
+            try:
+                async for item in output:
+                    if item.get("type") == "CLOSE":
+                        break
+                    if not item.get("ok", False):
+                        try:
+                            yield error_deserializer(item["payload"])
+                        except Exception:
+                            logger.exception(
+                                "Error during subscription "
+                                f"error deserialization: {item}"
+                            )
+                        continue
+                    yield response_deserializer(item["payload"])
+            except (RuntimeError, ChannelClosed) as e:
+                raise RiverServiceException(
+                    ERROR_CODE_STREAM_CLOSED,
+                    "Stream closed before response",
+                    service_name,
+                    procedure_name,
+                ) from e
+            except Exception as e:
+                raise e
+            finally:
+                output.close()
 
     async def send_stream[I, R, E, A](
         self,
@@ -798,81 +819,89 @@ class Session:
         """
 
         stream_id = nanoid.generate()
-        output: Channel[Any] = Channel(MAX_MESSAGE_BUFFER_SIZE)
-        self._streams[stream_id] = output
-        try:
-            await self._send_message(
-                service_name=service_name,
-                procedure_name=procedure_name,
-                stream_id=stream_id,
-                control_flags=STREAM_OPEN_BIT,
-                payload=init_serializer(init),
-                span=span,
-            )
-        except Exception as e:
-            raise StreamClosedRiverServiceException(
-                ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
-            ) from e
-
-        # Create the encoder task
-        async def _encode_stream() -> None:
-            if not request:
-                await self._send_close_stream(
-                    service_name,
-                    procedure_name,
-                    stream_id,
-                    extra_control_flags=STREAM_OPEN_BIT,
-                    span=span,
-                )
-                return
-
-            assert request_serializer, "send_stream missing request_serializer"
-
-            async for item in request:
-                if item is None:
-                    continue
+        async with self._with_stream(
+            stream_id,
+            MAX_MESSAGE_BUFFER_SIZE,
+        ) as (event, output):
+            try:
                 await self._send_message(
                     service_name=service_name,
                     procedure_name=procedure_name,
                     stream_id=stream_id,
-                    control_flags=0,
-                    payload=request_serializer(item),
+                    control_flags=STREAM_OPEN_BIT,
+                    payload=init_serializer(init),
+                    span=span,
                 )
-            await self._send_close_stream(
-                service_name,
-                procedure_name,
-                stream_id,
-                extra_control_flags=0,
-                span=span,
-            )
+            except Exception as e:
+                raise StreamClosedRiverServiceException(
+                    ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
+                ) from e
 
-        self._task_manager.create_task(_encode_stream())
+            # Create the encoder task
+            async def _encode_stream() -> None:
+                if not request:
+                    await self._send_close_stream(
+                        service_name,
+                        procedure_name,
+                        stream_id,
+                        extra_control_flags=STREAM_OPEN_BIT,
+                        span=span,
+                    )
+                    return
 
-        # Handle potential errors during communication
-        try:
-            async for item in output:
-                if item.get("type") == "CLOSE":
-                    break
-                if not item.get("ok", False):
-                    try:
-                        yield error_deserializer(item["payload"])
-                    except Exception:
-                        logger.exception(
-                            f"Error during subscription error deserialization: {item}"
-                        )
-                    continue
-                yield response_deserializer(item["payload"])
-        except (RuntimeError, ChannelClosed) as e:
-            raise RiverServiceException(
-                ERROR_CODE_STREAM_CLOSED,
-                "Stream closed before response",
-                service_name,
-                procedure_name,
-            ) from e
-        except Exception as e:
-            raise e
-        finally:
-            output.close()
+                assert request_serializer, "send_stream missing request_serializer"
+
+                async for item in request:
+                    if item is None:
+                        continue
+                    await event.wait()
+                    if output.closed():
+                        logger.debug("Stream is closed, avoid sending the rest")
+                        break
+                    await self._send_message(
+                        service_name=service_name,
+                        procedure_name=procedure_name,
+                        stream_id=stream_id,
+                        control_flags=0,
+                        payload=request_serializer(item),
+                    )
+                await self._send_close_stream(
+                    service_name,
+                    procedure_name,
+                    stream_id,
+                    extra_control_flags=0,
+                    span=span,
+                )
+
+            self._task_manager.create_task(_encode_stream())
+
+            # Handle potential errors during communication
+            try:
+                async for item in output:
+                    if item.get("type") == "CLOSE":
+                        break
+                    if not item.get("ok", False):
+                        try:
+                            yield error_deserializer(item["payload"])
+                        except Exception:
+                            logger.exception(
+                                "Error during subscription "
+                                f"error deserialization: {item}"
+                            )
+                        continue
+                    yield response_deserializer(item["payload"])
+            except (RuntimeError, ChannelClosed) as e:
+                raise RiverServiceException(
+                    ERROR_CODE_STREAM_CLOSED,
+                    "Stream closed before response",
+                    service_name,
+                    procedure_name,
+                ) from e
+            except Exception as e:
+                raise e
+            finally:
+                output.close()
+                event.set()
 
     async def _send_cancel_stream(
         self,
@@ -1144,8 +1173,7 @@ async def _serve(
     assert_incoming_seq_bookkeeping: Callable[
         [str, int, int], Literal[True] | _IgnoreMessage
     ],
-    get_stream: Callable[[str], Channel[Any] | None],
-    close_stream: Callable[[str], None],
+    get_stream: Callable[[str], tuple[asyncio.Event, Channel[Any]] | None],
     send_message: SendMessage[None],
 ) -> None:
     """Serve messages from the websocket."""
@@ -1230,24 +1258,29 @@ async def _serve(
                         )
                         continue
 
-                    stream = get_stream(msg.streamId)
+                    event_stream = get_stream(msg.streamId)
 
-                    if not stream:
+                    if not event_stream:
                         logger.warning(
                             "no stream for %s, ignoring message",
                             msg.streamId,
                         )
                         continue
 
+                    event, stream = event_stream
+
                     if (
                         msg.controlFlags & STREAM_CLOSED_BIT != 0
                         and msg.payload.get("type", None) == "CLOSE"
                     ):
                         # close message is not sent to the stream
+                        # event is set during cleanup down below
                         pass
                     else:
                         try:
                             await stream.put(msg.payload)
+                            # Wake up backpressured writer
+                            event.set()
                         except ChannelClosed:
                             # The client is no longer interested in this stream,
                             # just drop the message.
@@ -1256,9 +1289,10 @@ async def _serve(
                             raise InvalidMessageException(e) from e
 
                     if msg.controlFlags & STREAM_CLOSED_BIT != 0:
-                        if stream:
-                            stream.close()
-                        close_stream(msg.streamId)
+                        # Communicate that we're going down
+                        stream.close()
+                        # Wake up backpressured writer
+                        event.set()
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
                     await close_session()
