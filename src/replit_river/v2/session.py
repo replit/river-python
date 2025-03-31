@@ -690,6 +690,7 @@ class Session:
             procedure_name,
             stream_id,
             extra_control_flags=0,
+            span=span,
         )
 
         # Handle potential errors during communication
@@ -810,6 +811,7 @@ class Session:
                     procedure_name,
                     stream_id,
                     extra_control_flags=STREAM_OPEN_BIT,
+                    span=span,
                 )
                 return
 
@@ -830,6 +832,7 @@ class Session:
                 procedure_name,
                 stream_id,
                 extra_control_flags=0,
+                span=span,
             )
 
         self._task_manager.create_task(_encode_stream())
@@ -866,6 +869,7 @@ class Session:
         procedure_name: str,
         stream_id: str,
         extra_control_flags: int,
+        span: Span,
     ) -> None:
         # close stream
         await self._send_message(
@@ -873,9 +877,8 @@ class Session:
             procedure_name=procedure_name,
             stream_id=stream_id,
             control_flags=STREAM_CLOSED_BIT | extra_control_flags,
-            payload={
-                "type": "CLOSE",
-            },
+            payload={"type": "CLOSE"},
+            span=span,
         )
 
 
