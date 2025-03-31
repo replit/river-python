@@ -609,12 +609,9 @@ class Session:
             async with asyncio.timeout(timeout.total_seconds()):
                 response = await output.get()
         except asyncio.TimeoutError as e:
-            await self._send_message(
+            await self._send_cancel_stream(
                 stream_id=stream_id,
-                control_flags=STREAM_CANCEL_BIT,
-                payload={"type": "CANCEL"},
-                service_name=service_name,
-                procedure_name=procedure_name,
+                extra_control_flags=0,
                 span=span,
             )
             raise RiverException(ERROR_CODE_CANCEL, str(e)) from e
@@ -862,6 +859,20 @@ class Session:
             raise e
         finally:
             output.close()
+
+    async def _send_cancel_stream(
+        self,
+        stream_id: str,
+        extra_control_flags: int,
+        span: Span,
+    ) -> None:
+        # close stream
+        await self._send_message(
+            stream_id=stream_id,
+            control_flags=STREAM_CANCEL_BIT | extra_control_flags,
+            payload={"type": "CANCEL"},
+            span=span,
+        )
 
     async def _send_close_stream(
         self,
