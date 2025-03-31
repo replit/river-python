@@ -464,6 +464,7 @@ class Session:
             # Wake up backpressured writer
             backpressure_waiter, _ = self._streams[pending.streamId]
             backpressure_waiter.set()
+
         def get_next_pending() -> TransportMessage | None:
             if self._send_buffer:
                 return self._send_buffer[0]
@@ -923,8 +924,7 @@ class Session:
                             yield error_deserializer(result["payload"])
                         except Exception:
                             logger.exception(
-                                "Error during stream "
-                                f"error deserialization: {result}"
+                                f"Error during stream error deserialization: {result}"
                             )
                         continue
                     yield response_deserializer(result["payload"])
@@ -1228,10 +1228,14 @@ async def _serve(
             logger.debug(f"_serve loop count={idx}")
             idx += 1
             ws = None
-            while (
-                state := get_state()
-            ) in ConnectingStates or (ws := get_ws()) is None:
-                logger.debug("_handle_messages_from_ws spinning while connecting, %r %r", ws, state)
+            while (state := get_state()) in ConnectingStates or (
+                ws := get_ws()
+            ) is None:
+                logger.debug(
+                    "_handle_messages_from_ws spinning while connecting, %r %r",
+                    ws,
+                    state,
+                )
                 await block_until_connected()
                 if state in TerminalStates:
                     break
