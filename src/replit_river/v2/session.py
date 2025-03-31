@@ -681,7 +681,18 @@ class Session:
                         payload=request_serializer(item),
                         span=span,
                     )
+        except WebsocketClosedException as e:
+            raise RiverServiceException(
+                ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
+            ) from e
         except Exception as e:
+            # If we get any exception other than WebsocketClosedException,
+            # cancel the stream.
+            await self._send_cancel_stream(
+                stream_id=stream_id,
+                extra_control_flags=0,
+                span=span,
+            )
             raise RiverServiceException(
                 ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
             ) from e
