@@ -451,6 +451,9 @@ class Session:
             if not self._send_buffer:
                 self._process_messages.clear()
 
+            # Wake up backpressured writer
+            backpressure_waiter, _ = self._streams[pending.streamId]
+            backpressure_waiter.set()
         def get_next_pending() -> TransportMessage | None:
             if self._send_buffer:
                 return self._send_buffer[0]
@@ -1298,8 +1301,6 @@ async def _serve(
                     else:
                         try:
                             await stream.put(msg.payload)
-                            # Wake up backpressured writer
-                            backpressure_waiter.set()
                         except ChannelClosed:
                             # The client is no longer interested in this stream,
                             # just drop the message.
