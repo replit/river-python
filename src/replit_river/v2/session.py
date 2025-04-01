@@ -418,10 +418,10 @@ class Session:
 
         # TODO: unexpected_close should close stream differently here to
         # throw exception correctly.
-        for event, stream in self._streams.values():
+        for backpressure_waiter, stream in self._streams.values():
             stream.close()
             # Wake up backpressured writers
-            event.set()
+            backpressure_waiter.set()
         # Before we GC the streams, let's wait for all tasks to be closed gracefully.
         await asyncio.gather(*[stream.join() for _, stream in self._streams.values()])
         self._streams.clear()
@@ -610,10 +610,10 @@ class Session:
         maxsize: int,
     ) -> AsyncIterator[tuple[asyncio.Event, Channel[ResultType]]]:
         output: Channel[Any] = Channel(maxsize=maxsize)
-        event = asyncio.Event()
-        self._streams[session_id] = (event, output)
+        backpressure_waiter = asyncio.Event()
+        self._streams[session_id] = (backpressure_waiter, output)
         try:
-            yield (event, output)
+            yield (backpressure_waiter, output)
         finally:
             del self._streams[session_id]
 
@@ -633,7 +633,7 @@ class Session:
         Expects the input and output be messages that will be msgpacked.
         """
         stream_id = nanoid.generate()
-        async with self._with_stream(stream_id, 1) as (event, output):
+        async with self._with_stream(stream_id, 1) as (backpressure_waiter, output):
             await self._send_message(
                 stream_id=stream_id,
                 control_flags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
@@ -647,7 +647,7 @@ class Session:
                 async with asyncio.timeout(timeout.total_seconds()):
                     # Block for event for symmetry with backpressured producers
                     # Here this should be trivially true.
-                    await event.wait()
+                    await backpressure_waiter.wait()
                     result = await output.get()
             except asyncio.TimeoutError as e:
                 await self._send_cancel_stream(
@@ -694,7 +694,7 @@ class Session:
         """
 
         stream_id = nanoid.generate()
-        async with self._with_stream(stream_id, 1) as (event, output):
+        async with self._with_stream(stream_id, 1) as (backpressure_waiter, output):
             try:
                 await self._send_message(
                     stream_id=stream_id,
@@ -712,7 +712,7 @@ class Session:
                     # throw exception here
                     async for item in request:
                         # Block for backpressure
-                        await event.wait()
+                        await backpressure_waiter.wait()
                         if output.closed():
                             logger.debug("Stream is closed, avoid sending the rest")
                             break
@@ -842,7 +842,7 @@ class Session:
         async with self._with_stream(
             stream_id,
             MAX_MESSAGE_BUFFER_SIZE,
-        ) as (event, output):
+        ) as (backpressure_waiter, output):
             try:
                 await self._send_message(
                     service_name=service_name,
@@ -872,7 +872,7 @@ class Session:
                 async for item in request:
                     if item is None:
                         continue
-                    await event.wait()
+                    await backpressure_waiter.wait()
                     if output.closed():
                         logger.debug("Stream is closed, avoid sending the rest")
                         break
@@ -915,7 +915,7 @@ class Session:
                 raise e
             finally:
                 output.close()
-                event.set()
+                backpressure_waiter.set()
 
     async def _send_cancel_stream(
         self,
@@ -1286,7 +1286,7 @@ async def _serve(
                         )
                         continue
 
-                    event, stream = event_stream
+                    backpressure_waiter, stream = event_stream
 
                     if (
                         msg.controlFlags & STREAM_CLOSED_BIT != 0
@@ -1299,7 +1299,7 @@ async def _serve(
                         try:
                             await stream.put(msg.payload)
                             # Wake up backpressured writer
-                            event.set()
+                            backpressure_waiter.set()
                         except ChannelClosed:
                             # The client is no longer interested in this stream,
                             # just drop the message.
@@ -1311,7 +1311,7 @@ async def _serve(
                         # Communicate that we're going down
                         stream.close()
                         # Wake up backpressured writer
-                        event.set()
+                        backpressure_waiter.set()
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
                     await close_session()
