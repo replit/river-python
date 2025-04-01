@@ -303,6 +303,7 @@ class Session:
         )
         self._state = SessionState.NO_CONNECTION
         self._close_session_after_time_secs = close_session_after_time_secs
+        self._wait_for_connected.clear()
 
     async def _get_current_time(self) -> float:
         return asyncio.get_event_loop().time()
