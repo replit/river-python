@@ -73,6 +73,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         if self._session and not self._transport_options.transparent_reconnect:
             logger.info("transparent_reconnect not set, closing {self._transport_id}")
             await self._session.close()
+        logger.debug("Triggering get_or_create_session")
         return await self.get_or_create_session()
 
     async def _delete_session(self, session: Session) -> None:
