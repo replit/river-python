@@ -13,7 +13,9 @@ from typing import (
     Callable,
     Coroutine,
     Literal,
+    NotRequired,
     TypeAlias,
+    TypedDict,
     assert_never,
 )
 
@@ -80,6 +82,24 @@ STREAM_CANCEL_BIT: STREAM_CANCEL_BIT_TYPE = 0b00100
 STREAM_CLOSED_BIT_TYPE = Literal[0b01000]
 STREAM_CLOSED_BIT: STREAM_CLOSED_BIT_TYPE = 0b01000
 
+
+class ResultOk(TypedDict):
+    ok: Literal[True]
+    payload: Any
+
+
+class ErrorPayload(TypedDict):
+    code: str
+    message: str
+
+
+class ResultError(TypedDict):
+    # Account for structurally incoherent payloads
+    ok: NotRequired[Literal[False]]
+    payload: ErrorPayload
+
+
+ResultType: TypeAlias = ResultOk | ResultError
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +329,7 @@ class Session:
         return asyncio.get_event_loop().time()
 
     def _reset_session_close_countdown(self) -> None:
-        logger.debug('_reset_session_close_countdown')
+        logger.debug("_reset_session_close_countdown")
         self._heartbeat_misses = 0
         self._close_session_after_time_secs = None
 
@@ -588,7 +608,7 @@ class Session:
         self,
         session_id: str,
         maxsize: int,
-    ) -> AsyncIterator[tuple[asyncio.Event, Channel[Any]]]:
+    ) -> AsyncIterator[tuple[asyncio.Event, Channel[ResultType]]]:
         output: Channel[Any] = Channel(maxsize=maxsize)
         event = asyncio.Event()
         self._streams[session_id] = (event, output)
@@ -628,7 +648,7 @@ class Session:
                     # Block for event for symmetry with backpressured producers
                     # Here this should be trivially true.
                     await event.wait()
-                    response = await output.get()
+                    result = await output.get()
             except asyncio.TimeoutError as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
@@ -645,16 +665,16 @@ class Session:
                 ) from e
             except RuntimeError as e:
                 raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
-            if not response.get("ok", False):
+            if "ok" not in result or not result["ok"]:
                 try:
-                    error = error_deserializer(response["payload"])
+                    error = error_deserializer(result["payload"])
                 except Exception as e:
                     raise RiverException("error_deserializer", str(e)) from e
                 raise exception_from_message(error.code)(
                     error.code, error.message, service_name, procedure_name
                 )
 
-            return response_deserializer(response["payload"])
+            return response_deserializer(result["payload"])
 
     async def send_upload[I, R, A](
         self,
@@ -730,7 +750,7 @@ class Session:
             # Handle potential errors during communication
             # TODO: throw a error when the transport is hard closed
             try:
-                response = await output.get()
+                result = await output.get()
             except ChannelClosed as e:
                 raise RiverServiceException(
                     ERROR_CODE_STREAM_CLOSED,
@@ -740,16 +760,16 @@ class Session:
                 ) from e
             except RuntimeError as e:
                 raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
-            if not response.get("ok", False):
+            if "ok" not in result or not result["ok"]:
                 try:
-                    error = error_deserializer(response["payload"])
+                    error = error_deserializer(result["payload"])
                 except Exception as e:
                     raise RiverException("error_deserializer", str(e)) from e
                 raise exception_from_message(error.code)(
                     error.code, error.message, service_name, procedure_name
                 )
 
-            return response_deserializer(response["payload"])
+            return response_deserializer(result["payload"])
 
     async def send_subscription[R, E, A](
         self,
@@ -879,19 +899,19 @@ class Session:
 
             # Handle potential errors during communication
             try:
-                async for item in output:
-                    if item.get("type") == "CLOSE":
+                async for result in output:
+                    if result.get("type") == "CLOSE":
                         break
-                    if not item.get("ok", False):
+                    if "ok" not in result or not result["ok"]:
                         try:
-                            yield error_deserializer(item["payload"])
+                            yield error_deserializer(result["payload"])
                         except Exception:
                             logger.exception(
-                                "Error during subscription "
-                                f"error deserialization: {item}"
+                                "Error during stream "
+                                f"error deserialization: {result}"
                             )
                         continue
-                    yield response_deserializer(item["payload"])
+                    yield response_deserializer(result["payload"])
             except (RuntimeError, ChannelClosed) as e:
                 raise RiverServiceException(
                     ERROR_CODE_STREAM_CLOSED,
@@ -946,7 +966,7 @@ async def _check_to_close_session(
 ) -> None:
     our_task = asyncio.current_task()
     while our_task and not our_task.cancelling() and not our_task.cancelled():
-        logger.debug('_check_to_close_session: Checking')
+        logger.debug("_check_to_close_session: Checking")
         await asyncio.sleep(close_session_check_interval_ms / 1000)
         if get_state() in TerminalStates:
             # already closing
@@ -957,7 +977,9 @@ async def _check_to_close_session(
         current_time = await get_current_time()
         close_session_after_time_secs = get_close_session_after_time_secs()
         if not close_session_after_time_secs:
-            logger.debug(f'_check_to_close_session: Not reached: {close_session_after_time_secs}')
+            logger.debug(
+                f"_check_to_close_session: Not reached: {close_session_after_time_secs}"
+            )
             continue
         if current_time > close_session_after_time_secs:
             logger.info("Grace period ended for %s, closing session", transport_id)
@@ -1138,8 +1160,8 @@ async def _setup_heartbeat(
     while True:
         while (state := get_state()) in ConnectingStates:
             logger.debug(
-                    "Heartbeat: block_until_connected: %r",
-                    state,
+                "Heartbeat: block_until_connected: %r",
+                state,
             )
             await block_until_connected()
 
