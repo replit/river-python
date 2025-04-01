@@ -238,10 +238,17 @@ class Session:
                 self._terminating_task = asyncio.create_task(self.close())
 
         def transition_connecting() -> None:
+            if self._state in TerminalStates:
+                return
+            logger.debug("transition_connecting")
+            self._state = SessionState.CONNECTING
             # "Clear" here means observers should wait until we are connected.
             self._wait_for_connected.clear()
 
         def transition_connected(ws: ClientConnection) -> None:
+            if self._state in TerminalStates:
+                return
+            logger.debug("transition_connected")
             self._state = SessionState.ACTIVE
             self._ws = ws
 
@@ -465,7 +472,9 @@ class Session:
             return None
 
         async def block_until_connected() -> None:
+            logger.debug("block_until_connected")
             await self._wait_for_connected.wait()
+            logger.debug("block_until_connected released!")
 
         async def block_until_message_available() -> None:
             await self._process_messages.wait()
@@ -542,9 +551,14 @@ class Session:
 
     def _start_serve_responses(self) -> None:
         async def transition_connecting() -> None:
+            if self._state in TerminalStates:
+                return
             self._state = SessionState.CONNECTING
+            self._wait_for_connected.clear()
 
-        async def connection_interrupted() -> None:
+        async def transition_no_connection() -> None:
+            if self._state in TerminalStates:
+                return
             self._state = SessionState.NO_CONNECTION
             if self._ws:
                 self._task_manager.create_task(self._ws.close())
@@ -588,7 +602,11 @@ class Session:
             return True
 
         async def block_until_connected() -> None:
+            if self._state in TerminalStates:
+                return
+            logger.debug("block_until_connected")
             await self._wait_for_connected.wait()
+            logger.debug("block_until_connected released!")
 
         self._task_manager.create_task(
             _serve(
@@ -597,7 +615,7 @@ class Session:
                 get_state=lambda: self._state,
                 get_ws=lambda: self._ws,
                 transition_connecting=transition_connecting,
-                connection_interrupted=connection_interrupted,
+                transition_no_connection=transition_no_connection,
                 reset_session_close_countdown=self._reset_session_close_countdown,
                 close_session=self.close,
                 assert_incoming_seq_bookkeeping=assert_incoming_seq_bookkeeping,
@@ -1189,7 +1207,7 @@ async def _serve(
     get_state: Callable[[], SessionState],
     get_ws: Callable[[], ClientConnection | None],
     transition_connecting: Callable[[], Awaitable[None]],
-    connection_interrupted: Callable[[], Awaitable[None]],
+    transition_no_connection: Callable[[], Awaitable[None]],
     reset_session_close_countdown: Callable[[], None],
     close_session: Callable[[], Awaitable[None]],
     assert_incoming_seq_bookkeeping: Callable[
@@ -1206,11 +1224,14 @@ async def _serve(
         while our_task and not our_task.cancelling() and not our_task.cancelled():
             logger.debug(f"_serve loop count={idx}")
             idx += 1
-            while (ws := get_ws()) is None or (
+            ws = None
+            while (
                 state := get_state()
-            ) in ConnectingStates:
-                logger.debug("_handle_messages_from_ws spinning while connecting")
+            ) in ConnectingStates or (ws := get_ws()) is None:
+                logger.debug("_handle_messages_from_ws spinning while connecting, %r %r", ws, state)
                 await block_until_connected()
+                if state in TerminalStates:
+                    break
 
             if state in TerminalStates:
                 logger.debug(
@@ -1218,6 +1239,11 @@ async def _serve(
                 )
                 # session is closing / closed, no need to serve anymore
                 break
+
+            # This should not happen, but due to the complex logic around TerminalStates
+            # above, pyright is not convinced we've caught all the states.
+            if not ws:
+                continue
 
             logger.debug(
                 "%s start handling messages from ws %s",
@@ -1229,7 +1255,11 @@ async def _serve(
                 # decode=False: Avoiding an unnecessary round-trip through str
                 # Ideally this should be type-ascripted to : bytes, but there
                 # is no @overrides in `websockets` to hint this.
-                message = await ws.recv(decode=False)
+                try:
+                    message = await ws.recv(decode=False)
+                except ConnectionClosed:
+                    await transition_connecting()
+                    continue
                 try:
                     msg = parse_transport_msg(message)
                     logger.debug(
@@ -1329,12 +1359,12 @@ async def _serve(
                     break
                 except ConnectionClosed:
                     # Set ourselves to closed as soon as we get the signal
-                    await connection_interrupted()
+                    await transition_no_connection()
                     logger.debug("ConnectionClosed while serving", exc_info=True)
                     break
                 except FailedSendingMessageException:
                     # Expected error if the connection is closed.
-                    await connection_interrupted()
+                    await transition_no_connection()
                     logger.debug(
                         "FailedSendingMessageException while serving", exc_info=True
                     )
