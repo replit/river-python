@@ -740,9 +740,7 @@ class Session:
                     ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
                 ) from e
             await self._send_close_stream(
-                service_name,
-                procedure_name,
-                stream_id,
+                stream_id=stream_id,
                 extra_control_flags=0,
                 span=span,
             )
@@ -863,9 +861,7 @@ class Session:
             async def _encode_stream() -> None:
                 if not request:
                     await self._send_close_stream(
-                        service_name,
-                        procedure_name,
-                        stream_id,
+                        stream_id=stream_id,
                         extra_control_flags=STREAM_OPEN_BIT,
                         span=span,
                     )
@@ -881,16 +877,12 @@ class Session:
                         logger.debug("Stream is closed, avoid sending the rest")
                         break
                     await self._send_message(
-                        service_name=service_name,
-                        procedure_name=procedure_name,
                         stream_id=stream_id,
                         control_flags=0,
                         payload=request_serializer(item),
                     )
                 await self._send_close_stream(
-                    service_name,
-                    procedure_name,
-                    stream_id,
+                    stream_id=stream_id,
                     extra_control_flags=0,
                     span=span,
                 )
@@ -940,15 +932,11 @@ class Session:
 
     async def _send_close_stream(
         self,
-        service_name: str,
-        procedure_name: str,
         stream_id: str,
         extra_control_flags: int,
         span: Span,
     ) -> None:
         await self._send_message(
-            service_name=service_name,
-            procedure_name=procedure_name,
             stream_id=stream_id,
             control_flags=STREAM_CLOSED_BIT | extra_control_flags,
             payload={"type": "CLOSE"},
