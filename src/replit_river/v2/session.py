@@ -309,6 +309,7 @@ class Session:
         return asyncio.get_event_loop().time()
 
     def _reset_session_close_countdown(self) -> None:
+        logger.debug('_reset_session_close_countdown')
         self._heartbeat_misses = 0
         self._close_session_after_time_secs = None
 
@@ -945,6 +946,7 @@ async def _check_to_close_session(
 ) -> None:
     our_task = asyncio.current_task()
     while our_task and not our_task.cancelling() and not our_task.cancelled():
+        logger.debug('_check_to_close_session: Checking')
         await asyncio.sleep(close_session_check_interval_ms / 1000)
         if get_state() in TerminalStates:
             # already closing
@@ -955,6 +957,7 @@ async def _check_to_close_session(
         current_time = await get_current_time()
         close_session_after_time_secs = get_close_session_after_time_secs()
         if not close_session_after_time_secs:
+            logger.debug(f'_check_to_close_session: Not reached: {close_session_after_time_secs}')
             continue
         if current_time > close_session_after_time_secs:
             logger.info("Grace period ended for %s, closing session", transport_id)
@@ -1134,14 +1137,18 @@ async def _setup_heartbeat(
 ) -> None:
     while True:
         while (state := get_state()) in ConnectingStates:
+            logger.debug(
+                    "Heartbeat: block_until_connected: %r",
+                    state,
+            )
             await block_until_connected()
 
         if state in TerminalStates:
             logger.debug(
                 "Session is closed, no need to send heartbeat, state : "
                 "%r close_session_after_this: %r",
-                {state},
-                {get_closing_grace_period()},
+                state,
+                get_closing_grace_period(),
             )
             # session is closing / closed, no need to send heartbeat anymore
             break
