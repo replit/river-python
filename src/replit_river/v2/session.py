@@ -462,8 +462,9 @@ class Session:
                 self._process_messages.clear()
 
             # Wake up backpressured writer
-            backpressure_waiter, _ = self._streams[pending.streamId]
-            backpressure_waiter.set()
+            stream_meta = self._streams.get(pending.streamId)
+            if stream_meta:
+                stream_meta[0].set()
 
         def get_next_pending() -> TransportMessage | None:
             if self._send_buffer:
