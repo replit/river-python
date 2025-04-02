@@ -421,6 +421,9 @@ class Session:
         # ... message processor so it can exit cleanly
         self._process_messages.set()
 
+        # Wait a tick to permit the waiting tasks to shut down gracefully
+        await asyncio.sleep(0.01)
+
         await self._task_manager.cancel_all_tasks()
 
         # TODO: unexpected_close should close stream differently here to
