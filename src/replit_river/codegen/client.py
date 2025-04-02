@@ -809,11 +809,11 @@ def render_library_call(
     if procedure.type == "rpc":
         match protocol_version:
             case "v1.1":
-                assert input_meta
+                assert input_meta, "rpc expects input to be required"
                 _, tpe, render_method = input_meta
                 binding = "input"
             case "v2.0":
-                assert init_meta
+                assert init_meta, "rpc expects init to be required"
                 _, tpe, render_method = init_meta
                 binding = "init"
             case other:
@@ -850,11 +850,11 @@ def render_library_call(
     elif procedure.type == "subscription":
         match protocol_version:
             case "v1.1":
-                assert input_meta
+                assert input_meta, "rpc expects input to be required"
                 _, tpe, render_method = input_meta
                 binding = "input"
             case "v2.0":
-                assert init_meta
+                assert init_meta, "rpc expects init to be required"
                 _, tpe, render_method = init_meta
                 binding = "init"
             case other:
