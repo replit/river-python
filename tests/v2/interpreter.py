@@ -73,7 +73,9 @@ def make_interpreters() -> tuple[
                 payload=_build_handshake_resp(session_id),
             )
         elif isinstance(received.stream_open, tuple):
-            (from_, to, service_name, procedure_name, stream_id) = received.stream_open
+            (from_, to, service_name, procedure_name, stream_id, payload) = (
+                received.stream_open
+            )
             assert isinstance(expected.stream_open, ValueSet), "Expected ValueSet 2"
             assert expected.stream_open.from_ == to, (
                 f"Expected {expected.stream_open.from_} == {to}"
@@ -89,6 +91,14 @@ def make_interpreters() -> tuple[
             )
             assert expected.stream_open.create_alias, (
                 "Expected create_alias to be a StreamAlias"
+            )
+            if expected.stream_open.payload is not None and payload is not None:
+                assert expected.stream_open.payload == payload, (
+                    f"Expected {expected.stream_open.payload} == {payload}"
+                )
+            assert expected.stream_open.stream_closed or not received.stream_closed, (
+                f"Are we self-closing? {expected.stream_open.stream_closed} "
+                f"or not {received.stream_closed}"
             )
             # Do it all again because mypy can't infer correctly
             alias_mapping: tuple[ClientId, ServerId, StreamId] = (
