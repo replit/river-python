@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from typing import (
     Any,
+    Literal,
     NewType,
     TypeAlias,
 )
@@ -30,13 +31,17 @@ class ValueSet:
     create_alias: StreamAlias | None = None
     stream_alias: StreamAlias | None = None
     payload: Datagram | None = None
+    stream_closed: Literal[True] | None = None
 
 
 @dataclass(frozen=True)
 class FromClient:
     handshake_request: tuple[ClientId, ServerId, SessionId] | ValueSet | None = None
-    stream_open: tuple[ClientId, ServerId, str, str, StreamId] | ValueSet | None = None
+    stream_open: (
+        tuple[ClientId, ServerId, str, str, StreamId, Datagram] | ValueSet | None
+    ) = None
     stream_frame: tuple[ClientId, ServerId, int, int, Datagram] | ValueSet | None = None
+    stream_closed: Literal[True] | None = None
 
 
 @dataclass(frozen=True)
@@ -75,7 +80,12 @@ def decode_FromClient(datagram: dict[str, Any]) -> FromClient:
                 datagram["serviceName"],
                 datagram["procedureName"],
                 StreamId(datagram["streamId"]),
+                datagram["payload"],
+            ),
+            stream_closed=(
+                datagram["controlFlags"] & 0b01000 > 0  # STREAM_CLOSED_BIT
             )
+            or None,
         )
     elif datagram:
         return FromClient(
