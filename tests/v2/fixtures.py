@@ -198,6 +198,14 @@ async def bound_client(
 
     await driver_task
 
+    assert len(expected) == 0, "Unconsumed messages from 'expected'"
+    assert messages_to_client_channel.qsize() == 0, (
+        "Dangling messages the client has not consumed"
+    )
+    assert messages_from_client_channel.qsize() == 0, (
+        "Dangling messages the processor has not consumed"
+    )
+
     messages_to_client_channel.close()
     messages_from_client_channel.close()
 
