@@ -46,7 +46,6 @@ from replit_river.error_schema import (
     RiverException,
     RiverServiceException,
     SessionClosedRiverServiceException,
-    StreamClosedRiverServiceException,
     exception_from_message,
 )
 from replit_river.messages import (
@@ -350,9 +349,6 @@ class Session[HandshakeMetadata]:
         span: Span | None = None,
     ) -> None:
         """Send serialized messages to the websockets."""
-        # if the session is not active, we should not do anything
-        if self._state in TerminalStates:
-            return
         logger.debug(
             "_send_message(stream_id=%r, payload=%r, control_flags=%r, "
             "service_name=%r, procedure_name=%r)",
@@ -582,6 +578,16 @@ class Session[HandshakeMetadata]:
         session_id: str,
         maxsize: int,
     ) -> AsyncIterator[tuple[asyncio.Event, Channel[ResultType]]]:
+        """
+        _with_stream
+
+        An async context that exposes a managed stream and an event that permits
+        producers to respond to backpressure.
+
+        It is expected that the first message emitted ignores this backpressure_waiter,
+        since the first event does not care about backpressure, but subsequent events
+        emitted should call await backpressure_waiter.wait() prior to emission.
+        """
         output: Channel[Any] = Channel(maxsize=maxsize)
         backpressure_waiter = asyncio.Event()
         self._streams[session_id] = (backpressure_waiter, output)
@@ -606,15 +612,16 @@ class Session[HandshakeMetadata]:
         Expects the input and output be messages that will be msgpacked.
         """
         stream_id = nanoid.generate()
+        await self._send_message(
+            stream_id=stream_id,
+            control_flags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
+            payload=request_serializer(request),
+            service_name=service_name,
+            procedure_name=procedure_name,
+            span=span,
+        )
+
         async with self._with_stream(stream_id, 1) as (backpressure_waiter, output):
-            await self._send_message(
-                stream_id=stream_id,
-                control_flags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
-                payload=request_serializer(request),
-                service_name=service_name,
-                procedure_name=procedure_name,
-                span=span,
-            )
             # Handle potential errors during communication
             try:
                 async with asyncio.timeout(timeout.total_seconds()):
@@ -665,19 +672,18 @@ class Session[HandshakeMetadata]:
 
         Expects the input and output be messages that will be msgpacked.
         """
-
         stream_id = nanoid.generate()
+        await self._send_message(
+            stream_id=stream_id,
+            control_flags=STREAM_OPEN_BIT,
+            service_name=service_name,
+            procedure_name=procedure_name,
+            payload=init_serializer(init),
+            span=span,
+        )
+
         async with self._with_stream(stream_id, 1) as (backpressure_waiter, output):
             try:
-                await self._send_message(
-                    stream_id=stream_id,
-                    control_flags=STREAM_OPEN_BIT,
-                    service_name=service_name,
-                    procedure_name=procedure_name,
-                    payload=init_serializer(init),
-                    span=span,
-                )
-
                 if request:
                     assert request_serializer, "send_stream missing request_serializer"
 
@@ -756,16 +762,16 @@ class Session[HandshakeMetadata]:
         Expects the input and output be messages that will be msgpacked.
         """
         stream_id = nanoid.generate()
-        async with self._with_stream(stream_id, MAX_MESSAGE_BUFFER_SIZE) as (_, output):
-            await self._send_message(
-                service_name=service_name,
-                procedure_name=procedure_name,
-                stream_id=stream_id,
-                control_flags=STREAM_OPEN_BIT,
-                payload=request_serializer(request),
-                span=span,
-            )
+        await self._send_message(
+            service_name=service_name,
+            procedure_name=procedure_name,
+            stream_id=stream_id,
+            control_flags=STREAM_OPEN_BIT,
+            payload=request_serializer(request),
+            span=span,
+        )
 
+        async with self._with_stream(stream_id, MAX_MESSAGE_BUFFER_SIZE) as (_, output):
             # Handle potential errors during communication
             try:
                 async for item in output:
@@ -811,24 +817,19 @@ class Session[HandshakeMetadata]:
         """
 
         stream_id = nanoid.generate()
-        async with self._with_stream(
-            stream_id,
-            MAX_MESSAGE_BUFFER_SIZE,
-        ) as (backpressure_waiter, output):
-            try:
-                await self._send_message(
-                    service_name=service_name,
-                    procedure_name=procedure_name,
-                    stream_id=stream_id,
-                    control_flags=STREAM_OPEN_BIT,
-                    payload=init_serializer(init),
-                    span=span,
-                )
-            except Exception as e:
-                raise StreamClosedRiverServiceException(
-                    ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
-                ) from e
+        await self._send_message(
+            service_name=service_name,
+            procedure_name=procedure_name,
+            stream_id=stream_id,
+            control_flags=STREAM_OPEN_BIT,
+            payload=init_serializer(init),
+            span=span,
+        )
 
+        async with self._with_stream(stream_id, MAX_MESSAGE_BUFFER_SIZE) as (
+            backpressure_waiter,
+            output,
+        ):
             # Create the encoder task
             async def _encode_stream() -> None:
                 if not request:
