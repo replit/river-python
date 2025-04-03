@@ -720,8 +720,6 @@ class Session[HandshakeMetadata]:
                 span=span,
             )
 
-            # Handle potential errors during communication
-            # TODO: throw a error when the transport is hard closed
             try:
                 result = await output.get()
             except ChannelClosed as e:
