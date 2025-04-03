@@ -26,7 +26,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         transport_options: TransportOptions,
     ):
         self._session = None
-        self._transport_id = client_id
+        self._transport_id = nanoid.generate()
         self._transport_options = transport_options
 
         self._uri_and_metadata_factory = uri_and_metadata_factory
@@ -40,7 +40,13 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         self._rate_limiter.close()
         if self._session:
             await self._session.close()
-            logger.info(f"Transport closed {self._transport_id}")
+            logger.info(
+                "Transport closed",
+                extra={
+                    "client_id": self._client_id,
+                    "transport_id": self._transport_id,
+                },
+            )
 
     async def get_or_create_session(self) -> Session:
         """
@@ -51,15 +57,14 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         if not existing_session or existing_session.is_closed():
             logger.info("Creating new session")
             new_session = Session(
-                transport_id=self._transport_id,
-                to_id=self._server_id,
+                client_id=self._client_id,
+                server_id=self._server_id,
                 session_id=nanoid.generate(),
                 transport_options=self._transport_options,
                 close_session_callback=self._delete_session,
                 retry_connection_callback=self._retry_connection,
                 uri_and_metadata_factory=self._uri_and_metadata_factory,
                 rate_limiter=self._rate_limiter,
-                client_id=self._client_id,
             )
 
             self._session = new_session
@@ -76,5 +81,16 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         return await self.get_or_create_session()
 
     async def _delete_session(self, session: Session) -> None:
-        if self._session and session._to_id == self._session._to_id:
+        if self._session is session:
             self._session = None
+        else:
+            logger.warning(
+                "Session attempted to close itself but it was not the "
+                "active session, doing nothing",
+                extra={
+                    "client_id": self._client_id,
+                    "transport_id": self._transport_id,
+                    "active_session_id": self._session and self._session.session_id,
+                    "orphan_session_id": session.session_id,
+                },
+            )

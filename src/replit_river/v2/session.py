@@ -122,7 +122,7 @@ class _IgnoreMessage:
 
 class Session[HandshakeMetadata]:
     _transport_id: str
-    _to_id: str
+    _server_id: str
     session_id: str
     _transport_options: TransportOptions
 
@@ -163,8 +163,7 @@ class Session[HandshakeMetadata]:
 
     def __init__(
         self,
-        transport_id: str,
-        to_id: str,
+        server_id: str,
         session_id: str,
         transport_options: TransportOptions,
         close_session_callback: CloseSessionCallback,
@@ -175,8 +174,7 @@ class Session[HandshakeMetadata]:
         ],
         retry_connection_callback: RetryConnectionCallback | None = None,
     ) -> None:
-        self._transport_id = transport_id
-        self._to_id = to_id
+        self._server_id = server_id
         self.session_id = session_id
         self._transport_options = transport_options
 
@@ -304,9 +302,8 @@ class Session[HandshakeMetadata]:
         if not self._connecting_task:
             self._connecting_task = asyncio.create_task(
                 _do_ensure_connected(
-                    transport_id=self._transport_id,
                     client_id=self._client_id,
-                    to_id=self._to_id,
+                    server_id=self._server_id,
                     session_id=self.session_id,
                     max_retry=self._transport_options.connection_retry_options.max_retry,
                     rate_limiter=self._rate_limiter,
@@ -352,7 +349,7 @@ class Session[HandshakeMetadata]:
         logger.info(
             "websocket closed from %s to %s begin grace period",
             self._transport_id,
-            self._to_id,
+            self._server_id,
         )
         self._state = SessionState.NO_CONNECTION
         self._close_session_after_time_secs = close_session_after_time_secs
@@ -403,7 +400,7 @@ class Session[HandshakeMetadata]:
             streamId=stream_id,
             id=nanoid.generate(),
             from_=self._transport_id,
-            to=self._to_id,
+            to=self._server_id,
             seq=self.seq,
             ack=self.ack,
             controlFlags=control_flags,
@@ -432,7 +429,7 @@ class Session[HandshakeMetadata]:
     async def close(self) -> None:
         """Close the session and all associated streams."""
         logger.info(
-            f"{self._transport_id} closing session to {self._to_id}, ws: {self._ws}"
+            f"{self._transport_id} closing session to {self._server_id}, ws: {self._ws}"
         )
         if self._state in TerminalStates:
             # already closing
@@ -589,7 +586,7 @@ class Session[HandshakeMetadata]:
         self._task_manager.create_task(
             _recv_from_ws(
                 block_until_connected=block_until_connected,
-                transport_id=self._transport_id,
+                client_id=self._transport_id,
                 get_state=lambda: self._state,
                 get_ws=lambda: self._ws,
                 transition_connecting=transition_connecting,
@@ -958,9 +955,8 @@ async def _check_to_close_session(
 
 
 async def _do_ensure_connected[HandshakeMetadata](
-    transport_id: str,
     client_id: str,
-    to_id: str,
+    server_id: str,
     session_id: str,
     max_retry: int,
     rate_limiter: LeakyBucketRateLimit,
@@ -1010,8 +1006,8 @@ async def _do_ensure_connected[HandshakeMetadata](
 
                 await send_transport_message(
                     TransportMessage(
-                        from_=transport_id,
-                        to=to_id,
+                        from_=client_id,
+                        to=server_id,
                         streamId=nanoid.generate(),
                         controlFlags=0,
                         id=nanoid.generate(),
@@ -1119,7 +1115,7 @@ async def _do_ensure_connected[HandshakeMetadata](
 
 async def _recv_from_ws(
     block_until_connected: Callable[[], Awaitable[None]],
-    transport_id: str,
+    client_id: str,
     get_state: Callable[[], SessionState],
     get_ws: Callable[[], ClientConnection | None],
     transition_connecting: Callable[[], None],
@@ -1179,7 +1175,7 @@ async def _recv_from_ws(
                     msg = parse_transport_msg(message)
                     logger.debug(
                         "[%s] got a message %r",
-                        transport_id,
+                        client_id,
                         msg,
                     )
                     if isinstance(msg, str):
