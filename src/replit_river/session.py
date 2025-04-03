@@ -236,7 +236,7 @@ class Session:
         msg = TransportMessage(
             streamId=stream_id,
             id=nanoid.generate(),
-            from_=self._transport_id,  # type: ignore
+            from_=self._transport_id,
             to=self._to_id,
             seq=self._seq_manager.get_seq_and_increment(),
             ack=self._seq_manager.get_ack(),
