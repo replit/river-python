@@ -49,6 +49,7 @@ class SessionState(enum.Enum):
 
 
 ConnectingStates = set([SessionState.NO_CONNECTION, SessionState.CONNECTING])
+ActiveStates = set([SessionState.ACTIVE])
 TerminalStates = set([SessionState.CLOSING, SessionState.CLOSED])
 
 

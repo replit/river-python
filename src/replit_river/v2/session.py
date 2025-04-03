@@ -31,6 +31,7 @@ from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
 from websockets.protocol import CLOSED
 
 from replit_river.common_session import (
+    ActiveStates,
     ConnectingStates,
     SendMessage,
     SessionState,
@@ -332,7 +333,7 @@ class Session[HandshakeMetadata]:
         return self._state in TerminalStates
 
     def is_connected(self) -> bool:
-        return self._state == SessionState.ACTIVE
+        return self._state in ActiveStates
 
     async def _begin_close_session_countdown(self) -> None:
         """Begin the countdown to close session, this should be called when
@@ -1173,7 +1174,7 @@ async def _recv_from_ws(
                 ws.id,
             )
             # We should not process messages if the websocket is closed.
-            while (ws := get_ws()) and get_state() == SessionState.ACTIVE:
+            while (ws := get_ws()) and get_state() in ActiveStates:
                 # decode=False: Avoiding an unnecessary round-trip through str
                 # Ideally this should be type-ascripted to : bytes, but there
                 # is no @overrides in `websockets` to hint this.
