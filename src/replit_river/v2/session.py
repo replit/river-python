@@ -1208,8 +1208,6 @@ async def _recv_from_ws(
                             # The client is no longer interested in this stream,
                             # just drop the message.
                             pass
-                        except RuntimeError as e:
-                            raise InvalidMessageException(e) from e
 
                     if msg.controlFlags & STREAM_CLOSED_BIT != 0:
                         # Communicate that we're going down
