@@ -18,7 +18,12 @@ class OutOfOrderMessageException(Exception):
     we close the session.
     """
 
-    pass
+    def __init__(self, *, received_seq: int, expected_ack: int) -> None:
+        super().__init__(
+            "Out of order message received: "
+            f"got={received_seq}, "
+            f"expected={expected_ack}"
+        )
 
 
 class SessionStateMismatchException(Exception):
@@ -71,7 +76,8 @@ class SeqManager:
                 )
 
                 raise OutOfOrderMessageException(
-                    f"Out of order message received got {msg.seq} expected {self.ack}"
+                    received_seq=msg.seq,
+                    expected_ack=self.ack,
                 )
         self.receiver_ack = msg.ack
         self.ack = msg.seq + 1

@@ -530,8 +530,12 @@ class Session[HandshakeMetadata]:
             # Update bookkeeping
             if msg_seq < self.ack:
                 logger.info(
-                    f"{msg_from} received duplicate msg, got {msg_seq}"
-                    f" expected {self.ack}"
+                    "Received duplicate msg",
+                    extra={
+                        "from": msg_from,
+                        "got_seq": msg_seq,
+                        "expected_ack": self.ack,
+                    },
                 )
                 return _IgnoreMessage()
             elif msg_seq > self.ack:
@@ -540,7 +544,8 @@ class Session[HandshakeMetadata]:
                 )
 
                 raise OutOfOrderMessageException(
-                    f"Out of order message received got {msg_seq} expected {self.ack}"
+                    received_seq=msg_seq,
+                    expected_ack=self.ack,
                 )
             else:
                 # Set our next expected ack number
