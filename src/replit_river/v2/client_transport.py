@@ -57,16 +57,15 @@ class ClientTransport(Generic[HandshakeMetadataType]):
                 transport_options=self._transport_options,
                 close_session_callback=self._delete_session,
                 retry_connection_callback=self._retry_connection,
+                uri_and_metadata_factory=self._uri_and_metadata_factory,
+                rate_limiter=self._rate_limiter,
+                client_id=self._client_id,
             )
 
             self._session = new_session
             existing_session = new_session
 
-        await existing_session.ensure_connected(
-            client_id=self._client_id,
-            rate_limiter=self._rate_limiter,
-            uri_and_metadata_factory=self._uri_and_metadata_factory,
-        )
+        await existing_session.ensure_connected()
         return existing_session
 
     async def _retry_connection(self) -> Session:
