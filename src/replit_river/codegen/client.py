@@ -960,32 +960,9 @@ def render_library_call(
                 ]
             )
         elif protocol_version == "v2.0":
-            assert init_meta, "Protocol v2 requires init to be defined"
-            _, init_type, render_init_method = init_meta
-            current_chunks.extend(
-                [
-                    reindent(
-                        "  ",
-                        f"""\
-        async def {name}(
-          self,
-          init: {render_type_expr(init_type)},
-        ) -> {  # TODO(dstewart) This should just be output_type
-                            render_type_expr(output_or_error_type)
-                        }:
-          return await self.client.send_upload(
-            {repr(schema_name)},
-            {repr(name)},
-            init,
-            None,
-            {reindent("                    ", render_init_method)},
-            None,
-            {reindent("                    ", parse_output_method)},
-            {reindent("                    ", parse_error_method)},
-          )
-                    """,
-                    )
-                ]
+            raise ValueError(
+                "It is expected that protocol v2 uploads have both init and input "
+                "defined, otherwise it's no different than rpc",
             )
         else:
             assert_never(protocol_version)

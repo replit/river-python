@@ -75,9 +75,9 @@ class Client(Generic[HandshakeMetadataType]):
         service_name: str,
         procedure_name: str,
         init: I,
-        request: AsyncIterable[R] | None,
+        request: AsyncIterable[R],
         init_serializer: Callable[[I], Any],
-        request_serializer: Callable[[R], Any] | None,
+        request_serializer: Callable[[R], Any],
         response_deserializer: Callable[[Any], A],
         error_deserializer: Callable[[Any], RiverError],
     ) -> A:
