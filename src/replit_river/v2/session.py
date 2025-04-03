@@ -1134,7 +1134,7 @@ async def _recv_from_ws(
 ) -> None:
     """Serve messages from the websocket.
 
-
+    Process incoming packets from the connected websocket.
     """
     reset_session_close_countdown()
     our_task = asyncio.current_task()
@@ -1144,17 +1144,15 @@ async def _recv_from_ws(
             logger.debug(f"_recv_from_ws loop count={idx}")
             idx += 1
             ws = None
-            while (state := get_state()) in ConnectingStates or (
-                ws := get_ws()
-            ) is None:
+            while ((state := get_state()) in ConnectingStates) and (
+                state not in TerminalStates
+            ):
                 logger.debug(
                     "_handle_messages_from_ws spinning while connecting, %r %r",
                     ws,
                     state,
                 )
                 await block_until_connected()
-                if state in TerminalStates:
-                    break
 
             if state in TerminalStates:
                 logger.debug(
@@ -1163,16 +1161,8 @@ async def _recv_from_ws(
                 # session is closing / closed, no need to _recv_from_ws anymore
                 break
 
-            # This should not happen, but due to the complex logic around TerminalStates
-            # above, pyright is not convinced we've caught all the states.
-            if not ws:
-                continue
+            logger.debug("client start handling messages from ws %r", ws)
 
-            logger.debug(
-                "%s start handling messages from ws %s",
-                "client",
-                ws.id,
-            )
             # We should not process messages if the websocket is closed.
             while (ws := get_ws()) and get_state() in ActiveStates:
                 # decode=False: Avoiding an unnecessary round-trip through str
@@ -1181,8 +1171,10 @@ async def _recv_from_ws(
                 try:
                     message = await ws.recv(decode=False)
                 except ConnectionClosed:
+                    # This triggers a break in the inner loop so we can get back to
+                    # the outer loop.
                     transition_connecting()
-                    continue
+                    break
                 try:
                     msg = parse_transport_msg(message)
                     logger.debug(
