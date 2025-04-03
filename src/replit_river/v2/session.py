@@ -263,7 +263,7 @@ class Session[HandshakeMetadata]:
         def close_ws_in_background(ws: ClientConnection) -> None:
             self._task_manager.create_task(ws.close())
 
-        def finalize_attempt() -> None:
+        def unbind_connecting_task() -> None:
             # We are in a state where we may throw an exception.
             #
             # To allow subsequent calls to ensure_connected to pass, we clear ourselves.
@@ -273,11 +273,7 @@ class Session[HandshakeMetadata]:
             #
             # Let's do our best to avoid clobbering other tasks by comparing the .name
             current_task = asyncio.current_task()
-            if (
-                self._connecting_task
-                and current_task
-                and self._connecting_task is current_task
-            ):
+            if self._connecting_task is current_task:
                 self._connecting_task = None
 
         if not self._connecting_task:
@@ -295,7 +291,7 @@ class Session[HandshakeMetadata]:
                     transition_connecting=transition_connecting,
                     close_ws_in_background=close_ws_in_background,
                     transition_connected=transition_connected,
-                    finalize_attempt=finalize_attempt,
+                    unbind_connecting_task=unbind_connecting_task,
                     do_close=do_close,
                 )
             )
@@ -935,7 +931,7 @@ async def _do_ensure_connected[HandshakeMetadata](
     transition_connecting: Callable[[], None],
     close_ws_in_background: Callable[[ClientConnection], None],
     transition_connected: Callable[[ClientConnection], None],
-    finalize_attempt: Callable[[], None],
+    unbind_connecting_task: Callable[[], None],
     do_close: Callable[[], None],
 ) -> None:
     logger.info("Attempting to establish new ws connection")
@@ -1066,7 +1062,7 @@ async def _do_ensure_connected[HandshakeMetadata](
                 f"Error connecting, retrying with {backoff_time}ms backoff"
             )
             await asyncio.sleep(backoff_time / 1000)
-    finalize_attempt()
+    unbind_connecting_task()
 
     if last_error is not None:
         logger.debug("Handshake attempts exhausted, terminating")
