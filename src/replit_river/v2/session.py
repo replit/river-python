@@ -714,7 +714,6 @@ class Session[HandshakeMetadata]:
                 ) from e
             await self._send_close_stream(
                 stream_id=stream_id,
-                extra_control_flags=0,
                 span=span,
             )
 
@@ -835,7 +834,6 @@ class Session[HandshakeMetadata]:
                 if not request:
                     await self._send_close_stream(
                         stream_id=stream_id,
-                        extra_control_flags=STREAM_OPEN_BIT,
                         span=span,
                     )
                     return
@@ -856,7 +854,6 @@ class Session[HandshakeMetadata]:
                     )
                 await self._send_close_stream(
                     stream_id=stream_id,
-                    extra_control_flags=0,
                     span=span,
                 )
 
@@ -905,12 +902,11 @@ class Session[HandshakeMetadata]:
     async def _send_close_stream(
         self,
         stream_id: str,
-        extra_control_flags: int,
         span: Span,
     ) -> None:
         await self._send_message(
             stream_id=stream_id,
-            control_flags=STREAM_CLOSED_BIT | extra_control_flags,
+            control_flags=STREAM_CLOSED_BIT,
             payload={"type": "CLOSE"},
             span=span,
         )
