@@ -261,7 +261,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         try:
             await send_transport_message(
                 TransportMessage(
-                    from_=transport_id,  # type: ignore
+                    from_=transport_id,
                     to=to_id,
                     streamId=stream_id,
                     controlFlags=0,
