@@ -28,7 +28,6 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from pydantic import ValidationError
 from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
-from websockets.protocol import CLOSED
 
 from replit_river.common_session import (
     ActiveStates,
@@ -214,25 +213,7 @@ class Session[HandshakeMetadata]:
         # Terminating
         self._terminating_task = None
 
-        async def transition_no_connection() -> None:
-            if self._state in TerminalStates:
-                return
-            self._state = SessionState.NO_CONNECTION
-            if self._ws:
-                self._task_manager.create_task(self._ws.close())
-                self._ws = None
-
-            if self._retry_connection_callback:
-                self._task_manager.create_task(self._retry_connection_callback())
-
-            await self._begin_close_session_countdown()
-
-        self._start_recv_from_ws(
-            transition_no_connection=transition_no_connection,
-        )
-        self._start_close_session_checker(
-            transition_no_connection=transition_no_connection,
-        )
+        self._start_recv_from_ws()
         self._start_buffered_message_sender()
 
     async def ensure_connected(self) -> None:
@@ -521,28 +502,25 @@ class Session[HandshakeMetadata]:
             )
         )
 
-    def _start_close_session_checker(
-        self,
-        transition_no_connection: Callable[[], Awaitable[None]],
-    ) -> None:
-        self._task_manager.create_task(
-            _check_to_close_session(
-                close_session_check_interval_ms=self._transport_options.close_session_check_interval_ms,
-                get_state=lambda: self._state,
-                get_ws=lambda: self._ws,
-                transition_no_connection=transition_no_connection,
-            )
-        )
-
-    def _start_recv_from_ws(
-        self,
-        transition_no_connection: Callable[[], Awaitable[None]],
-    ) -> None:
+    def _start_recv_from_ws(self) -> None:
         def transition_connecting() -> None:
             if self._state in TerminalStates:
                 return
             self._state = SessionState.CONNECTING
             self._wait_for_connected.clear()
+
+        async def transition_no_connection() -> None:
+            if self._state in TerminalStates:
+                return
+            self._state = SessionState.NO_CONNECTION
+            if self._ws:
+                self._task_manager.create_task(self._ws.close())
+                self._ws = None
+
+            if self._retry_connection_callback:
+                self._task_manager.create_task(self._retry_connection_callback())
+
+            await self._begin_close_session_countdown()
 
         def assert_incoming_seq_bookkeeping(
             msg_from: str,
@@ -937,21 +915,6 @@ class Session[HandshakeMetadata]:
             payload={"type": "CLOSE"},
             span=span,
         )
-
-
-async def _check_to_close_session(
-    close_session_check_interval_ms: float,
-    get_state: Callable[[], SessionState],
-    get_ws: Callable[[], ClientConnection | None],
-    transition_no_connection: Callable[[], Awaitable[None]],
-) -> None:
-    while get_state() not in TerminalStates:
-        logger.debug("_check_to_close_session: Checking")
-        await asyncio.sleep(close_session_check_interval_ms / 1000)
-
-        if (ws := get_ws()) and ws.protocol.state is CLOSED:
-            logger.info("Websocket is closed, transitioning to connecting")
-            await transition_no_connection()
 
 
 async def _do_ensure_connected[HandshakeMetadata](
