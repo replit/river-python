@@ -119,7 +119,7 @@ class _IgnoreMessage:
     pass
 
 
-class Session:
+class Session[HandshakeMetadata]:
     _transport_id: str
     _to_id: str
     session_id: str
@@ -131,6 +131,12 @@ class Session:
     _close_session_after_time_secs: float | None
     _connecting_task: asyncio.Task[None] | None
     _wait_for_connected: asyncio.Event
+
+    _client_id: str
+    _rate_limiter: LeakyBucketRateLimit
+    _uri_and_metadata_factory: Callable[
+        [], Awaitable[UriAndMetadata[HandshakeMetadata]]
+    ]
 
     # ws state
     _ws: ClientConnection | None
@@ -161,6 +167,11 @@ class Session:
         session_id: str,
         transport_options: TransportOptions,
         close_session_callback: CloseSessionCallback,
+        client_id: str,
+        rate_limiter: LeakyBucketRateLimit,
+        uri_and_metadata_factory: Callable[
+            [], Awaitable[UriAndMetadata[HandshakeMetadata]]
+        ],
         retry_connection_callback: RetryConnectionCallback | None = None,
     ) -> None:
         self._transport_id = transport_id
@@ -174,6 +185,10 @@ class Session:
         self._close_session_after_time_secs: float | None = None
         self._connecting_task = None
         self._wait_for_connected = asyncio.Event()
+
+        self._client_id = client_id
+        self._rate_limiter = rate_limiter
+        self._uri_and_metadata_factory = uri_and_metadata_factory
 
         # ws state
         self._ws = None
@@ -204,14 +219,7 @@ class Session:
         self._start_close_session_checker()
         self._start_buffered_message_sender()
 
-    async def ensure_connected[HandshakeMetadata](
-        self,
-        client_id: str,
-        rate_limiter: LeakyBucketRateLimit,
-        uri_and_metadata_factory: Callable[
-            [], Awaitable[UriAndMetadata[HandshakeMetadata]]
-        ],
-    ) -> None:
+    async def ensure_connected(self) -> None:
         """
         Either return immediately or establish a websocket connection and return
         once we can accept messages.
@@ -279,12 +287,12 @@ class Session:
             self._connecting_task = asyncio.create_task(
                 _do_ensure_connected(
                     transport_id=self._transport_id,
-                    client_id=client_id,
+                    client_id=self._client_id,
                     to_id=self._to_id,
                     session_id=self.session_id,
                     max_retry=self._transport_options.connection_retry_options.max_retry,
-                    rate_limiter=rate_limiter,
-                    uri_and_metadata_factory=uri_and_metadata_factory,
+                    rate_limiter=self._rate_limiter,
+                    uri_and_metadata_factory=self._uri_and_metadata_factory,
                     get_next_sent_seq=get_next_sent_seq,
                     get_current_ack=lambda: self.ack,
                     get_current_time=self._get_current_time,
