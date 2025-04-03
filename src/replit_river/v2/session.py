@@ -215,8 +215,25 @@ class Session[HandshakeMetadata]:
         # Terminating
         self._terminating_task = None
 
-        self._start_serve_responses()
-        self._start_close_session_checker()
+        async def transition_no_connection() -> None:
+            if self._state in TerminalStates:
+                return
+            self._state = SessionState.NO_CONNECTION
+            if self._ws:
+                self._task_manager.create_task(self._ws.close())
+                self._ws = None
+
+            if self._retry_connection_callback:
+                self._task_manager.create_task(self._retry_connection_callback())
+
+            await self._begin_close_session_countdown()
+
+        self._start_serve_responses(
+            transition_no_connection=transition_no_connection,
+        )
+        self._start_close_session_checker(
+            transition_no_connection=transition_no_connection,
+        )
         self._start_buffered_message_sender()
 
     async def ensure_connected(self) -> None:
@@ -455,7 +472,9 @@ class Session[HandshakeMetadata]:
         # This will get us GC'd, so this should be the last thing.
         await self._close_session_callback(self)
 
-    def _start_buffered_message_sender(self) -> None:
+    def _start_buffered_message_sender(
+        self,
+    ) -> None:
         def commit(msg: TransportMessage) -> None:
             pending = self._send_buffer.popleft()
             if msg.seq != pending.seq:
@@ -504,41 +523,28 @@ class Session[HandshakeMetadata]:
             )
         )
 
-    def _start_close_session_checker(self) -> None:
-        def transition_connecting() -> None:
-            if self._state in TerminalStates:
-                return
-            self._state = SessionState.CONNECTING
-            self._wait_for_connected.clear()
-
+    def _start_close_session_checker(
+        self,
+        transition_no_connection: Callable[[], Awaitable[None]],
+    ) -> None:
         self._task_manager.create_task(
             _check_to_close_session(
-                self._transport_options.close_session_check_interval_ms,
-                lambda: self._state,
-                lambda: self._ws,
-                transition_connecting=transition_connecting,
+                close_session_check_interval_ms=self._transport_options.close_session_check_interval_ms,
+                get_state=lambda: self._state,
+                get_ws=lambda: self._ws,
+                transition_no_connection=transition_no_connection,
             )
         )
 
-    def _start_serve_responses(self) -> None:
+    def _start_serve_responses(
+        self,
+        transition_no_connection: Callable[[], Awaitable[None]],
+    ) -> None:
         def transition_connecting() -> None:
             if self._state in TerminalStates:
                 return
             self._state = SessionState.CONNECTING
             self._wait_for_connected.clear()
-
-        async def transition_no_connection() -> None:
-            if self._state in TerminalStates:
-                return
-            self._state = SessionState.NO_CONNECTION
-            if self._ws:
-                self._task_manager.create_task(self._ws.close())
-                self._ws = None
-
-            if self._retry_connection_callback:
-                self._task_manager.create_task(self._retry_connection_callback())
-
-            await self._begin_close_session_countdown()
 
         def assert_incoming_seq_bookkeeping(
             msg_from: str,
@@ -939,7 +945,7 @@ async def _check_to_close_session(
     close_session_check_interval_ms: float,
     get_state: Callable[[], SessionState],
     get_ws: Callable[[], ClientConnection | None],
-    transition_connecting: Callable[[], None],
+    transition_no_connection: Callable[[], Awaitable[None]],
 ) -> None:
     while get_state() not in TerminalStates:
         logger.debug("_check_to_close_session: Checking")
@@ -947,7 +953,7 @@ async def _check_to_close_session(
 
         if (ws := get_ws()) and ws.protocol.state is CLOSED:
             logger.info("Websocket is closed, transitioning to connecting")
-            transition_connecting()
+            await transition_no_connection()
 
 
 async def _do_ensure_connected[HandshakeMetadata](
