@@ -228,7 +228,7 @@ class Session[HandshakeMetadata]:
 
             await self._begin_close_session_countdown()
 
-        self._start_serve_responses(
+        self._start_recv_from_ws(
             transition_no_connection=transition_no_connection,
         )
         self._start_close_session_checker(
@@ -536,7 +536,7 @@ class Session[HandshakeMetadata]:
             )
         )
 
-    def _start_serve_responses(
+    def _start_recv_from_ws(
         self,
         transition_no_connection: Callable[[], Awaitable[None]],
     ) -> None:
@@ -586,7 +586,7 @@ class Session[HandshakeMetadata]:
             logger.debug("block_until_connected released!")
 
         self._task_manager.create_task(
-            _serve(
+            _recv_from_ws(
                 block_until_connected=block_until_connected,
                 transport_id=self._transport_id,
                 get_state=lambda: self._state,
@@ -1116,7 +1116,7 @@ async def _do_ensure_connected[HandshakeMetadata](
     return None
 
 
-async def _serve(
+async def _recv_from_ws(
     block_until_connected: Callable[[], Awaitable[None]],
     transport_id: str,
     get_state: Callable[[], SessionState],
@@ -1131,13 +1131,16 @@ async def _serve(
     get_stream: Callable[[str], tuple[asyncio.Event, Channel[Any]] | None],
     send_message: SendMessage[None],
 ) -> None:
-    """Serve messages from the websocket."""
+    """Serve messages from the websocket.
+
+
+    """
     reset_session_close_countdown()
     our_task = asyncio.current_task()
     idx = 0
     try:
         while our_task and not our_task.cancelling() and not our_task.cancelled():
-            logger.debug(f"_serve loop count={idx}")
+            logger.debug(f"_recv_from_ws loop count={idx}")
             idx += 1
             ws = None
             while (state := get_state()) in ConnectingStates or (
@@ -1154,9 +1157,9 @@ async def _serve(
 
             if state in TerminalStates:
                 logger.debug(
-                    f"Session is {state}, shut down _serve",
+                    f"Session is {state}, shut down _recv_from_ws",
                 )
-                # session is closing / closed, no need to serve anymore
+                # session is closing / closed, no need to _recv_from_ws anymore
                 break
 
             # This should not happen, but due to the complex logic around TerminalStates
@@ -1278,7 +1281,7 @@ async def _serve(
                     break
                 except ConnectionClosed:
                     # Set ourselves to closed as soon as we get the signal
-                    await transition_no_connection()
+                    transition_connecting()
                     logger.debug("ConnectionClosed while serving", exc_info=True)
                     break
                 except FailedSendingMessageException:
@@ -1304,4 +1307,4 @@ async def _serve(
                 exc_info=unhandled,
             )
             raise unhandled
-    logger.debug(f"_serve exiting normally after {idx} loops")
+    logger.debug(f"_recv_from_ws exiting normally after {idx} loops")
