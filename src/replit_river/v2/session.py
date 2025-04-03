@@ -542,15 +542,13 @@ class Session[HandshakeMetadata]:
                 raise OutOfOrderMessageException(
                     f"Out of order message received got {msg_seq} expected {self.ack}"
                 )
+            else:
+                # Set our next expected ack number
+                self.ack = msg_seq + 1
 
-            assert msg_seq == self.ack, "Safety net, redundant assertion"
-
-            # Set our next expected ack number
-            self.ack = msg_seq + 1
-
-            # Discard old server-ack'd messages from the ack buffer
-            while self._ack_buffer and self._ack_buffer[0].seq < msg_ack:
-                self._ack_buffer.popleft()
+                # Discard old server-ack'd messages from the ack buffer
+                while self._ack_buffer and self._ack_buffer[0].seq < msg_ack:
+                    self._ack_buffer.popleft()
 
             return True
 
