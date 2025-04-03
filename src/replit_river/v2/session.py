@@ -1189,10 +1189,6 @@ async def _setup_heartbeat(
             break
 
         await asyncio.sleep(heartbeat_ms / 1000)
-        state = get_state()
-        if state in ConnectingStates:
-            logger.debug("Websocket is not connected, don't expect heartbeat")
-            continue
 
         if increment_and_get_heartbeat_misses() > heartbeats_until_dead:
             if get_closing_grace_period() is not None:
