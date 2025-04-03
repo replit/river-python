@@ -27,7 +27,7 @@ from opentelemetry.trace import Span, use_span
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from pydantic import ValidationError
 from websockets.asyncio.client import ClientConnection
-from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
+from websockets.exceptions import ConnectionClosed
 from websockets.protocol import CLOSED
 
 from replit_river.common_session import (
@@ -1264,15 +1264,6 @@ async def _recv_from_ws(
                     )
                     await close_session()
                     continue
-                except ConnectionClosedOK:
-                    # Exited normally
-                    transition_connecting()
-                    break
-                except ConnectionClosed:
-                    # Set ourselves to closed as soon as we get the signal
-                    transition_connecting()
-                    logger.debug("ConnectionClosed while serving", exc_info=True)
-                    break
                 except FailedSendingMessageException:
                     # Expected error if the connection is closed.
                     await transition_no_connection()
