@@ -1183,16 +1183,16 @@ async def _recv_from_ws(
                         )
                         continue
 
-                    event_stream = get_stream(msg.streamId)
+                    waiter_and_stream = get_stream(msg.streamId)
 
-                    if not event_stream:
+                    if not waiter_and_stream:
                         logger.warning(
                             "no stream for %s, ignoring message",
                             msg.streamId,
                         )
                         continue
 
-                    backpressure_waiter, stream = event_stream
+                    backpressure_waiter, stream = waiter_and_stream
 
                     if (
                         msg.controlFlags & STREAM_CLOSED_BIT != 0
