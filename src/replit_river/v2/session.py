@@ -28,6 +28,7 @@ from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapProp
 from pydantic import ValidationError
 from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed, ConnectionClosedOK
+from websockets.protocol import CLOSED
 
 from replit_river.common_session import (
     ConnectingStates,
@@ -199,7 +200,6 @@ class Session:
         # Terminating
         self._terminating_task = None
 
-        self._start_heartbeat()
         self._start_serve_responses()
         self._start_close_session_checker()
         self._start_buffered_message_sender()
@@ -497,65 +497,24 @@ class Session:
         )
 
     def _start_close_session_checker(self) -> None:
-        def do_close() -> None:
-            # Avoid closing twice
-            if self._terminating_task is None:
-                # We can't just call self.close() directly because
-                # we're inside a thread that will eventually be awaited
-                # during the cleanup procedure.
-                self._terminating_task = asyncio.create_task(self.close())
+        def transition_connecting() -> None:
+            if self._state in TerminalStates:
+                return
+            self._state = SessionState.CONNECTING
+            self._wait_for_connected.clear()
 
         self._task_manager.create_task(
             _check_to_close_session(
                 self._transport_id,
                 self._transport_options.close_session_check_interval_ms,
                 lambda: self._state,
-                self._get_current_time,
-                lambda: self._close_session_after_time_secs,
-                do_close=do_close,
-            )
-        )
-
-    def _start_heartbeat(self) -> None:
-        async def close_websocket() -> None:
-            logger.debug(
-                "close_websocket called, _state=%r, _ws=%r",
-                self._state,
-                self._ws,
-            )
-            if self._ws:
-                self._task_manager.create_task(self._ws.close())
-                self._ws = None
-
-            if self._retry_connection_callback:
-                self._task_manager.create_task(self._retry_connection_callback())
-            else:
-                self._state = SessionState.CLOSING
-
-            await self._begin_close_session_countdown()
-
-        def increment_and_get_heartbeat_misses() -> int:
-            self._heartbeat_misses += 1
-            return self._heartbeat_misses
-
-        async def block_until_connected() -> None:
-            await self._wait_for_connected.wait()
-
-        self._task_manager.create_task(
-            _setup_heartbeat(
-                block_until_connected,
-                self.session_id,
-                self._transport_options.heartbeat_ms,
-                self._transport_options.heartbeats_until_dead,
-                lambda: self._state,
-                lambda: self._close_session_after_time_secs,
-                close_websocket=close_websocket,
-                increment_and_get_heartbeat_misses=increment_and_get_heartbeat_misses,
+                lambda: self._ws,
+                transition_connecting=transition_connecting,
             )
         )
 
     def _start_serve_responses(self) -> None:
-        async def transition_connecting() -> None:
+        def transition_connecting() -> None:
             if self._state in TerminalStates:
                 return
             self._state = SessionState.CONNECTING
@@ -973,31 +932,16 @@ async def _check_to_close_session(
     transport_id: str,
     close_session_check_interval_ms: float,
     get_state: Callable[[], SessionState],
-    get_current_time: Callable[[], Awaitable[float]],
-    get_close_session_after_time_secs: Callable[[], float | None],
-    do_close: Callable[[], None],
+    get_ws: Callable[[], ClientConnection | None],
+    transition_connecting: Callable[[], None],
 ) -> None:
-    our_task = asyncio.current_task()
-    while our_task and not our_task.cancelling() and not our_task.cancelled():
+    while get_state() not in TerminalStates:
         logger.debug("_check_to_close_session: Checking")
         await asyncio.sleep(close_session_check_interval_ms / 1000)
-        if get_state() in TerminalStates:
-            # already closing
-            break
-        # calculate the value now before comparing it so that there are no
-        # await points between the check and the comparison to avoid a TOCTOU
-        # race.
-        current_time = await get_current_time()
-        close_session_after_time_secs = get_close_session_after_time_secs()
-        if not close_session_after_time_secs:
-            logger.debug(
-                f"_check_to_close_session: Not reached: {close_session_after_time_secs}"
-            )
-            continue
-        if current_time > close_session_after_time_secs:
+
+        if not (ws := get_ws()) or ws.protocol.state is CLOSED:
             logger.info("Grace period ended for %s, closing session", transport_id)
-            do_close()
-            our_task.cancel()
+            transition_connecting()
 
 
 async def _do_ensure_connected[HandshakeMetadata](
@@ -1160,53 +1104,12 @@ async def _do_ensure_connected[HandshakeMetadata](
     return None
 
 
-async def _setup_heartbeat(
-    block_until_connected: Callable[[], Awaitable[None]],
-    session_id: str,
-    heartbeat_ms: float,
-    heartbeats_until_dead: int,
-    get_state: Callable[[], SessionState],
-    get_closing_grace_period: Callable[[], float | None],
-    close_websocket: Callable[[], Awaitable[None]],
-    increment_and_get_heartbeat_misses: Callable[[], int],
-) -> None:
-    while True:
-        while (state := get_state()) in ConnectingStates:
-            logger.debug(
-                "Heartbeat: block_until_connected: %r",
-                state,
-            )
-            await block_until_connected()
-
-        if state in TerminalStates:
-            logger.debug(
-                "Session is closed, no need to send heartbeat, state : "
-                "%r close_session_after_this: %r",
-                state,
-                get_closing_grace_period(),
-            )
-            # session is closing / closed, no need to send heartbeat anymore
-            break
-
-        await asyncio.sleep(heartbeat_ms / 1000)
-
-        if increment_and_get_heartbeat_misses() > heartbeats_until_dead:
-            if get_closing_grace_period() is not None:
-                # already in grace period, no need to set again
-                continue
-            logger.info(
-                "%r closing websocket because of heartbeat misses",
-                session_id,
-            )
-            await close_websocket()
-
-
 async def _serve(
     block_until_connected: Callable[[], Awaitable[None]],
     transport_id: str,
     get_state: Callable[[], SessionState],
     get_ws: Callable[[], ClientConnection | None],
-    transition_connecting: Callable[[], Awaitable[None]],
+    transition_connecting: Callable[[], None],
     transition_no_connection: Callable[[], Awaitable[None]],
     reset_session_close_countdown: Callable[[], None],
     close_session: Callable[[], Awaitable[None]],
@@ -1262,7 +1165,7 @@ async def _serve(
                 try:
                     message = await ws.recv(decode=False)
                 except ConnectionClosed:
-                    await transition_connecting()
+                    transition_connecting()
                     continue
                 try:
                     msg = parse_transport_msg(message)
