@@ -505,7 +505,6 @@ class Session:
 
         self._task_manager.create_task(
             _check_to_close_session(
-                self._transport_id,
                 self._transport_options.close_session_check_interval_ms,
                 lambda: self._state,
                 lambda: self._ws,
@@ -929,7 +928,6 @@ class Session:
 
 
 async def _check_to_close_session(
-    transport_id: str,
     close_session_check_interval_ms: float,
     get_state: Callable[[], SessionState],
     get_ws: Callable[[], ClientConnection | None],
@@ -939,8 +937,8 @@ async def _check_to_close_session(
         logger.debug("_check_to_close_session: Checking")
         await asyncio.sleep(close_session_check_interval_ms / 1000)
 
-        if not (ws := get_ws()) or ws.protocol.state is CLOSED:
-            logger.info("Grace period ended for %s, closing session", transport_id)
+        if (ws := get_ws()) and ws.protocol.state is CLOSED:
+            logger.info("Websocket is closed, transitioning to connecting")
             transition_connecting()
 
 
