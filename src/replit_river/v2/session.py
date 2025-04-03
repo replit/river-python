@@ -661,9 +661,9 @@ class Session[HandshakeMetadata]:
         service_name: str,
         procedure_name: str,
         init: I,
-        request: AsyncIterable[R] | None,
+        request: AsyncIterable[R],
         init_serializer: Callable[[I], Any],
-        request_serializer: Callable[[R], Any] | None,
+        request_serializer: Callable[[R], Any],
         response_deserializer: Callable[[Any], A],
         error_deserializer: Callable[[Any], RiverError],
         span: Span,
@@ -684,25 +684,22 @@ class Session[HandshakeMetadata]:
 
         async with self._with_stream(stream_id, 1) as (backpressure_waiter, output):
             try:
-                if request:
-                    assert request_serializer, "send_stream missing request_serializer"
-
-                    # If this request is not closed and the session is killed, we should
-                    # throw exception here
-                    async for item in request:
-                        # Block for backpressure
-                        await backpressure_waiter.wait()
-                        if output.closed():
-                            logger.debug("Stream is closed, avoid sending the rest")
-                            break
-                        await self._send_message(
-                            stream_id=stream_id,
-                            service_name=service_name,
-                            procedure_name=procedure_name,
-                            control_flags=0,
-                            payload=request_serializer(item),
-                            span=span,
-                        )
+                # If this request is not closed and the session is killed, we should
+                # throw exception here
+                async for item in request:
+                    # Block for backpressure
+                    await backpressure_waiter.wait()
+                    if output.closed():
+                        logger.debug("Stream is closed, avoid sending the rest")
+                        break
+                    await self._send_message(
+                        stream_id=stream_id,
+                        service_name=service_name,
+                        procedure_name=procedure_name,
+                        control_flags=0,
+                        payload=request_serializer(item),
+                        span=span,
+                    )
             except WebsocketClosedException as e:
                 raise RiverServiceException(
                     ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
