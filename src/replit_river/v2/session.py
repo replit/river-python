@@ -119,7 +119,6 @@ class _IgnoreMessage:
 
 
 class Session[HandshakeMetadata]:
-    _transport_id: str
     _server_id: str
     session_id: str
     _transport_options: TransportOptions
@@ -184,6 +183,13 @@ class Session[HandshakeMetadata]:
         self._wait_for_connected = asyncio.Event()
 
         self._client_id = client_id
+        # TODO: LeakyBucketRateLimit accepts "user" for all methods, which has
+        # historically been and continues to be "client_id".
+        #
+        # There's 1:1 client <-> transport, which means LeakyBucketRateLimit is only
+        # tracking exactly one rate limit.
+        #
+        # The "user" parameter is YAGNI, dethread client_id after v1 is deleted.
         self._rate_limiter = rate_limiter
         self._uri_and_metadata_factory = uri_and_metadata_factory
 
@@ -324,7 +330,7 @@ class Session[HandshakeMetadata]:
             return
         logger.info(
             "websocket closed from %s to %s begin grace period",
-            self._transport_id,
+            self.session_id,
             self._server_id,
         )
         self._state = SessionState.NO_CONNECTION
@@ -372,7 +378,7 @@ class Session[HandshakeMetadata]:
         msg = TransportMessage(
             streamId=stream_id,
             id=nanoid.generate(),
-            from_=self._transport_id,
+            from_=self._client_id,
             to=self._server_id,
             seq=self.seq,
             ack=self.ack,
@@ -402,7 +408,7 @@ class Session[HandshakeMetadata]:
     async def close(self) -> None:
         """Close the session and all associated streams."""
         logger.info(
-            f"{self._transport_id} closing session to {self._server_id}, ws: {self._ws}"
+            f"{self.session_id} closing session to {self._server_id}, ws: {self._ws}"
         )
         if self._state in TerminalStates:
             # already closing
@@ -563,7 +569,7 @@ class Session[HandshakeMetadata]:
         self._task_manager.create_task(
             _recv_from_ws(
                 block_until_connected=block_until_connected,
-                client_id=self._transport_id,
+                client_id=self._client_id,
                 get_state=lambda: self._state,
                 get_ws=lambda: self._ws,
                 transition_connecting=transition_connecting,
@@ -906,8 +912,8 @@ class Session[HandshakeMetadata]:
 
 async def _do_ensure_connected[HandshakeMetadata](
     client_id: str,
-    server_id: str,
     session_id: str,
+    server_id: str,
     max_retry: int,
     rate_limiter: LeakyBucketRateLimit,
     uri_and_metadata_factory: Callable[
