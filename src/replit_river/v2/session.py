@@ -878,7 +878,7 @@ class Session[HandshakeMetadata]:
             try:
                 async for result in output:
                     # Raise as early as we possibly can in case of an emission error
-                    if err := emitter_task.exception():
+                    if err := emitter_task.done() and emitter_task.exception():
                         raise err
                     if result.get("type") == "CLOSE":
                         break
