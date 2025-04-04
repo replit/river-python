@@ -462,6 +462,8 @@ class Session[HandshakeMetadata]:
             return None
 
         async def block_until_connected() -> None:
+            if self._state in TerminalStates:
+                return
             logger.debug("block_until_connected")
             await self._wait_for_connected.wait()
             logger.debug("block_until_connected released!")
@@ -486,6 +488,7 @@ class Session[HandshakeMetadata]:
             if self._state in TerminalStates:
                 return
             self._state = SessionState.NO_CONNECTION
+            self._wait_for_connected.clear()
             if self._ws:
                 self._task_manager.create_task(self._ws.close())
                 self._ws = None
