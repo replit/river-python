@@ -64,20 +64,20 @@ async def buffered_message_sender(
 ) -> None:
     our_task = asyncio.current_task()
     while our_task and not our_task.cancelling() and not our_task.cancelled():
-        await block_until_message_available()
-
-        if get_state() in TerminalStates:
-            logger.debug("_buffered_message_sender: closing")
-            return
-
-        while (ws := get_ws()) is None:
+        while get_state() in ConnectingStates:
             # Block until we have a handle
             logger.debug(
                 "_buffered_message_sender: Waiting until ws is connected",
             )
             await block_until_connected()
 
-        if not ws:
+        if get_state() in TerminalStates:
+            logger.debug("_buffered_message_sender: closing")
+            return
+
+        await block_until_message_available()
+
+        if not (ws := get_ws()):
             logger.debug("_buffered_message_sender: ws is not connected, loop")
             continue
 
@@ -97,13 +97,10 @@ async def buffered_message_sender(
                     type(e),
                     exc_info=e,
                 )
-                break
             except FailedSendingMessageException:
                 logger.error(
                     "Failed sending message, waiting for retry from buffer",
                     exc_info=True,
                 )
-                break
             except Exception:
                 logger.exception("Error attempting to send buffered messages")
-                break
