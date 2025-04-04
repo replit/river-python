@@ -59,7 +59,7 @@ async def buffered_message_sender(
     get_ws: Callable[[], WebSocketCommonProtocol | ClientConnection | None],
     websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
     get_next_pending: Callable[[], TransportMessage | None],
-    commit: Callable[[TransportMessage], None],
+    commit: Callable[[TransportMessage], Awaitable[None]],
     get_state: Callable[[], SessionState],
 ) -> None:
     our_task = asyncio.current_task()
@@ -89,7 +89,7 @@ async def buffered_message_sender(
             )
             try:
                 await send_transport_message(msg, ws, websocket_closed_callback)
-                commit(msg)
+                await commit(msg)
             except WebsocketClosedException as e:
                 logger.debug(
                     "_buffered_message_sender: Connection closed while sending "
