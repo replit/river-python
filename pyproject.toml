@@ -28,7 +28,7 @@ dependencies = [
     "nanoid>=2.0.0",
     "protobuf>=5.28.3",
     "pydantic-core>=2.20.1",
-    "websockets>=12.0",
+    "websockets>=13.0,<14",
     "opentelemetry-sdk>=1.28.2",
     "opentelemetry-api>=1.28.2",
 ]
