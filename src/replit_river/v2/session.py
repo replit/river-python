@@ -1184,7 +1184,7 @@ async def _recv_from_ws(
                         )
                         continue
 
-                    backpressure_waiter, stream = waiter_and_stream
+                    backpressure_waiter, output = waiter_and_stream
 
                     if (
                         msg.controlFlags & STREAM_CLOSED_BIT != 0
@@ -1195,7 +1195,7 @@ async def _recv_from_ws(
                         pass
                     else:
                         try:
-                            await stream.put(msg.payload)
+                            await output.put(msg.payload)
                         except ChannelClosed:
                             # The client is no longer interested in this stream,
                             # just drop the message.
@@ -1203,7 +1203,7 @@ async def _recv_from_ws(
 
                     if msg.controlFlags & STREAM_CLOSED_BIT != 0:
                         # Communicate that we're going down
-                        stream.close()
+                        output.close()
                         # Wake up backpressured writer
                         backpressure_waiter.set()
                 except OutOfOrderMessageException:
