@@ -314,29 +314,6 @@ class Session[HandshakeMetadata]:
     def is_connected(self) -> bool:
         return self._state in ActiveStates
 
-    async def _begin_close_session_countdown(self) -> None:
-        """Begin the countdown to close session, this should be called when
-        websocket is closed.
-        """
-        # calculate the value now before establishing it so that there are no
-        # await points between the check and the assignment to avoid a TOCTOU
-        # race.
-        grace_period_ms = self._transport_options.session_disconnect_grace_ms
-        close_session_after_time_secs = (
-            await self._get_current_time() + grace_period_ms / 1000
-        )
-        if self._close_session_after_time_secs is not None:
-            # already in grace period, no need to set again
-            return
-        logger.info(
-            "websocket closed from %s to %s begin grace period",
-            self.session_id,
-            self._server_id,
-        )
-        self._state = SessionState.NO_CONNECTION
-        self._close_session_after_time_secs = close_session_after_time_secs
-        self._wait_for_connected.clear()
-
     async def _get_current_time(self) -> float:
         return asyncio.get_event_loop().time()
 
@@ -497,7 +474,7 @@ class Session[HandshakeMetadata]:
                 block_until_connected=block_until_connected,
                 block_until_message_available=block_until_message_available,
                 get_ws=get_ws,
-                websocket_closed_callback=self._begin_close_session_countdown,
+                websocket_closed_callback=self.ensure_connected,
                 get_next_pending=get_next_pending,
                 commit=commit,
                 get_state=lambda: self._state,
@@ -521,8 +498,8 @@ class Session[HandshakeMetadata]:
 
             if self._retry_connection_callback:
                 self._task_manager.create_task(self._retry_connection_callback())
-
-            await self._begin_close_session_countdown()
+            else:
+                await self.ensure_connected()
 
         def assert_incoming_seq_bookkeeping(
             msg_from: str,
