@@ -642,6 +642,7 @@ class Session[HandshakeMetadata]:
             except asyncio.TimeoutError as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
+                    message="Timeout, abandoning request",
                     span=span,
                 )
                 raise RiverException(ERROR_CODE_CANCEL, str(e)) from e
@@ -705,6 +706,7 @@ class Session[HandshakeMetadata]:
                     except Exception as e:
                         await self._send_cancel_stream(
                             stream_id=stream_id,
+                            message="Request serialization error",
                             span=span,
                         )
                         raise RiverServiceException(
@@ -726,6 +728,7 @@ class Session[HandshakeMetadata]:
                 # cancel the stream.
                 await self._send_cancel_stream(
                     stream_id=stream_id,
+                    message="Unspecified error",
                     span=span,
                 )
                 raise RiverServiceException(
@@ -746,7 +749,11 @@ class Session[HandshakeMetadata]:
                     procedure_name,
                 ) from e
             except Exception as e:
-                await self._send_cancel_stream(stream_id, span)
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    message="Unspecified error",
+                    span=span,
+                )
                 raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
 
             if "ok" not in result or not result["ok"]:
@@ -793,7 +800,11 @@ class Session[HandshakeMetadata]:
                         yield error_deserializer(item["payload"])
                     yield response_deserializer(item["payload"])
             except Exception as e:
-                await self._send_cancel_stream(stream_id, span)
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    message="Unspecified error",
+                    span=span,
+                )
                 raise RiverServiceException(
                     ERROR_CODE_STREAM_CLOSED,
                     "Stream closed before response",
@@ -877,7 +888,11 @@ class Session[HandshakeMetadata]:
                 # ... block the outer function until the emitter is finished emitting.
                 await emitter_task
             except Exception as e:
-                await self._send_cancel_stream(stream_id, span)
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    message="Unspecified error",
+                    span=span,
+                )
                 raise RiverServiceException(
                     ERROR_CODE_STREAM_CLOSED,
                     "Stream closed before response",
@@ -888,12 +903,19 @@ class Session[HandshakeMetadata]:
     async def _send_cancel_stream(
         self,
         stream_id: str,
+        message: str,
         span: Span,
     ) -> None:
         await self._enqueue_message(
             stream_id=stream_id,
             control_flags=STREAM_CANCEL_BIT,
-            payload={"type": "CANCEL"},
+            payload={
+                "ok": False,
+                "payload": {
+                    "code": "CANCEL",
+                    "message": message,
+                },
+            },
             span=span,
         )
 
