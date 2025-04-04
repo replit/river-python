@@ -339,7 +339,7 @@ class Session[HandshakeMetadata]:
         self._heartbeat_misses = 0
         self._close_session_after_time_secs = None
 
-    async def _send_message(
+    async def _enqueue_message(
         self,
         stream_id: str,
         payload: dict[Any, Any] | str,
@@ -350,7 +350,7 @@ class Session[HandshakeMetadata]:
     ) -> None:
         """Send serialized messages to the websockets."""
         logger.debug(
-            "_send_message(stream_id=%r, payload=%r, control_flags=%r, "
+            "_enqueue_message(stream_id=%r, payload=%r, control_flags=%r, "
             "service_name=%r, procedure_name=%r)",
             stream_id,
             payload,
@@ -568,7 +568,7 @@ class Session[HandshakeMetadata]:
                 close_session=self.close,
                 assert_incoming_seq_bookkeeping=assert_incoming_seq_bookkeeping,
                 get_stream=lambda stream_id: self._streams.get(stream_id),
-                send_message=self._send_message,
+                enqueue_message=self._enqueue_message,
             )
         )
 
@@ -612,7 +612,7 @@ class Session[HandshakeMetadata]:
         Expects the input and output be messages that will be msgpacked.
         """
         stream_id = nanoid.generate()
-        await self._send_message(
+        await self._enqueue_message(
             stream_id=stream_id,
             control_flags=STREAM_OPEN_BIT | STREAM_CLOSED_BIT,
             payload=request_serializer(request),
@@ -673,7 +673,7 @@ class Session[HandshakeMetadata]:
         Expects the input and output be messages that will be msgpacked.
         """
         stream_id = nanoid.generate()
-        await self._send_message(
+        await self._enqueue_message(
             stream_id=stream_id,
             control_flags=STREAM_OPEN_BIT,
             service_name=service_name,
@@ -692,7 +692,7 @@ class Session[HandshakeMetadata]:
                     if output.closed():
                         logger.debug("Stream is closed, avoid sending the rest")
                         break
-                    await self._send_message(
+                    await self._enqueue_message(
                         stream_id=stream_id,
                         service_name=service_name,
                         procedure_name=procedure_name,
@@ -757,7 +757,7 @@ class Session[HandshakeMetadata]:
         Expects the input and output be messages that will be msgpacked.
         """
         stream_id = nanoid.generate()
-        await self._send_message(
+        await self._enqueue_message(
             service_name=service_name,
             procedure_name=procedure_name,
             stream_id=stream_id,
@@ -812,7 +812,7 @@ class Session[HandshakeMetadata]:
         """
 
         stream_id = nanoid.generate()
-        await self._send_message(
+        await self._enqueue_message(
             service_name=service_name,
             procedure_name=procedure_name,
             stream_id=stream_id,
@@ -843,7 +843,7 @@ class Session[HandshakeMetadata]:
                     if output.closed():
                         logger.debug("Stream is closed, avoid sending the rest")
                         break
-                    await self._send_message(
+                    await self._enqueue_message(
                         stream_id=stream_id,
                         control_flags=0,
                         payload=request_serializer(item),
@@ -888,7 +888,7 @@ class Session[HandshakeMetadata]:
         extra_control_flags: int,
         span: Span,
     ) -> None:
-        await self._send_message(
+        await self._enqueue_message(
             stream_id=stream_id,
             control_flags=STREAM_CANCEL_BIT | extra_control_flags,
             payload={"type": "CANCEL"},
@@ -900,7 +900,7 @@ class Session[HandshakeMetadata]:
         stream_id: str,
         span: Span,
     ) -> None:
-        await self._send_message(
+        await self._enqueue_message(
             stream_id=stream_id,
             control_flags=STREAM_CLOSED_BIT,
             payload={"type": "CLOSE"},
@@ -1080,7 +1080,7 @@ async def _recv_from_ws(
         [str, int, int], Literal[True] | _IgnoreMessage
     ],
     get_stream: Callable[[str], tuple[asyncio.Event, Channel[Any]] | None],
-    send_message: SendMessage[None],
+    enqueue_message: SendMessage[None],
 ) -> None:
     """Serve messages from the websocket.
 
@@ -1161,7 +1161,7 @@ async def _recv_from_ws(
 
                     # Shortcut to avoid processing ack packets
                     if msg.controlFlags & ACK_BIT != 0:
-                        await send_message(
+                        await enqueue_message(
                             stream_id="heartbeat",
                             # TODO: make this a message class
                             # https://github.com/replit/river/blob/741b1ea6d7600937ad53564e9cf8cd27a92ec36a/transport/message.ts#L42
