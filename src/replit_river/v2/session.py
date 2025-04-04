@@ -482,12 +482,6 @@ class Session[HandshakeMetadata]:
         )
 
     def _start_recv_from_ws(self) -> None:
-        def transition_connecting() -> None:
-            if self._state in TerminalStates:
-                return
-            self._state = SessionState.CONNECTING
-            self._wait_for_connected.clear()
-
         async def transition_no_connection() -> None:
             if self._state in TerminalStates:
                 return
@@ -549,7 +543,6 @@ class Session[HandshakeMetadata]:
                 client_id=self._client_id,
                 get_state=lambda: self._state,
                 get_ws=lambda: self._ws,
-                transition_connecting=transition_connecting,
                 transition_no_connection=transition_no_connection,
                 reset_session_close_countdown=self._reset_session_close_countdown,
                 close_session=self.close,
@@ -1073,7 +1066,6 @@ async def _recv_from_ws(
     client_id: str,
     get_state: Callable[[], SessionState],
     get_ws: Callable[[], ClientConnection | None],
-    transition_connecting: Callable[[], None],
     transition_no_connection: Callable[[], Awaitable[None]],
     reset_session_close_countdown: Callable[[], None],
     close_session: Callable[[], Awaitable[None]],
@@ -1127,7 +1119,7 @@ async def _recv_from_ws(
                 except ConnectionClosed:
                     # This triggers a break in the inner loop so we can get back to
                     # the outer loop.
-                    transition_connecting()
+                    await transition_no_connection()
                     break
                 try:
                     msg = parse_transport_msg(message)
