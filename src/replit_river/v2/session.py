@@ -147,7 +147,7 @@ class Session[HandshakeMetadata]:
     _space_available: asyncio.Event
 
     # stream for tasks
-    _streams: dict[str, tuple[asyncio.Event, Channel[Any]]]
+    _streams: dict[str, tuple[Channel[Exception | None], Channel[Any]]]
 
     # book keeping
     _ack_buffer: deque[TransportMessage]
@@ -200,7 +200,7 @@ class Session[HandshakeMetadata]:
         self._space_available.set()
 
         # stream for tasks
-        self._streams: dict[str, tuple[asyncio.Event, Channel[Any]]] = {}
+        self._streams: dict[str, tuple[Channel[Exception | None], Channel[Any]]] = {}
 
         # book keeping
         self._ack_buffer = deque()
@@ -424,10 +424,14 @@ class Session[HandshakeMetadata]:
 
         # TODO: unexpected_close should close stream differently here to
         # throw exception correctly.
-        for backpressure_waiter, stream in self._streams.values():
+        for error_channel, stream in self._streams.values():
             stream.close()
             # Wake up backpressured writers
-            backpressure_waiter.set()
+            await error_channel.put(
+                SessionClosedRiverServiceException(
+                    "river session is closed",
+                )
+            )
         # Before we GC the streams, let's wait for all tasks to be closed gracefully.
         await asyncio.gather(*[stream.join() for _, stream in self._streams.values()])
         self._streams.clear()
@@ -446,7 +450,7 @@ class Session[HandshakeMetadata]:
     def _start_buffered_message_sender(
         self,
     ) -> None:
-        def commit(msg: TransportMessage) -> None:
+        async def commit(msg: TransportMessage) -> None:
             pending = self._send_buffer.popleft()
             if msg.seq != pending.seq:
                 logger.error("Out of sequence error")
@@ -462,7 +466,7 @@ class Session[HandshakeMetadata]:
             # Wake up backpressured writer
             stream_meta = self._streams.get(pending.streamId)
             if stream_meta:
-                stream_meta[0].set()
+                await stream_meta[0].put(None)
 
         def get_next_pending() -> TransportMessage | None:
             if self._send_buffer:
@@ -577,22 +581,22 @@ class Session[HandshakeMetadata]:
         self,
         session_id: str,
         maxsize: int,
-    ) -> AsyncIterator[tuple[asyncio.Event, Channel[ResultType]]]:
+    ) -> AsyncIterator[tuple[Channel[Exception | None], Channel[ResultType]]]:
         """
         _with_stream
 
         An async context that exposes a managed stream and an event that permits
         producers to respond to backpressure.
 
-        It is expected that the first message emitted ignores this backpressure_waiter,
+        It is expected that the first message emitted ignores this error_channel,
         since the first event does not care about backpressure, but subsequent events
-        emitted should call await backpressure_waiter.wait() prior to emission.
+        emitted should call await error_channel.wait() prior to emission.
         """
         output: Channel[Any] = Channel(maxsize=maxsize)
-        backpressure_waiter = asyncio.Event()
-        self._streams[session_id] = (backpressure_waiter, output)
+        error_channel: Channel[Exception | None] = Channel(maxsize=1)
+        self._streams[session_id] = (error_channel, output)
         try:
-            yield (backpressure_waiter, output)
+            yield (error_channel, output)
         finally:
             del self._streams[session_id]
 
@@ -621,18 +625,17 @@ class Session[HandshakeMetadata]:
             span=span,
         )
 
-        async with self._with_stream(stream_id, 1) as (backpressure_waiter, output):
+        async with self._with_stream(stream_id, 1) as (error_channel, output):
             # Handle potential errors during communication
             try:
                 async with asyncio.timeout(timeout.total_seconds()):
-                    # Block for event for symmetry with backpressured producers
-                    # Here this should be trivially true.
-                    await backpressure_waiter.wait()
+                    # Block for backpressure and emission errors from the ws
+                    if err := await error_channel.get():
+                        raise err
                     result = await output.get()
             except asyncio.TimeoutError as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
-                    extra_control_flags=0,
                     span=span,
                 )
                 raise RiverException(ERROR_CODE_CANCEL, str(e)) from e
@@ -643,7 +646,7 @@ class Session[HandshakeMetadata]:
                     service_name,
                     procedure_name,
                 ) from e
-            except RuntimeError as e:
+            except Exception as e:
                 raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
             if "ok" not in result or not result["ok"]:
                 try:
@@ -682,34 +685,41 @@ class Session[HandshakeMetadata]:
             span=span,
         )
 
-        async with self._with_stream(stream_id, 1) as (backpressure_waiter, output):
+        async with self._with_stream(stream_id, 1) as (error_channel, output):
             try:
                 # If this request is not closed and the session is killed, we should
                 # throw exception here
                 async for item in request:
-                    # Block for backpressure
-                    await backpressure_waiter.wait()
-                    if output.closed():
-                        logger.debug("Stream is closed, avoid sending the rest")
-                        break
+                    # Block for backpressure and emission errors from the ws
+                    if err := await error_channel.get():
+                        raise err
+
+                    try:
+                        payload = request_serializer(item)
+                    except Exception as e:
+                        await self._send_cancel_stream(
+                            stream_id=stream_id,
+                            span=span,
+                        )
+                        raise RiverServiceException(
+                            ERROR_CODE_STREAM_CLOSED,
+                            str(e),
+                            service_name,
+                            procedure_name,
+                        ) from e
                     await self._enqueue_message(
                         stream_id=stream_id,
                         service_name=service_name,
                         procedure_name=procedure_name,
                         control_flags=0,
-                        payload=request_serializer(item),
+                        payload=payload,
                         span=span,
                     )
-            except WebsocketClosedException as e:
-                raise RiverServiceException(
-                    ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
-                ) from e
             except Exception as e:
                 # If we get any exception other than WebsocketClosedException,
                 # cancel the stream.
                 await self._send_cancel_stream(
                     stream_id=stream_id,
-                    extra_control_flags=0,
                     span=span,
                 )
                 raise RiverServiceException(
@@ -729,8 +739,10 @@ class Session[HandshakeMetadata]:
                     service_name,
                     procedure_name,
                 ) from e
-            except RuntimeError as e:
+            except Exception as e:
+                await self._send_cancel_stream(stream_id, span)
                 raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
+
             if "ok" not in result or not result["ok"]:
                 try:
                     error = error_deserializer(result["payload"])
@@ -742,12 +754,12 @@ class Session[HandshakeMetadata]:
 
             return response_deserializer(result["payload"])
 
-    async def send_subscription[R, E, A](
+    async def send_subscription[I, E, A](
         self,
         service_name: str,
         procedure_name: str,
-        request: R,
-        request_serializer: Callable[[R], Any],
+        init: I,
+        init_serializer: Callable[[I], Any],
         response_deserializer: Callable[[Any], A],
         error_deserializer: Callable[[Any], E],
         span: Span,
@@ -762,37 +774,26 @@ class Session[HandshakeMetadata]:
             procedure_name=procedure_name,
             stream_id=stream_id,
             control_flags=STREAM_OPEN_BIT,
-            payload=request_serializer(request),
+            payload=init_serializer(init),
             span=span,
         )
 
         async with self._with_stream(stream_id, MAX_MESSAGE_BUFFER_SIZE) as (_, output):
-            # Handle potential errors during communication
             try:
                 async for item in output:
                     if item.get("type") == "CLOSE":
                         break
                     if not item.get("ok", False):
-                        try:
-                            yield error_deserializer(item["payload"])
-                        except Exception:
-                            logger.exception(
-                                "Error during subscription "
-                                f"error deserialization: {item}"
-                            )
-                        continue
+                        yield error_deserializer(item["payload"])
                     yield response_deserializer(item["payload"])
-            except (RuntimeError, ChannelClosed) as e:
+            except Exception as e:
+                await self._send_cancel_stream(stream_id, span)
                 raise RiverServiceException(
                     ERROR_CODE_STREAM_CLOSED,
                     "Stream closed before response",
                     service_name,
                     procedure_name,
                 ) from e
-            except Exception as e:
-                raise e
-            finally:
-                output.close()
 
     async def send_stream[I, R, E, A](
         self,
@@ -822,7 +823,7 @@ class Session[HandshakeMetadata]:
         )
 
         async with self._with_stream(stream_id, MAX_MESSAGE_BUFFER_SIZE) as (
-            backpressure_waiter,
+            error_channel,
             output,
         ):
             # Create the encoder task
@@ -837,12 +838,13 @@ class Session[HandshakeMetadata]:
                 assert request_serializer, "send_stream missing request_serializer"
 
                 async for item in request:
-                    if item is None:
-                        continue
-                    await backpressure_waiter.wait()
-                    if output.closed():
-                        logger.debug("Stream is closed, avoid sending the rest")
-                        break
+                    # Block for backpressure and emission errors from the ws
+                    if err := await error_channel.get():
+                        await self._send_close_stream(
+                            stream_id=stream_id,
+                            span=span,
+                        )
+                        raise err
                     await self._enqueue_message(
                         stream_id=stream_id,
                         control_flags=0,
@@ -853,44 +855,38 @@ class Session[HandshakeMetadata]:
                     span=span,
                 )
 
-            self._task_manager.create_task(_encode_stream())
+            emitter_task = self._task_manager.create_task(_encode_stream())
 
             # Handle potential errors during communication
             try:
                 async for result in output:
+                    # Raise as early as we possibly can in case of an emission error
+                    if err := emitter_task.exception():
+                        raise err
                     if result.get("type") == "CLOSE":
                         break
                     if "ok" not in result or not result["ok"]:
-                        try:
-                            yield error_deserializer(result["payload"])
-                        except Exception:
-                            logger.exception(
-                                f"Error during stream error deserialization: {result}"
-                            )
-                        continue
+                        yield error_deserializer(result["payload"])
                     yield response_deserializer(result["payload"])
-            except (RuntimeError, ChannelClosed) as e:
+                # ... block the outer function until the emitter is finished emitting.
+                await emitter_task
+            except Exception as e:
+                await self._send_cancel_stream(stream_id, span)
                 raise RiverServiceException(
                     ERROR_CODE_STREAM_CLOSED,
                     "Stream closed before response",
                     service_name,
                     procedure_name,
                 ) from e
-            except Exception as e:
-                raise e
-            finally:
-                output.close()
-                backpressure_waiter.set()
 
     async def _send_cancel_stream(
         self,
         stream_id: str,
-        extra_control_flags: int,
         span: Span,
     ) -> None:
         await self._enqueue_message(
             stream_id=stream_id,
-            control_flags=STREAM_CANCEL_BIT | extra_control_flags,
+            control_flags=STREAM_CANCEL_BIT,
             payload={"type": "CANCEL"},
             span=span,
         )
@@ -1079,7 +1075,7 @@ async def _recv_from_ws(
     assert_incoming_seq_bookkeeping: Callable[
         [str, int, int], Literal[True] | _IgnoreMessage
     ],
-    get_stream: Callable[[str], tuple[asyncio.Event, Channel[Any]] | None],
+    get_stream: Callable[[str], tuple[Channel[Exception | None], Channel[Any]] | None],
     enqueue_message: SendMessage[None],
 ) -> None:
     """Serve messages from the websocket.
@@ -1088,11 +1084,11 @@ async def _recv_from_ws(
     """
     reset_session_close_countdown()
     our_task = asyncio.current_task()
-    idx = 0
+    connection_attempts = 0
     try:
         while our_task and not our_task.cancelling() and not our_task.cancelled():
-            logger.debug(f"_recv_from_ws loop count={idx}")
-            idx += 1
+            logger.debug(f"_recv_from_ws loop count={connection_attempts}")
+            connection_attempts += 1
             ws = None
             while ((state := get_state()) in ConnectingStates) and (
                 state not in TerminalStates
@@ -1113,8 +1109,11 @@ async def _recv_from_ws(
 
             logger.debug("client start handling messages from ws %r", ws)
 
+            error_channel: Channel[Exception | None] | None = None
+
             # We should not process messages if the websocket is closed.
             while (ws := get_ws()) and get_state() in ActiveStates:
+                connection_attempts = 0
                 # decode=False: Avoiding an unnecessary round-trip through str
                 # Ideally this should be type-ascripted to : bytes, but there
                 # is no @overrides in `websockets` to hint this.
@@ -1175,16 +1174,16 @@ async def _recv_from_ws(
                         )
                         continue
 
-                    waiter_and_stream = get_stream(msg.streamId)
+                    errors_and_stream = get_stream(msg.streamId)
 
-                    if not waiter_and_stream:
+                    if not errors_and_stream:
                         logger.warning(
                             "no stream for %s, ignoring message",
                             msg.streamId,
                         )
                         continue
 
-                    backpressure_waiter, output = waiter_and_stream
+                    error_channel, output = errors_and_stream
 
                     if (
                         msg.controlFlags & STREAM_CLOSED_BIT != 0
@@ -1203,18 +1202,30 @@ async def _recv_from_ws(
 
                     if msg.controlFlags & STREAM_CLOSED_BIT != 0:
                         # Communicate that we're going down
+                        #
+                        # This implements the receive side of the half-closed strategy.
                         output.close()
-                        # Wake up backpressured writer
-                        backpressure_waiter.set()
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
                     await close_session()
+                    if error_channel:
+                        await error_channel.put(
+                            SessionClosedRiverServiceException(
+                                "Out of order message, closing connection"
+                            )
+                        )
                     continue
                 except InvalidMessageException:
                     logger.exception(
                         "Got invalid transport message, closing session",
                     )
                     await close_session()
+                    if error_channel:
+                        await error_channel.put(
+                            SessionClosedRiverServiceException(
+                                "Out of order message, closing connection"
+                            )
+                        )
                     continue
                 except FailedSendingMessageException:
                     # Expected error if the connection is closed.
@@ -1239,4 +1250,4 @@ async def _recv_from_ws(
                 exc_info=unhandled,
             )
             raise unhandled
-    logger.debug(f"_recv_from_ws exiting normally after {idx} loops")
+    logger.debug(f"_recv_from_ws exiting normally after {connection_attempts} loops")
