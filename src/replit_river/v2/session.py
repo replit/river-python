@@ -138,7 +138,6 @@ class Session[HandshakeMetadata]:
 
     # ws state
     _ws: ClientConnection | None
-    _heartbeat_misses: int
     _retry_connection_callback: RetryConnectionCallback | None
 
     # message state
@@ -195,7 +194,6 @@ class Session[HandshakeMetadata]:
 
         # ws state
         self._ws = None
-        self._heartbeat_misses = 0
         self._retry_connection_callback = retry_connection_callback
 
         # message state
@@ -316,11 +314,6 @@ class Session[HandshakeMetadata]:
 
     async def _get_current_time(self) -> float:
         return asyncio.get_event_loop().time()
-
-    def _reset_session_close_countdown(self) -> None:
-        logger.debug("_reset_session_close_countdown")
-        self._heartbeat_misses = 0
-        self._close_session_after_time_secs = None
 
     async def _enqueue_message(
         self,
@@ -547,7 +540,6 @@ class Session[HandshakeMetadata]:
                 get_state=lambda: self._state,
                 get_ws=lambda: self._ws,
                 transition_no_connection=transition_no_connection,
-                reset_session_close_countdown=self._reset_session_close_countdown,
                 close_session=self.close,
                 assert_incoming_seq_bookkeeping=assert_incoming_seq_bookkeeping,
                 get_stream=lambda stream_id: self._streams.get(stream_id),
@@ -1070,7 +1062,6 @@ async def _recv_from_ws(
     get_state: Callable[[], SessionState],
     get_ws: Callable[[], ClientConnection | None],
     transition_no_connection: Callable[[], Awaitable[None]],
-    reset_session_close_countdown: Callable[[], None],
     close_session: Callable[[], Awaitable[None]],
     assert_incoming_seq_bookkeeping: Callable[
         [str, int, int], Literal[True] | _IgnoreMessage
@@ -1082,7 +1073,6 @@ async def _recv_from_ws(
 
     Process incoming packets from the connected websocket.
     """
-    reset_session_close_countdown()
     our_task = asyncio.current_task()
     connection_attempts = 0
     try:
@@ -1155,8 +1145,6 @@ async def _recv_from_ws(
                             pass
                         case other:
                             assert_never(other)
-
-                    reset_session_close_countdown()
 
                     # Shortcut to avoid processing ack packets
                     if msg.controlFlags & ACK_BIT != 0:
