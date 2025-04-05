@@ -549,7 +549,7 @@ class Session[HandshakeMetadata]:
     @asynccontextmanager
     async def _with_stream(
         self,
-        session_id: str,
+        stream_id: str,
         maxsize: int,
     ) -> AsyncIterator[tuple[Channel[Exception | None], Channel[ResultType]]]:
         """
@@ -564,11 +564,20 @@ class Session[HandshakeMetadata]:
         """
         output: Channel[Any] = Channel(maxsize=maxsize)
         error_channel: Channel[Exception | None] = Channel(maxsize=1)
-        self._streams[session_id] = (error_channel, output)
+        self._streams[stream_id] = (error_channel, output)
         try:
             yield (error_channel, output)
         finally:
-            del self._streams[session_id]
+            stream_meta = self._streams.get(stream_id)
+            if not stream_meta:
+                logger.warning("_with_stream had an entry deleted out from under it", extra={
+                    "session_id": self.session_id,
+                    "stream_id": stream_id,
+                })
+                return
+            # We need to signal back to all emitters or waiters that we're gone
+            stream_meta[0].close()
+            del self._streams[stream_id]
 
     async def send_rpc[R, A](
         self,
