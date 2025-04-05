@@ -118,6 +118,12 @@ class _IgnoreMessage:
     pass
 
 
+class StreamMeta(TypedDict):
+    span: Span
+    error_channel: Channel[None | Exception]
+    output: Channel[Any]
+
+
 class Session[HandshakeMetadata]:
     _server_id: str
     session_id: str
@@ -145,7 +151,7 @@ class Session[HandshakeMetadata]:
     _space_available: asyncio.Event
 
     # stream for tasks
-    _streams: dict[str, tuple[Span, Channel[Exception | None], Channel[Any]]]
+    _streams: dict[str, StreamMeta]
 
     # book keeping
     _ack_buffer: deque[TransportMessage]
@@ -204,9 +210,7 @@ class Session[HandshakeMetadata]:
         self._space_available.set()
 
         # stream for tasks
-        self._streams: dict[
-            str, tuple[Span, Channel[Exception | None], Channel[Any]]
-        ] = {}
+        self._streams: dict[str, StreamMeta] = {}
 
         # book keeping
         self._ack_buffer = deque()
@@ -399,11 +403,11 @@ class Session[HandshakeMetadata]:
 
         await self._task_manager.cancel_all_tasks()
 
-        for _, error_channel, stream in self._streams.values():
-            stream.close()
+        for stream_meta in self._streams.values():
+            stream_meta["output"].close()
             # Wake up backpressured writers
             try:
-                error_channel.put_nowait(
+                stream_meta["error_channel"].put_nowait(
                     reason
                     or SessionClosedRiverServiceException(
                         "river session is closed",
@@ -415,7 +419,7 @@ class Session[HandshakeMetadata]:
                 )
         # Before we GC the streams, let's wait for all tasks to be closed gracefully.
         await asyncio.gather(
-            *[stream.join() for _, _, stream in self._streams.values()]
+            *[stream_meta["output"].join() for stream_meta in self._streams.values()]
         )
         self._streams.clear()
 
@@ -469,7 +473,7 @@ class Session[HandshakeMetadata]:
             # Wake up backpressured writer
             stream_meta = self._streams.get(pending.streamId)
             if stream_meta:
-                await stream_meta[1].put(None)
+                await stream_meta["error_channel"].put(None)
 
         def get_next_pending() -> TransportMessage | None:
             if self._send_buffer:
@@ -580,7 +584,7 @@ class Session[HandshakeMetadata]:
         span: Span,
         stream_id: str,
         maxsize: int,
-    ) -> AsyncIterator[tuple[Channel[Exception | None], Channel[ResultType]]]:
+    ) -> AsyncIterator[tuple[Channel[None | Exception], Channel[ResultType]]]:
         """
         _with_stream
 
@@ -592,8 +596,12 @@ class Session[HandshakeMetadata]:
         emitted should call await error_channel.wait() prior to emission.
         """
         output: Channel[Any] = Channel(maxsize=maxsize)
-        error_channel: Channel[Exception | None] = Channel(maxsize=1)
-        self._streams[stream_id] = (span, error_channel, output)
+        error_channel: Channel[None | Exception] = Channel(maxsize=1)
+        self._streams[stream_id] = {
+            "span": span,
+            "error_channel": error_channel,
+            "output": output,
+        }
         try:
             yield (error_channel, output)
         finally:
@@ -608,7 +616,7 @@ class Session[HandshakeMetadata]:
                 )
                 return
             # We need to signal back to all emitters or waiters that we're gone
-            stream_meta[1].close()
+            output.close()
             del self._streams[stream_id]
 
     async def send_rpc[R, A](
@@ -1111,7 +1119,7 @@ async def _recv_from_ws(
     ],
     get_stream: Callable[
         [str],
-        tuple[Span, Channel[Exception | None], Channel[Any]] | None,
+        StreamMeta | None,
     ],
     enqueue_message: SendMessage[None],
 ) -> None:
@@ -1215,8 +1223,6 @@ async def _recv_from_ws(
                         )
                         continue
 
-                    _, _, output = stream_meta
-
                     if (
                         msg.controlFlags & STREAM_CLOSED_BIT != 0
                         and msg.payload.get("type", None) == "CLOSE"
@@ -1226,7 +1232,7 @@ async def _recv_from_ws(
                         pass
                     else:
                         try:
-                            await output.put(msg.payload)
+                            await stream_meta["output"].put(msg.payload)
                         except ChannelClosed:
                             # The client is no longer interested in this stream,
                             # just drop the message.
@@ -1236,7 +1242,7 @@ async def _recv_from_ws(
                         # Communicate that we're going down
                         #
                         # This implements the receive side of the half-closed strategy.
-                        output.close()
+                        stream_meta["output"].close()
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
                     await close_session(
