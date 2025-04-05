@@ -285,7 +285,6 @@ class Session[HandshakeMetadata]:
                     client_id=self._client_id,
                     server_id=self._server_id,
                     session_id=self.session_id,
-                    max_retry=self._transport_options.connection_retry_options.max_retry,
                     rate_limiter=self._rate_limiter,
                     uri_and_metadata_factory=self._uri_and_metadata_factory,
                     get_next_sent_seq=get_next_sent_seq,
@@ -901,7 +900,6 @@ async def _do_ensure_connected[HandshakeMetadata](
     client_id: str,
     session_id: str,
     server_id: str,
-    max_retry: int,
     rate_limiter: LeakyBucketRateLimit,
     uri_and_metadata_factory: Callable[
         [], Awaitable[UriAndMetadata[HandshakeMetadata]]
@@ -918,11 +916,11 @@ async def _do_ensure_connected[HandshakeMetadata](
     logger.info("Attempting to establish new ws connection")
 
     last_error: Exception | None = None
-    i = 0
+    attempt_count = 0
     while rate_limiter.has_budget(client_id):
-        if i > 0:
-            logger.info(f"Retrying build handshake number {i} times")
-        i += 1
+        if attempt_count > 0:
+            logger.info(f"Retrying build handshake number {attempt_count} times")
+        attempt_count += 1
 
         rate_limiter.consume_budget(client_id)
         transition_connecting()
@@ -1050,7 +1048,7 @@ async def _do_ensure_connected[HandshakeMetadata](
         do_close()
         raise RiverException(
             ERROR_HANDSHAKE,
-            f"Failed to create ws after retrying {max_retry} number of times",
+            f"Failed to create ws after retrying {attempt_count} number of times",
         ) from last_error
 
     return None
