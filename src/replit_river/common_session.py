@@ -62,6 +62,15 @@ async def buffered_message_sender(
     commit: Callable[[TransportMessage], Awaitable[None]],
     get_state: Callable[[], SessionState],
 ) -> None:
+    """
+    buffered_message_sender runs in a task and consumes from a queue, emitting
+    messages over the websocket as quickly as it can.
+
+    One of the design goals is to keep the message queue as short as possible to permit
+    quickly cancelling streams or acking heartbeats, so to that end it is wise to
+    incorporate backpressure into the lifecycle of get_next_pending/commit.
+    """
+
     our_task = asyncio.current_task()
     while our_task and not our_task.cancelling() and not our_task.cancelled():
         while get_state() in ConnectingStates:

@@ -239,13 +239,13 @@ class Session[HandshakeMetadata]:
                 return self._send_buffer[0].seq
             return self.seq
 
-        def do_close() -> None:
+        def close_session(reason: Exception | None) -> None:
             # Avoid closing twice
             if self._terminating_task is None:
                 # We can't just call self.close() directly because
                 # we're inside a thread that will eventually be awaited
                 # during the cleanup procedure.
-                self._terminating_task = asyncio.create_task(self.close())
+                self._terminating_task = asyncio.create_task(self.close(reason))
 
         def transition_connecting() -> None:
             if self._state in TerminalStates:
@@ -296,7 +296,7 @@ class Session[HandshakeMetadata]:
                     close_ws_in_background=close_ws_in_background,
                     transition_connected=transition_connected,
                     unbind_connecting_task=unbind_connecting_task,
-                    do_close=do_close,
+                    close_session=close_session,
                 )
             )
 
@@ -433,6 +433,26 @@ class Session[HandshakeMetadata]:
     def _start_buffered_message_sender(
         self,
     ) -> None:
+        """
+        Building on buffered_message_sender's documentation, we implement backpressure
+        per-stream by way of self._streams'
+
+            error_channel: Channel[Exception | None]
+
+        This is accomplished via the following strategy:
+        - If buffered_message_sender encounters an error, we transition back to
+          connecting and attempt to handshake.
+
+          If the handshake fails, we close the session with an informative error that
+          gets emitted to all backpressured client methods.
+
+        -  Alternately, if buffered_message_sender successfully writes back to the
+
+        - Finally, if _recv_from_ws encounters an error (transport or deserialization),
+          we emit an informative error to close_session which gets emitted to all
+          backpressured client methods.
+        """
+
         async def commit(msg: TransportMessage) -> None:
             pending = self._send_buffer.popleft()
             if msg.seq != pending.seq:
@@ -935,7 +955,7 @@ async def _do_ensure_connected[HandshakeMetadata](
     close_ws_in_background: Callable[[ClientConnection], None],
     transition_connected: Callable[[ClientConnection], None],
     unbind_connecting_task: Callable[[], None],
-    do_close: Callable[[], None],
+    close_session: Callable[[Exception | None], None],
 ) -> None:
     logger.info("Attempting to establish new ws connection")
 
@@ -1040,15 +1060,16 @@ async def _do_ensure_connected[HandshakeMetadata](
 
             logger.debug("river client get handshake response : %r", handshake_response)
             if not handshake_response.status.ok:
-                if handshake_response.status.code == ERROR_CODE_SESSION_STATE_MISMATCH:
-                    do_close()
-
-                raise RiverException(
+                err = RiverException(
                     ERROR_HANDSHAKE,
                     f"Handshake failed with code {handshake_response.status.code}: {
                         handshake_response.status.reason
                     }",
                 )
+                if handshake_response.status.code == ERROR_CODE_SESSION_STATE_MISMATCH:
+                    close_session(err)
+
+                raise err
 
             # We did it! We're connected!
             last_error = None
@@ -1069,7 +1090,7 @@ async def _do_ensure_connected[HandshakeMetadata](
 
     if last_error is not None:
         logger.debug("Handshake attempts exhausted, terminating")
-        do_close()
+        close_session(last_error)
         raise RiverException(
             ERROR_HANDSHAKE,
             f"Failed to create ws after retrying {attempt_count} number of times",
