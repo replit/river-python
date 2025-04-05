@@ -24,7 +24,7 @@ from replit_river.seq_manager import (
 )
 from replit_river.task_manager import BackgroundTaskManager
 from replit_river.transport_options import TransportOptions
-from replit_river.websocket_wrapper import WebsocketWrapper
+from replit_river.websocket_wrapper import WebsocketWrapper, WsState
 
 from .rpc import (
     ACK_BIT,
@@ -120,7 +120,11 @@ class Session:
                 self.session_id,
                 self._transport_options.heartbeat_ms,
                 self._transport_options.heartbeats_until_dead,
-                lambda: self._state,
+                lambda: (
+                    self._state
+                    if self._ws_wrapper.ws_state == WsState.OPEN
+                    else SessionState.CONNECTING
+                ),
                 lambda: self._close_session_after_time_secs,
                 close_websocket=do_close_websocket,
                 send_message=self.send_message,
@@ -232,7 +236,7 @@ class Session:
         msg = TransportMessage(
             streamId=stream_id,
             id=nanoid.generate(),
-            from_=self._transport_id,  # type: ignore
+            from_=self._transport_id,
             to=self._to_id,
             seq=self._seq_manager.get_seq_and_increment(),
             ack=self._seq_manager.get_ack(),
@@ -346,7 +350,7 @@ async def setup_heartbeat(
     get_state: Callable[[], SessionState],
     get_closing_grace_period: Callable[[], float | None],
     close_websocket: Callable[[], Awaitable[None]],
-    send_message: SendMessage,
+    send_message: SendMessage[None],
     increment_and_get_heartbeat_misses: Callable[[], int],
 ) -> None:
     while True:

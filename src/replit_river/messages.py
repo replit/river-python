@@ -8,6 +8,7 @@ from pydantic_core import ValidationError as PydanticCoreValidationError
 from websockets import (
     WebSocketCommonProtocol,
 )
+from websockets.asyncio.client import ClientConnection
 
 from replit_river.rpc import (
     TransportMessage,
@@ -29,7 +30,7 @@ class FailedSendingMessageException(Exception):
 
 async def send_transport_message(
     msg: TransportMessage,
-    ws: WebSocketCommonProtocol,
+    ws: WebSocketCommonProtocol | ClientConnection,  # legacy | asyncio
     websocket_closed_callback: Callable[[], Coroutine[Any, Any, None]],
 ) -> None:
     logger.debug("sending a message %r to ws %s", msg, ws)

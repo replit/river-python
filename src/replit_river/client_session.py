@@ -173,9 +173,8 @@ class ClientSession(Session):
                                 # The client is no longer interested in this stream,
                                 # just drop the message.
                                 pass
-                            except RuntimeError as e:
+                            except Exception as e:
                                 raise InvalidMessageException(e) from e
-
                     else:
                         raise InvalidMessageException(
                             "Client should not receive stream open bit"
@@ -245,7 +244,7 @@ class ClientSession(Session):
                     service_name,
                     procedure_name,
                 ) from e
-            except RuntimeError as e:
+            except Exception as e:
                 raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
             if not response.get("ok", False):
                 try:
@@ -331,7 +330,7 @@ class ClientSession(Session):
                     service_name,
                     procedure_name,
                 ) from e
-            except RuntimeError as e:
+            except Exception as e:
                 raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
             if not response.get("ok", False):
                 try:
@@ -388,15 +387,13 @@ class ClientSession(Session):
                         )
                     continue
                 yield response_deserializer(item["payload"])
-        except (RuntimeError, ChannelClosed) as e:
+        except Exception as e:
             raise RiverServiceException(
                 ERROR_CODE_STREAM_CLOSED,
                 "Stream closed before response",
                 service_name,
                 procedure_name,
             ) from e
-        except Exception as e:
-            raise e
         finally:
             output.close()
 
@@ -491,17 +488,14 @@ class ClientSession(Session):
                         )
                     continue
                 yield response_deserializer(item["payload"])
-        except (RuntimeError, ChannelClosed) as e:
+        except Exception as e:
+            logger.exception("There was a problem")
             raise RiverServiceException(
                 ERROR_CODE_STREAM_CLOSED,
                 "Stream closed before response",
                 service_name,
                 procedure_name,
             ) from e
-        except Exception as e:
-            raise e
-        finally:
-            output.close()
 
     async def send_close_stream(
         self,

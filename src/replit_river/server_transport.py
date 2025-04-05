@@ -186,7 +186,7 @@ class ServerTransport:
         response_message = TransportMessage(
             streamId=request_message.streamId,
             id=nanoid.generate(),
-            from_=request_message.to,  # type: ignore
+            from_=request_message.to,
             to=request_message.from_,
             seq=0,
             ack=0,
