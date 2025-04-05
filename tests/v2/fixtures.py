@@ -166,16 +166,6 @@ async def bound_client(
 
     driver_task = asyncio.create_task(driver())
 
-    # Watchdog keeps track of the above tasks
-    # async def watchdog() -> None:
-    #     while True:
-    #         print(repr(server_task))
-    #         print(repr(processor_task))
-    #         print(repr(driver_task))
-    #         await asyncio.sleep(1)
-    #
-    # watchdog_task = asyncio.create_task(watchdog())
-
     async def uri_and_metadata_factory() -> UriAndMetadata[None]:
         return uri_and_metadata
 
