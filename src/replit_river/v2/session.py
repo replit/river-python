@@ -21,7 +21,7 @@ from typing import (
 
 import nanoid
 import websockets.asyncio.client
-from aiochannel import Channel
+from aiochannel import Channel, ChannelFull
 from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span, use_span
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
@@ -376,7 +376,7 @@ class Session[HandshakeMetadata]:
         # Wake up buffered_message_sender
         self._process_messages.set()
 
-    async def close(self) -> None:
+    async def close(self, reason: Exception | None = None) -> None:
         """Close the session and all associated streams."""
         logger.info(
             f"{self.session_id} closing session to {self._server_id}, ws: {self._ws}"
@@ -399,16 +399,20 @@ class Session[HandshakeMetadata]:
 
         await self._task_manager.cancel_all_tasks()
 
-        # TODO: unexpected_close should close stream differently here to
-        # throw exception correctly.
         for _, error_channel, stream in self._streams.values():
             stream.close()
             # Wake up backpressured writers
-            await error_channel.put(
-                SessionClosedRiverServiceException(
-                    "river session is closed",
+            try:
+                error_channel.put_nowait(
+                    reason
+                    or SessionClosedRiverServiceException(
+                        "river session is closed",
+                    )
                 )
-            )
+            except ChannelFull:
+                logger.exception(
+                    "Unable to tell the caller that the session is going away",
+                )
         # Before we GC the streams, let's wait for all tasks to be closed gracefully.
         await asyncio.gather(
             *[stream.join() for _, _, stream in self._streams.values()]
@@ -1080,7 +1084,7 @@ async def _recv_from_ws(
     get_state: Callable[[], SessionState],
     get_ws: Callable[[], ClientConnection | None],
     transition_no_connection: Callable[[], Awaitable[None]],
-    close_session: Callable[[], Awaitable[None]],
+    close_session: Callable[[Exception | None], Awaitable[None]],
     assert_incoming_seq_bookkeeping: Callable[
         [str, int, int], Literal[True] | _IgnoreMessage
     ],
@@ -1119,8 +1123,6 @@ async def _recv_from_ws(
                 break
 
             logger.debug("client start handling messages from ws %r", ws)
-
-            error_channel: Channel[Exception | None] | None = None
 
             # We should not process messages if the websocket is closed.
             while (ws := get_ws()) and get_state() in ActiveStates:
@@ -1192,7 +1194,7 @@ async def _recv_from_ws(
                         )
                         continue
 
-                    _, error_channel, output = stream_meta
+                    _, _, output = stream_meta
 
                     if (
                         msg.controlFlags & STREAM_CLOSED_BIT != 0
@@ -1216,25 +1218,21 @@ async def _recv_from_ws(
                         output.close()
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
-                    await close_session()
-                    if error_channel:
-                        await error_channel.put(
-                            SessionClosedRiverServiceException(
-                                "Out of order message, closing connection"
-                            )
+                    await close_session(
+                        SessionClosedRiverServiceException(
+                            "Out of order message, closing connection"
                         )
+                    )
                     continue
                 except InvalidMessageException:
                     logger.exception(
                         "Got invalid transport message, closing session",
                     )
-                    await close_session()
-                    if error_channel:
-                        await error_channel.put(
-                            SessionClosedRiverServiceException(
-                                "Out of order message, closing connection"
-                            )
+                    await close_session(
+                        SessionClosedRiverServiceException(
+                            "Out of order message, closing connection"
                         )
+                    )
                     continue
                 except FailedSendingMessageException:
                     # Expected error if the connection is closed.
