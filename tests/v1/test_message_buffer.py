@@ -11,7 +11,7 @@ def mock_transport_message(seq: int) -> TransportMessage:
         seq=seq,
         id="test",
         ack=0,
-        from_="test",  # type: ignore
+        from_="test",
         to="test",
         streamId="test",
         controlFlags=0,
