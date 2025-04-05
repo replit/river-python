@@ -145,7 +145,7 @@ class Session[HandshakeMetadata]:
     _space_available: asyncio.Event
 
     # stream for tasks
-    _streams: dict[str, tuple[Channel[Exception | None], Channel[Any]]]
+    _streams: dict[str, tuple[Span, Channel[Exception | None], Channel[Any]]]
 
     # book keeping
     _ack_buffer: deque[TransportMessage]
@@ -204,7 +204,9 @@ class Session[HandshakeMetadata]:
         self._space_available.set()
 
         # stream for tasks
-        self._streams: dict[str, tuple[Channel[Exception | None], Channel[Any]]] = {}
+        self._streams: dict[
+            str, tuple[Span, Channel[Exception | None], Channel[Any]]
+        ] = {}
 
         # book keeping
         self._ack_buffer = deque()
@@ -399,7 +401,7 @@ class Session[HandshakeMetadata]:
 
         # TODO: unexpected_close should close stream differently here to
         # throw exception correctly.
-        for error_channel, stream in self._streams.values():
+        for _, error_channel, stream in self._streams.values():
             stream.close()
             # Wake up backpressured writers
             await error_channel.put(
@@ -408,7 +410,9 @@ class Session[HandshakeMetadata]:
                 )
             )
         # Before we GC the streams, let's wait for all tasks to be closed gracefully.
-        await asyncio.gather(*[stream.join() for _, stream in self._streams.values()])
+        await asyncio.gather(
+            *[stream.join() for _, _, stream in self._streams.values()]
+        )
         self._streams.clear()
 
         if self._ws:
@@ -441,7 +445,7 @@ class Session[HandshakeMetadata]:
             # Wake up backpressured writer
             stream_meta = self._streams.get(pending.streamId)
             if stream_meta:
-                await stream_meta[0].put(None)
+                await stream_meta[1].put(None)
 
         def get_next_pending() -> TransportMessage | None:
             if self._send_buffer:
@@ -549,6 +553,7 @@ class Session[HandshakeMetadata]:
     @asynccontextmanager
     async def _with_stream(
         self,
+        span: Span,
         stream_id: str,
         maxsize: int,
     ) -> AsyncIterator[tuple[Channel[Exception | None], Channel[ResultType]]]:
@@ -564,19 +569,22 @@ class Session[HandshakeMetadata]:
         """
         output: Channel[Any] = Channel(maxsize=maxsize)
         error_channel: Channel[Exception | None] = Channel(maxsize=1)
-        self._streams[stream_id] = (error_channel, output)
+        self._streams[stream_id] = (span, error_channel, output)
         try:
             yield (error_channel, output)
         finally:
             stream_meta = self._streams.get(stream_id)
             if not stream_meta:
-                logger.warning("_with_stream had an entry deleted out from under it", extra={
-                    "session_id": self.session_id,
-                    "stream_id": stream_id,
-                })
+                logger.warning(
+                    "_with_stream had an entry deleted out from under it",
+                    extra={
+                        "session_id": self.session_id,
+                        "stream_id": stream_id,
+                    },
+                )
                 return
             # We need to signal back to all emitters or waiters that we're gone
-            stream_meta[0].close()
+            stream_meta[1].close()
             del self._streams[stream_id]
 
     async def send_rpc[R, A](
@@ -604,7 +612,7 @@ class Session[HandshakeMetadata]:
             span=span,
         )
 
-        async with self._with_stream(stream_id, 1) as (error_channel, output):
+        async with self._with_stream(span, stream_id, 1) as (error_channel, output):
             # Handle potential errors during communication
             try:
                 async with asyncio.timeout(timeout.total_seconds()):
@@ -665,7 +673,7 @@ class Session[HandshakeMetadata]:
             span=span,
         )
 
-        async with self._with_stream(stream_id, 1) as (error_channel, output):
+        async with self._with_stream(span, stream_id, 1) as (error_channel, output):
             try:
                 # If this request is not closed and the session is killed, we should
                 # throw exception here
@@ -764,7 +772,10 @@ class Session[HandshakeMetadata]:
             span=span,
         )
 
-        async with self._with_stream(stream_id, MAX_MESSAGE_BUFFER_SIZE) as (_, output):
+        async with self._with_stream(span, stream_id, MAX_MESSAGE_BUFFER_SIZE) as (
+            _,
+            output,
+        ):
             try:
                 async for item in output:
                     if item.get("type") == "CLOSE":
@@ -812,7 +823,7 @@ class Session[HandshakeMetadata]:
             span=span,
         )
 
-        async with self._with_stream(stream_id, MAX_MESSAGE_BUFFER_SIZE) as (
+        async with self._with_stream(span, stream_id, MAX_MESSAGE_BUFFER_SIZE) as (
             error_channel,
             output,
         ):
@@ -1073,7 +1084,10 @@ async def _recv_from_ws(
     assert_incoming_seq_bookkeeping: Callable[
         [str, int, int], Literal[True] | _IgnoreMessage
     ],
-    get_stream: Callable[[str], tuple[Channel[Exception | None], Channel[Any]] | None],
+    get_stream: Callable[
+        [str],
+        tuple[Span, Channel[Exception | None], Channel[Any]] | None,
+    ],
     enqueue_message: SendMessage[None],
 ) -> None:
     """Serve messages from the websocket.
@@ -1169,16 +1183,16 @@ async def _recv_from_ws(
                         )
                         continue
 
-                    errors_and_stream = get_stream(msg.streamId)
+                    stream_meta = get_stream(msg.streamId)
 
-                    if not errors_and_stream:
+                    if not stream_meta:
                         logger.warning(
                             "no stream for %s, ignoring message",
                             msg.streamId,
                         )
                         continue
 
-                    error_channel, output = errors_and_stream
+                    _, error_channel, output = stream_meta
 
                     if (
                         msg.controlFlags & STREAM_CLOSED_BIT != 0
