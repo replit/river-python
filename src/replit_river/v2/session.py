@@ -21,7 +21,7 @@ from typing import (
 
 import nanoid
 import websockets.asyncio.client
-from aiochannel import Channel, ChannelFull
+from aiochannel import Channel, ChannelEmpty, ChannelFull
 from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span, use_span
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
@@ -83,6 +83,9 @@ STREAM_CLOSED_BIT_TYPE = Literal[0b01000]
 STREAM_CLOSED_BIT: STREAM_CLOSED_BIT_TYPE = 0b01000
 
 
+_BackpressuredWaiter: TypeAlias = Callable[[], Awaitable[None]]
+
+
 class ResultOk(TypedDict):
     ok: Literal[True]
     payload: Any
@@ -120,7 +123,8 @@ class _IgnoreMessage:
 
 class StreamMeta(TypedDict):
     span: Span
-    error_channel: Channel[None | Exception]
+    release_backpressured_waiter: Callable[[], None]
+    error_channel: Channel[Exception]
     output: Channel[Any]
 
 
@@ -417,6 +421,7 @@ class Session[HandshakeMetadata]:
                 logger.exception(
                     "Unable to tell the caller that the session is going away",
                 )
+            stream_meta["release_backpressured_waiter"]()
         # Before we GC the streams, let's wait for all tasks to be closed gracefully.
         await asyncio.gather(
             *[stream_meta["output"].join() for stream_meta in self._streams.values()]
@@ -473,7 +478,7 @@ class Session[HandshakeMetadata]:
             # Wake up backpressured writer
             stream_meta = self._streams.get(pending.streamId)
             if stream_meta:
-                await stream_meta["error_channel"].put(None)
+                stream_meta["release_backpressured_waiter"]()
 
         def get_next_pending() -> TransportMessage | None:
             if self._send_buffer:
@@ -584,7 +589,7 @@ class Session[HandshakeMetadata]:
         span: Span,
         stream_id: str,
         maxsize: int,
-    ) -> AsyncIterator[tuple[Channel[None | Exception], Channel[ResultType]]]:
+    ) -> AsyncIterator[tuple[_BackpressuredWaiter, AsyncIterator[ResultType]]]:
         """
         _with_stream
 
@@ -596,14 +601,36 @@ class Session[HandshakeMetadata]:
         emitted should call await error_channel.wait() prior to emission.
         """
         output: Channel[Any] = Channel(maxsize=maxsize)
-        error_channel: Channel[None | Exception] = Channel(maxsize=1)
+        backpressured_waiter_event: asyncio.Event = asyncio.Event()
+        error_channel: Channel[Exception] = Channel(maxsize=1)
         self._streams[stream_id] = {
             "span": span,
             "error_channel": error_channel,
+            "release_backpressured_waiter": backpressured_waiter_event.set,
             "output": output,
         }
+
+        async def backpressured_waiter() -> None:
+            await backpressured_waiter_event.wait()
+            try:
+                err = error_channel.get_nowait()
+                raise err
+            except (ChannelClosed, ChannelEmpty):
+                # No errors, off to the next message
+                pass
+
+        async def error_checking_output() -> AsyncIterator[ResultType]:
+            async for elem in output:
+                try:
+                    err = error_channel.get_nowait()
+                    raise err
+                except (ChannelClosed, ChannelEmpty):
+                    # No errors, off to the next message
+                    pass
+                yield elem
+
         try:
-            yield (error_channel, output)
+            yield (backpressured_waiter, error_checking_output())
         finally:
             stream_meta = self._streams.get(stream_id)
             if not stream_meta:
@@ -644,14 +671,16 @@ class Session[HandshakeMetadata]:
             span=span,
         )
 
-        async with self._with_stream(span, stream_id, 1) as (error_channel, output):
+        async with self._with_stream(span, stream_id, 1) as (
+            backpressured_waiter,
+            output,
+        ):
             # Handle potential errors during communication
             try:
                 async with asyncio.timeout(timeout.total_seconds()):
                     # Block for backpressure and emission errors from the ws
-                    if err := await error_channel.get():
-                        raise err
-                    result = await output.get()
+                    await backpressured_waiter()
+                    result = await anext(output)
             except asyncio.TimeoutError as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
@@ -705,15 +734,16 @@ class Session[HandshakeMetadata]:
             span=span,
         )
 
-        async with self._with_stream(span, stream_id, 1) as (error_channel, output):
+        async with self._with_stream(span, stream_id, 1) as (
+            backpressured_waiter,
+            output,
+        ):
             try:
                 # If this request is not closed and the session is killed, we should
                 # throw exception here
                 async for item in request:
                     # Block for backpressure and emission errors from the ws
-                    if err := await error_channel.get():
-                        raise err
-
+                    await backpressured_waiter()
                     try:
                         payload = request_serializer(item)
                     except Exception as e:
@@ -753,7 +783,7 @@ class Session[HandshakeMetadata]:
             )
 
             try:
-                result = await output.get()
+                result = await anext(output)
             except ChannelClosed as e:
                 raise RiverServiceException(
                     ERROR_CODE_STREAM_CLOSED,
@@ -856,7 +886,7 @@ class Session[HandshakeMetadata]:
         )
 
         async with self._with_stream(span, stream_id, MAX_MESSAGE_BUFFER_SIZE) as (
-            error_channel,
+            backpressured_waiter,
             output,
         ):
             # Create the encoder task
@@ -871,13 +901,9 @@ class Session[HandshakeMetadata]:
                 assert request_serializer, "send_stream missing request_serializer"
 
                 async for item in request:
-                    # Block for backpressure and emission errors from the ws
-                    if err := await error_channel.get():
-                        await self._send_close_stream(
-                            stream_id=stream_id,
-                            span=span,
-                        )
-                        raise err
+                    # Block for backpressure (or errors)
+                    await backpressured_waiter()
+                    # If there are any errors so far, raise them
                     await self._enqueue_message(
                         stream_id=stream_id,
                         control_flags=0,
@@ -894,14 +920,15 @@ class Session[HandshakeMetadata]:
             try:
                 async for result in output:
                     # Raise as early as we possibly can in case of an emission error
-                    if err := emitter_task.done() and emitter_task.exception():
+                    if emitter_task.done() and (err := emitter_task.exception()):
                         raise err
                     if result.get("type") == "CLOSE":
                         break
                     if "ok" not in result or not result["ok"]:
                         yield error_deserializer(result["payload"])
                     yield response_deserializer(result["payload"])
-                # ... block the outer function until the emitter is finished emitting.
+                # ... block the outer function until the emitter is finished emitting,
+                #     possibly raising a terminal exception.
                 await emitter_task
             except Exception as e:
                 await self._send_cancel_stream(
