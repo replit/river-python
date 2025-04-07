@@ -38,7 +38,7 @@ def encode_NeedsenumobjectInputOneOf_in_first(
 
 
 class NeedsenumobjectInputOneOf_in_first(TypedDict):
-    kind: Literal["in_first"]
+    kind: Annotated[Literal["in_first"], Field(alias="$kind")]
     value: str
 
 
@@ -58,7 +58,7 @@ def encode_NeedsenumobjectInputOneOf_in_second(
 
 
 class NeedsenumobjectInputOneOf_in_second(TypedDict):
-    kind: Literal["in_second"]
+    kind: Annotated[Literal["in_second"], Field(alias="$kind")]
     bleep: int
 
 
@@ -83,20 +83,12 @@ NeedsenumobjectInputTypeAdapter: TypeAdapter[NeedsenumobjectInput] = TypeAdapter
 
 
 class NeedsenumobjectOutputFooOneOf_out_first(BaseModel):
-    kind: Literal["out_first"] = Field(
-        "out_first",
-        alias="$kind",  # type: ignore
-    )
-
+    kind: Annotated[Literal["out_first"], Field(alias="$kind")] = "out_first"
     foo: int
 
 
 class NeedsenumobjectOutputFooOneOf_out_second(BaseModel):
-    kind: Literal["out_second"] = Field(
-        "out_second",
-        alias="$kind",  # type: ignore
-    )
-
+    kind: Annotated[Literal["out_second"], Field(alias="$kind")] = "out_second"
     bar: int
 
 
