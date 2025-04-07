@@ -1,4 +1,5 @@
 import importlib
+import json
 from io import StringIO
 
 from pytest_snapshot.plugin import Snapshot
@@ -203,3 +204,46 @@ def test_unknown_enum(snapshot: Snapshot) -> None:
         x = NeedsenumErrorsTypeAdapter.validate_python(error)
         assert x.code == error["code"]
         assert x.message == error["message"]
+
+
+def test_unknown_enum_field_aliases(snapshot: Snapshot) -> None:
+    validate_codegen(
+        snapshot=snapshot,
+        read_schema=lambda: StringIO(test_unknown_enum_schema),
+        target_path="test_unknown_enum",
+        client_name="foo",
+    )
+
+    import tests.codegen.snapshot.snapshots.test_unknown_enum
+
+    importlib.reload(tests.codegen.snapshot.snapshots.test_unknown_enum)
+    from tests.codegen.snapshot.snapshots.test_unknown_enum.enumService.needsEnumObject import (  # noqa
+        NeedsenumobjectOutputTypeAdapter,
+        NeedsenumobjectOutput,
+        NeedsenumobjectOutputFooOneOf_out_first,
+    )
+
+    initial = NeedsenumobjectOutput(foo=NeedsenumobjectOutputFooOneOf_out_first(foo=5))
+    result = NeedsenumobjectOutputTypeAdapter.dump_json(
+        initial,
+        by_alias=True,
+    )
+
+    obj = json.loads(result)
+
+    # Make sure we are testing what we think we are testing
+    assert "foo" in obj
+
+    # We must not include the un-aliased field name
+    assert "kind" not in obj["foo"]
+
+    # We must include the aliased field name
+    assert "$kind" in obj["foo"]
+
+    # ... and finally that the values are what we think they should be
+    assert obj["foo"]["$kind"] == "out_first"
+    assert obj["foo"]["foo"] == 5
+
+    # And one more sanity check for the decoder
+    decoded = NeedsenumobjectOutputTypeAdapter.validate_json(result)
+    assert decoded == initial

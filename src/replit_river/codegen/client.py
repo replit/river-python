@@ -646,42 +646,24 @@ def encode_type(
                         case LiteralTypeExpr(literal_value):
                             field_value = repr(literal_value)
                     if name not in type.required:
+                        type_name = UnionTypeExpr(
+                            [
+                                type_name,
+                                NoneTypeExpr(),
+                            ]
+                        )
                         value = ""
                         if base_model != "TypedDict":
-                            value = dedent(
-                                f"""\
-                                = Field(
-                                  default=None,
-                                  alias={repr(name)}, # type: ignore
-                                )
-                                """
-                            )
-                        current_chunks.append(
-                            f"  kind: {
-                                render_type_expr(
-                                    UnionTypeExpr(
-                                        [
-                                            type_name,
-                                            NoneTypeExpr(),
-                                        ]
-                                    )
-                                )
-                            }{value}"
-                        )
+                            value = f"= {repr(None)}"
                     else:
                         value = ""
                         if base_model != "TypedDict":
-                            value = dedent(
-                                f"""\
-                                = Field(
-                                    {field_value},
-                                    alias={repr(name)}, # type: ignore
-                                )
-                                """
-                            )
-                        current_chunks.append(
-                            f"  kind: {render_type_expr(type_name)}{value}"
-                        )
+                            value = f"= {field_value}"
+                    current_chunks.append(
+                        f"  kind: Annotated[{render_type_expr(type_name)}, Field(alias={
+                            repr(name)
+                        })]{value}"
+                    )
                 else:
                     if name not in type.required:
                         if base_model == "TypedDict":
