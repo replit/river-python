@@ -292,6 +292,7 @@ class Session[HandshakeMetadata]:
         if not self._connecting_task:
             self._connecting_task = asyncio.create_task(
                 _do_ensure_connected(
+                    transport_options=self._transport_options,
                     client_id=self._client_id,
                     server_id=self._server_id,
                     session_id=self.session_id,
@@ -977,6 +978,7 @@ class Session[HandshakeMetadata]:
 
 
 async def _do_ensure_connected[HandshakeMetadata](
+    transport_options: TransportOptions,
     client_id: str,
     session_id: str,
     server_id: str,
@@ -1048,7 +1050,9 @@ async def _do_ensure_connected[HandshakeMetadata](
                     "Handshake failed, conn closed while sending response",
                 ) from e
 
-            startup_grace_deadline_ms = await get_current_time() + 60_000
+            startup_grace_deadline_ms = (
+                await get_current_time() + transport_options.handshake_timeout_ms
+            )
             while True:
                 if await get_current_time() >= startup_grace_deadline_ms:
                     raise RiverException(
