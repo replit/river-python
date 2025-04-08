@@ -876,6 +876,7 @@ class Session[HandshakeMetadata]:
                         break
                     if not item.get("ok", False):
                         yield error_deserializer(item["payload"])
+                        continue
                     yield response_deserializer(item["payload"])
                 await self._send_close_stream(stream_id, span)
             except Exception as e:
@@ -959,6 +960,7 @@ class Session[HandshakeMetadata]:
                         break
                     if "ok" not in result or not result["ok"]:
                         yield error_deserializer(result["payload"])
+                        continue
                     yield response_deserializer(result["payload"])
                 # ... block the outer function until the emitter is finished emitting,
                 #     possibly raising a terminal exception.
