@@ -17,6 +17,7 @@ class MessageBuffer:
     def __init__(self, max_num_messages: int = MAX_MESSAGE_BUFFER_SIZE):
         self.max_size = max_num_messages
         self.buffer: list[TransportMessage] = []
+        self._has_messages = asyncio.Event()
         self._space_available_cond = asyncio.Condition()
         self._closed = False
 
@@ -35,6 +36,7 @@ class MessageBuffer:
         if self._closed:
             raise MessageBufferClosedError("message buffer is closed")
         self.buffer.append(message)
+        self._has_messages.set()
 
     def get_next_sent_seq(self) -> int | None:
         if self.buffer:
@@ -50,13 +52,23 @@ class MessageBuffer:
     async def remove_old_messages(self, min_seq: int) -> None:
         """Remove messages in the buffer with a seq number less than min_seq."""
         self.buffer = [msg for msg in self.buffer if msg.seq >= min_seq]
+        if self.buffer:
+            self._has_messages.set()
+        else:
+            self._has_messages.clear()
         async with self._space_available_cond:
             self._space_available_cond.notify_all()
+
+    async def block_until_message_available(self) -> None:
+        """Allow consumers to avoid spinning unnecessarily"""
+        await self._has_messages.wait()
 
     async def close(self) -> None:
         """
         Closes the message buffer and rejects any pending put operations.
         """
         self._closed = True
+        # Wake up block_until_message_available to permit graceful cleanup
+        self._has_messages.set()
         async with self._space_available_cond:
             self._space_available_cond.notify_all()

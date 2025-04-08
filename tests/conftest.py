@@ -14,7 +14,11 @@ from replit_river.rpc import (
 )
 
 # Modular fixtures
-pytest_plugins = ["tests.river_fixtures.logging", "tests.river_fixtures.clientserver"]
+pytest_plugins = [
+    "tests.v1.river_fixtures.logging",
+    "tests.v1.river_fixtures.clientserver",
+    "tests.v2.fixtures",
+]
 
 HandlerKind = Literal["rpc", "subscription-stream", "upload-stream", "stream"]
 HandlerMapping = Mapping[tuple[str, str], tuple[HandlerKind, GenericRpcHandlerBuilder]]
@@ -31,7 +35,7 @@ def transport_message(
 ) -> TransportMessage:
     return TransportMessage(
         id=str(nanoid.generate()),
-        from_=from_,  # type: ignore
+        from_=from_,
         to=to,
         streamId=streamId,
         seq=seq,

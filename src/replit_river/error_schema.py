@@ -17,8 +17,15 @@ ERROR_CODE_INVALID_REQUEST = "INVALID_REQUEST"
 # ERROR_CODE_CANCEL is the code used when either server or client cancels the stream.
 ERROR_CODE_CANCEL = "CANCEL"
 
+# SYNTHETIC_ERROR_CODE_SESSION_CLOSED is a synthetic code emitted exclusively by the
+# client's session. It is not sent over the wire.
+SYNTHETIC_ERROR_CODE_SESSION_CLOSED = "SESSION_CLOSED"
+
 # ERROR_CODE_UNKNOWN is the code for the RiverUnknownError
 ERROR_CODE_UNKNOWN = "UNKNOWN"
+
+# SESSION_STATE_MISMATCH is the code when the remote server rejects the session's state
+ERROR_CODE_SESSION_STATE_MISMATCH = "SESSION_STATE_MISMATCH"
 
 
 class RiverError(BaseModel):
@@ -73,6 +80,14 @@ class CancelRiverServiceException(RiverServiceException):
 
 class StreamClosedRiverServiceException(RiverServiceException):
     pass
+
+
+class SessionClosedRiverServiceException(RiverException):
+    def __init__(
+        self,
+        message: str,
+    ) -> None:
+        super().__init__(SYNTHETIC_ERROR_CODE_SESSION_CLOSED, message)
 
 
 def exception_from_message(code: str) -> type[RiverServiceException]:

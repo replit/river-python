@@ -1,0 +1,312 @@
+{
+  "services": {
+    "aiExec": {
+      "procedures": {
+        "exec": {
+          "init": {
+            "type": "object",
+            "properties": {
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "env": {
+                "type": "object",
+                "patternProperties": {
+                  "^(.*)$": {
+                    "type": "string"
+                  }
+                }
+              },
+              "cwd": {
+                "type": "string"
+              },
+              "omitStdout": {
+                "type": "boolean"
+              },
+              "omitStderr": {
+                "type": "boolean"
+              },
+              "useReplitRunEnv": {
+                "type": "boolean"
+              }
+            },
+            "required": ["args"]
+          },
+          "output": {
+            "type": "object",
+            "properties": {}
+          },
+          "errors": {
+            "type": "object",
+            "properties": {}
+          },
+          "type": "stream",
+          "input": {
+            "type": "object",
+            "properties": {}
+          }
+        }
+      }
+    },
+    "agentToolLanguageServer": {
+      "procedures": {
+        "openDocument": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "path": {
+                "description": "The path to the file. This should be relative to the workspace root",
+                "type": "string"
+              }
+            },
+            "required": ["path"]
+          },
+          "output": {
+            "type": "object",
+            "properties": {}
+          },
+          "errors": {
+            "type": "object",
+            "properties": {}
+          },
+          "description": "Reports a document as open to the language servers",
+          "type": "rpc"
+        }
+      }
+    },
+    "shellExec": {
+      "procedures": {
+        "spawn": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "cmd": {
+                "type": "string"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "initialCmd": {
+                "type": "string"
+              },
+              "env": {
+                "type": "object",
+                "patternProperties": {
+                  "^(.*)$": {
+                    "type": "string"
+                  }
+                }
+              },
+              "cwd": {
+                "type": "string"
+              },
+              "size": {
+                "type": "object",
+                "properties": {
+                  "rows": {
+                    "type": "integer"
+                  },
+                  "cols": {
+                    "type": "integer"
+                  }
+                },
+                "required": ["rows", "cols"]
+              },
+              "useReplitRunEnv": {
+                "type": "boolean"
+              },
+              "interactive": {
+                "type": "boolean"
+              }
+            },
+            "required": ["cmd"]
+          },
+          "output": {
+            "type": "object",
+            "properties": {}
+          },
+          "errors": {
+            "type": "object",
+            "properties": {}
+          },
+          "description": "Start a new shell process and returns the process handle id which you can use to interact with the process",
+          "type": "rpc"
+        }
+      }
+    },
+    "replspaceApi": {
+      "procedures": {
+        "init": {
+          "init": {
+            "type": "object",
+            "properties": {}
+          },
+          "output": {
+            "type": "object",
+            "properties": {}
+          },
+          "errors": {
+            "type": "object",
+            "properties": {}
+          },
+          "type": "stream",
+          "input": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "$kind": {
+                    "const": "closeFile",
+                    "type": "string"
+                  },
+                  "filename": {
+                    "type": "string"
+                  },
+                  "nonce": {
+                    "type": "string"
+                  }
+                },
+                "required": ["$kind", "filename", "nonce"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "$kind": {
+                    "const": "githubToken",
+                    "type": "string"
+                  },
+                  "token": {
+                    "type": "string"
+                  },
+                  "nonce": {
+                    "type": "string"
+                  }
+                },
+                "required": ["$kind", "nonce"]
+              },
+              {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "$kind": {
+                        "const": "sshToken",
+                        "type": "string"
+                      },
+                      "nonce": {
+                        "type": "string"
+                      },
+                      "token": {
+                        "type": "string"
+                      },
+                      "SSHHostname": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["$kind", "nonce", "token", "SSHHostname"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "$kind": {
+                        "const": "sshToken",
+                        "type": "string"
+                      },
+                      "nonce": {
+                        "type": "string"
+                      },
+                      "error": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["$kind", "nonce", "error"]
+                  }
+                ]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "$kind": {
+                    "const": "allowDefaultBucketAccess",
+                    "type": "string"
+                  },
+                  "nonce": {
+                    "type": "string"
+                  },
+                  "result": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "const": "error",
+                            "type": "string"
+                          },
+                          "message": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["status", "message"]
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "status": {
+                            "const": "ok",
+                            "type": "string"
+                          },
+                          "targetReplId": {
+                            "type": "string"
+                          },
+                          "sourceReplId": {
+                            "type": "string"
+                          },
+                          "bucketId": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "status",
+                          "targetReplId",
+                          "sourceReplId",
+                          "bucketId"
+                        ]
+                      }
+                    ]
+                  }
+                },
+                "required": ["$kind", "nonce", "result"]
+              }
+            ]
+          }
+        }
+      }
+    },
+    "conmanFilesystem": {
+      "procedures": {
+        "persist": {
+          "input": {
+            "type": "object",
+            "properties": {}
+          },
+          "output": {
+            "type": "object",
+            "properties": {}
+          },
+          "errors": {
+            "type": "object",
+            "properties": {}
+          },
+          "type": "rpc"
+        }
+      }
+    }
+  },
+  "handshakeSchema": null
+}

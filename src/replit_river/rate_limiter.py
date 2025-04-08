@@ -1,8 +1,18 @@
 import asyncio
+import logging
 import random
 from contextvars import Context
 
+from replit_river.error_schema import RiverException
 from replit_river.transport_options import ConnectionRetryOptions
+
+logger = logging.getLogger(__name__)
+
+
+class BudgetExhaustedException(RiverException):
+    def __init__(self, code: str, message: str, client_id: str) -> None:
+        super().__init__(code, message)
+        self.client_id = client_id
 
 
 class LeakyBucketRateLimit:

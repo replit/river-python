@@ -27,6 +27,7 @@ class TransportOptions(BaseModel):
     connection_retry_options: ConnectionRetryOptions = ConnectionRetryOptions()
     buffer_size: int = 1_000
     transparent_reconnect: bool = True
+    shutdown_all_streams_timeout_ms: float = 10_000
 
     def websocket_disconnect_grace_ms(self) -> float:
         return self.heartbeat_ms * self.heartbeats_until_dead
@@ -39,11 +40,16 @@ class TransportOptions(BaseModel):
         )
         heartbeat_ms = float(os.getenv("HEARTBEAT_MS", 2_000))
         heartbeats_to_dead = int(os.getenv("HEARTBEATS_UNTIL_DEAD", 2))
+        shutdown_all_streams_timeout_ms = float(
+            os.getenv("SHUTDOWN_STREAMS_TIMEOUT_MS", 10_000)
+        )
+
         return TransportOptions(
             handshake_timeout_ms=handshake_timeout_ms,
             session_disconnect_grace_ms=session_disconnect_grace_ms,
             heartbeat_ms=heartbeat_ms,
             heartbeats_until_dead=heartbeats_to_dead,
+            shutdown_all_streams_timeout_ms=shutdown_all_streams_timeout_ms,
         )
 
 
