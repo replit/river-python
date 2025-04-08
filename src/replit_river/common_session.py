@@ -108,7 +108,8 @@ async def buffered_message_sender(
                 )
             except FailedSendingMessageException:
                 logger.error(
-                    "Failed sending message, waiting for reconnect and retry from buffer",
+                    "Failed sending message, "
+                    "waiting for reconnect and retry from buffer",
                     exc_info=True,
                 )
             except Exception:
