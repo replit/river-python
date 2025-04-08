@@ -99,6 +99,7 @@ async def buffered_message_sender(
             try:
                 await send_transport_message(msg, ws, websocket_closed_callback)
                 await commit(msg)
+                logger.debug("_buffered_message_sender: Sent %r", msg.id)
             except WebsocketClosedException as e:
                 logger.debug(
                     "_buffered_message_sender: Connection closed while sending "
