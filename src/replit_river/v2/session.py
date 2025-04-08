@@ -877,6 +877,7 @@ class Session[HandshakeMetadata]:
                     if not item.get("ok", False):
                         yield error_deserializer(item["payload"])
                     yield response_deserializer(item["payload"])
+                await self._send_close_stream(stream_id, span)
             except Exception as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
