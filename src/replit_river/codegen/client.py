@@ -275,7 +275,9 @@ def encode_type(
                             encoder_name = TypeName(
                                 f"encode_{render_literal_type(type_name)}"
                             )
-                            encoder_names.add(encoder_name)
+                            if base_model == "TypedDict":
+                                # "encoder_names" is only a TypedDict thing
+                                encoder_names.add(encoder_name)
                             _field_name = render_literal_type(encoder_name)
                             typeddict_encoder.append(
                                 f"""\
