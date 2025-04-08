@@ -262,8 +262,8 @@ class Session[HandshakeMetadata]:
                 # during the cleanup procedure.
 
                 self._terminating_task = asyncio.create_task(
-                        self.close(reason, current_state=current_state),
-                    )
+                    self.close(reason, current_state=current_state),
+                )
 
         def transition_connecting() -> None:
             if self._state in TerminalStates:
@@ -396,7 +396,9 @@ class Session[HandshakeMetadata]:
         # Wake up buffered_message_sender
         self._process_messages.set()
 
-    async def close(self, reason: Exception | None = None, current_state: SessionState | None = None ) -> None:
+    async def close(
+        self, reason: Exception | None = None, current_state: SessionState | None = None
+    ) -> None:
         """Close the session and all associated streams."""
         logger.info(
             f"{self.session_id} closing session to {self._server_id}, ws: {self._ws}"
@@ -435,9 +437,28 @@ class Session[HandshakeMetadata]:
                 )
             stream_meta["release_backpressured_waiter"]()
         # Before we GC the streams, let's wait for all tasks to be closed gracefully.
-        await asyncio.gather(
-            *[stream_meta["output"].join() for stream_meta in self._streams.values()]
-        )
+        try:
+            async with asyncio.timeout(
+                self._transport_options.shutdown_all_streams_timeout_ms
+            ):
+                # Block for backpressure and emission errors from the ws
+                await asyncio.gather(
+                    *[
+                        stream_meta["output"].join()
+                        for stream_meta in self._streams.values()
+                    ]
+                )
+        except asyncio.TimeoutError:
+            spans: list[Span] = [
+                stream_meta["span"]
+                for stream_meta in self._streams.values()
+                if not stream_meta["output"].closed()
+            ]
+            span_ids = [span.get_span_context().span_id for span in spans]
+            logger.exception(
+                "Timeout waiting for output streams to finallize",
+                extra={"span_ids": span_ids},
+            )
         self._streams.clear()
 
         if self._ws:
