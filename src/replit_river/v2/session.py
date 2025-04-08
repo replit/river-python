@@ -696,8 +696,6 @@ class Session[HandshakeMetadata]:
                     service_name,
                     procedure_name,
                 ) from e
-            except Exception as e:
-                raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
 
             if "ok" not in result or not result["ok"]:
                 try:
@@ -1050,11 +1048,11 @@ async def _do_ensure_connected[HandshakeMetadata](
                     "Handshake failed, conn closed while sending response",
                 ) from e
 
-            startup_grace_deadline_ms = (
+            handshake_deadline_ms = (
                 await get_current_time() + transport_options.handshake_timeout_ms
             )
             while True:
-                if await get_current_time() >= startup_grace_deadline_ms:
+                if await get_current_time() >= handshake_deadline_ms:
                     raise RiverException(
                         ERROR_HANDSHAKE,
                         "Handshake response timeout, closing connection",
