@@ -125,7 +125,7 @@ class StreamMeta(TypedDict):
     span: Span
     release_backpressured_waiter: Callable[[], None]
     error_channel: Channel[Exception]
-    output: Channel[Any]
+    output: Channel[ResultType]
 
 
 class Session[HandshakeMetadata]:
@@ -600,7 +600,7 @@ class Session[HandshakeMetadata]:
         since the first event does not care about backpressure, but subsequent events
         emitted should call await error_channel.wait() prior to emission.
         """
-        output: Channel[Any] = Channel(maxsize=maxsize)
+        output: Channel[ResultType] = Channel(maxsize=maxsize)
         backpressured_waiter_event: asyncio.Event = asyncio.Event()
         error_channel: Channel[Exception] = Channel(maxsize=1)
         self._streams[stream_id] = {
@@ -697,6 +697,7 @@ class Session[HandshakeMetadata]:
                 ) from e
             except Exception as e:
                 raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
+
             if "ok" not in result or not result["ok"]:
                 try:
                     error = error_deserializer(result["payload"])
