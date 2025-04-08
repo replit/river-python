@@ -248,12 +248,22 @@ class Session[HandshakeMetadata]:
             return self.seq
 
         def close_session(reason: Exception | None) -> None:
+            # If we're already closing, just let whoever's currently doing it handle it.
+            if self._state in TerminalStates:
+                return
+
             # Avoid closing twice
             if self._terminating_task is None:
+                current_state = self._state
+                self._state = SessionState.CLOSING
+
                 # We can't just call self.close() directly because
                 # we're inside a thread that will eventually be awaited
                 # during the cleanup procedure.
-                self._terminating_task = asyncio.create_task(self.close(reason))
+
+                self._terminating_task = asyncio.create_task(
+                        self.close(reason, current_state=current_state),
+                    )
 
         def transition_connecting() -> None:
             if self._state in TerminalStates:
@@ -301,6 +311,7 @@ class Session[HandshakeMetadata]:
                     get_next_sent_seq=get_next_sent_seq,
                     get_current_ack=lambda: self.ack,
                     get_current_time=self._get_current_time,
+                    get_state=lambda: self._state,
                     transition_connecting=transition_connecting,
                     close_ws_in_background=close_ws_in_background,
                     transition_connected=transition_connected,
@@ -385,12 +396,12 @@ class Session[HandshakeMetadata]:
         # Wake up buffered_message_sender
         self._process_messages.set()
 
-    async def close(self, reason: Exception | None = None) -> None:
+    async def close(self, reason: Exception | None = None, current_state: SessionState | None = None ) -> None:
         """Close the session and all associated streams."""
         logger.info(
             f"{self.session_id} closing session to {self._server_id}, ws: {self._ws}"
         )
-        if self._state in TerminalStates:
+        if (current_state or self._state) in TerminalStates:
             # already closing
             return
         self._state = SessionState.CLOSING
@@ -987,6 +998,7 @@ async def _do_ensure_connected[HandshakeMetadata](
     get_current_time: Callable[[], Awaitable[float]],
     get_next_sent_seq: Callable[[], int],
     get_current_ack: Callable[[], int],
+    get_state: Callable[[], SessionState],
     transition_connecting: Callable[[], None],
     close_ws_in_background: Callable[[ClientConnection], None],
     transition_connected: Callable[[ClientConnection], None],
@@ -998,6 +1010,10 @@ async def _do_ensure_connected[HandshakeMetadata](
     last_error: Exception | None = None
     attempt_count = 0
     while rate_limiter.has_budget(client_id):
+        if (state := get_state()) in TerminalStates or state in ActiveStates:
+            logger.info(f"_do_ensure_connected stopping due to state={state}")
+            break
+
         if attempt_count > 0:
             logger.info(f"Retrying build handshake number {attempt_count} times")
         attempt_count += 1
@@ -1051,40 +1067,40 @@ async def _do_ensure_connected[HandshakeMetadata](
             handshake_deadline_ms = (
                 await get_current_time() + transport_options.handshake_timeout_ms
             )
-            while True:
-                if await get_current_time() >= handshake_deadline_ms:
-                    raise RiverException(
-                        ERROR_HANDSHAKE,
-                        "Handshake response timeout, closing connection",
-                    )
-                try:
-                    data = await ws.recv(decode=False)
-                except ConnectionClosed as e:
-                    logger.debug(
-                        "_do_ensure_connected: Connection closed during waiting "
-                        "for handshake response",
-                        exc_info=True,
-                    )
-                    raise RiverException(
-                        ERROR_HANDSHAKE,
-                        "Handshake failed, conn closed while waiting for response",
-                    ) from e
 
-                try:
-                    response_msg = parse_transport_msg(data)
-                    if isinstance(response_msg, str):
-                        logger.debug(
-                            "_do_ensure_connected: Ignoring transport message",
-                            exc_info=True,
-                        )
-                        continue
+            if await get_current_time() >= handshake_deadline_ms:
+                raise RiverException(
+                    ERROR_HANDSHAKE,
+                    "Handshake response timeout, closing connection",
+                )
 
-                    break
-                except InvalidMessageException as e:
-                    raise RiverException(
-                        ERROR_HANDSHAKE,
-                        "Got invalid transport message, closing connection",
-                    ) from e
+            try:
+                data = await ws.recv(decode=False)
+            except ConnectionClosed as e:
+                logger.debug(
+                    "_do_ensure_connected: Connection closed during waiting "
+                    "for handshake response",
+                    exc_info=True,
+                )
+                raise RiverException(
+                    ERROR_HANDSHAKE,
+                    "Handshake failed, conn closed while waiting for response",
+                ) from e
+
+            try:
+                response_msg = parse_transport_msg(data)
+            except InvalidMessageException as e:
+                raise RiverException(
+                    ERROR_HANDSHAKE,
+                    "Got invalid transport message, closing connection",
+                ) from e
+
+            if isinstance(response_msg, str):
+                raise RiverException(
+                    ERROR_HANDSHAKE,
+                    "Handshake failed, received a raw string message while waiting "
+                    "for a handshake response",
+                )
 
             try:
                 handshake_response = ControlMessageHandshakeResponse(
@@ -1105,6 +1121,7 @@ async def _do_ensure_connected[HandshakeMetadata](
                     }",
                 )
                 if handshake_response.status.code == ERROR_CODE_SESSION_STATE_MISMATCH:
+                    # A session state mismatch is unrecoverable. Terminate immediately.
                     close_session(err)
 
                 raise err
