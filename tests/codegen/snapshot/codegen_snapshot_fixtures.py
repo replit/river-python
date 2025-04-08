@@ -18,6 +18,7 @@ def validate_codegen(
     read_schema: Callable[[], TextIO],
     target_path: str,
     client_name: str,
+    typeddict_inputs: bool = True,
 ) -> None:
     snapshot.snapshot_dir = "tests/codegen/snapshot/snapshots"
     files: dict[Path, UnclosableStringIO] = {}
@@ -33,7 +34,7 @@ def validate_codegen(
         target_path=target_path,
         client_name=client_name,
         file_opener=file_opener,
-        typed_dict_inputs=True,
+        typed_dict_inputs=typeddict_inputs,
         method_filter=None,
     )
     for path, file in files.items():
