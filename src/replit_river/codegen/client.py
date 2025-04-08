@@ -850,11 +850,11 @@ def render_library_call(
     elif procedure.type == "subscription":
         match protocol_version:
             case "v1.1":
-                assert input_meta, "rpc expects input to be required"
+                assert input_meta, "subscription expects input to be required"
                 _, tpe, render_method = input_meta
                 binding = "input"
             case "v2.0":
-                assert init_meta, "rpc expects init to be required"
+                assert init_meta, "subscription expects init to be required"
                 _, tpe, render_method = init_meta
                 binding = "init"
             case other:
@@ -932,7 +932,7 @@ def render_library_call(
                 ]
             )
         elif protocol_version == "v1.1":
-            assert input_meta, "Protocol v1 requires input to be defined"
+            assert input_meta, "upload requires input to be defined"
             _, input_type, render_input_method = input_meta
             current_chunks.extend(
                 [
@@ -1009,7 +1009,7 @@ def render_library_call(
                 ]
             )
         elif protocol_version == "v1.1":
-            assert input_meta, "Protocol v1 requires input to be defined"
+            assert input_meta, "stream requires input to be defined"
             _, input_type, render_input_method = input_meta
             current_chunks.extend(
                 [

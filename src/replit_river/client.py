@@ -226,9 +226,11 @@ def _trace_procedure(
     span_handle = _SpanHandle(span)
     try:
         yield span_handle
+        span_handle.set_status(StatusCode.OK)
     except GeneratorExit:
         # This error indicates the caller is done with the async generator
         # but messages are still left. This is okay, we do not consider it an error.
+        span_handle.set_status(StatusCode.OK)
         raise
     except RiverException as e:
         span.record_exception(e, escaped=True)
@@ -239,7 +241,6 @@ def _trace_procedure(
         span_handle.set_status(StatusCode.ERROR, f"{type(e).__name__}: {e}")
         raise e
     finally:
-        span_handle.set_status(StatusCode.OK)
         span.end()
 
 

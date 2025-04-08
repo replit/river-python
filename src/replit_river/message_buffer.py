@@ -68,6 +68,7 @@ class MessageBuffer:
         Closes the message buffer and rejects any pending put operations.
         """
         self._closed = True
+        # Wake up block_until_message_available to permit graceful cleanup
         self._has_messages.set()
         async with self._space_available_cond:
             self._space_available_cond.notify_all()

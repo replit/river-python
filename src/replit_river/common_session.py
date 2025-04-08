@@ -102,13 +102,13 @@ async def buffered_message_sender(
             except WebsocketClosedException as e:
                 logger.debug(
                     "_buffered_message_sender: Connection closed while sending "
-                    "message %r, waiting for retry from buffer",
+                    "message %r, waiting for reconnect and retry from buffer",
                     type(e),
                     exc_info=e,
                 )
             except FailedSendingMessageException:
                 logger.error(
-                    "Failed sending message, waiting for retry from buffer",
+                    "Failed sending message, waiting for reconnect and retry from buffer",
                     exc_info=True,
                 )
             except Exception:
