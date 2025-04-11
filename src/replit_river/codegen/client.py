@@ -631,6 +631,16 @@ def encode_type(
                                             """.rstrip()
                                             )
                                         )
+                                        if name not in prop.required:
+                                            typeddict_encoder.append(
+                                                dedent(
+                                                    f"""
+                                                    if {repr(name)} in x
+                                                    and x[{repr(name)}] is not None
+                                                    else None
+                                                """
+                                                )
+                                            )
                         else:
                             if name in prop.required:
                                 typeddict_encoder.append(f"x[{repr(safe_name)}]")
