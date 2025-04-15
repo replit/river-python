@@ -1197,20 +1197,21 @@ async def _do_ensure_connected[HandshakeMetadata](
 
                 raise err
 
+            logger.debug("Connected")
             # We did it! We're connected!
             last_error = None
             rate_limiter.start_restoring_budget(client_id)
             transition_connected(ws)
             break
         except Exception as e:
-            if ws:
-                close_ws_in_background(ws)
-                ws = None
-            last_error = e
             backoff_time = rate_limiter.get_backoff_ms(client_id)
             logger.exception(
                 f"Error connecting, retrying with {backoff_time}ms backoff"
             )
+            if ws:
+                close_ws_in_background(ws)
+                ws = None
+            last_error = e
             await asyncio.sleep(backoff_time / 1000)
     unbind_connecting_task()
 
