@@ -109,7 +109,7 @@ logger = logging.getLogger(__name__)
 trace_propagator = TraceContextTextMapPropagator()
 trace_setter = TransportMessageTracingSetter()
 
-CloseSessionCallback: TypeAlias = Callable[["Session"], Coroutine[Any, Any, Any]]
+CloseSessionCallback: TypeAlias = Callable[["Session"], None]
 RetryConnectionCallback: TypeAlias = Callable[
     [],
     Coroutine[Any, Any, Any],
@@ -472,7 +472,7 @@ class Session[HandshakeMetadata]:
 
         # Clear the session in transports
         # This will get us GC'd, so this should be the last thing.
-        await self._close_session_callback(self)
+        self._close_session_callback(self)
 
     def _start_buffered_message_sender(
         self,
