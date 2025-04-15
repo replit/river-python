@@ -418,8 +418,8 @@ class Session[HandshakeMetadata]:
         # ... message processor so it can exit cleanly
         self._process_messages.set()
 
-        # Wait a tick to permit the waiting tasks to shut down gracefully
-        await asyncio.sleep(0.01)
+        # Wait to permit the waiting tasks to shut down gracefully
+        await asyncio.sleep(0.25)
 
         await self._task_manager.cancel_all_tasks()
 
