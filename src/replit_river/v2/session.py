@@ -321,6 +321,8 @@ class Session[HandshakeMetadata]:
             )
 
         await self._connecting_task
+        if self._terminating_task:
+            await self._terminating_task
 
     def is_closed(self) -> bool:
         """
