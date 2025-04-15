@@ -80,7 +80,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         logger.debug("Triggering get_or_create_session")
         return await self.get_or_create_session()
 
-    async def _delete_session(self, session: Session) -> None:
+    def _delete_session(self, session: Session) -> None:
         if self._session is session:
             self._session = None
         else:
