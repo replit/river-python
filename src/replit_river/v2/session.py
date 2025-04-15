@@ -293,11 +293,11 @@ class Session[HandshakeMetadata]:
             # This is safe because each individual function that is waiting on this
             # function completeing already has a reference, so we'll last a few ticks
             # before GC.
-            #
-            # Let's do our best to avoid clobbering other tasks by comparing the .name
             current_task = asyncio.current_task()
             if self._connecting_task is current_task:
                 self._connecting_task = None
+            else:
+                logger.debug("unbind_connecting_task failed, id did not match")
 
         if not self._connecting_task:
             self._connecting_task = asyncio.create_task(
@@ -1213,6 +1213,7 @@ async def _do_ensure_connected[HandshakeMetadata](
                 ws = None
             last_error = e
             await asyncio.sleep(backoff_time / 1000)
+        logger.debug("Here, about to retry")
     unbind_connecting_task()
 
     if last_error is not None:
