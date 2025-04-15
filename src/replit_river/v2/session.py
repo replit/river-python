@@ -324,7 +324,7 @@ class Session[HandshakeMetadata]:
         if self._terminating_task:
             await self._terminating_task
 
-    def is_closed(self) -> bool:
+    def is_terminal(self) -> bool:
         """
         If the session is in a terminal state.
         Do not send messages, do not expect any more messages to be emitted,
@@ -402,12 +402,15 @@ class Session[HandshakeMetadata]:
         self, reason: Exception | None = None, current_state: SessionState | None = None
     ) -> None:
         """Close the session and all associated streams."""
+        if (current_state or self._state) in TerminalStates:
+            while (current_state or self._state) != SessionState.CLOSED:
+                logger.debug("Session already closing, waiting...")
+                await asyncio.sleep(0.2)
+            # already closing
+            return
         logger.info(
             f"{self.session_id} closing session to {self._server_id}, ws: {self._ws}"
         )
-        if (current_state or self._state) in TerminalStates:
-            # already closing
-            return
         self._state = SessionState.CLOSING
 
         # We're closing, so we need to wake up...
