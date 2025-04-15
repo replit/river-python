@@ -622,7 +622,9 @@ class Session[HandshakeMetadata]:
         span: Span,
         stream_id: str,
         maxsize: int,
-    ) -> AsyncIterator[tuple[_BackpressuredWaiter, AsyncIterator[ResultType]]]:
+    ) -> AsyncIterator[
+        tuple[_BackpressuredWaiter, Channel[Exception], AsyncIterator[ResultType]]
+    ]:
         """
         _with_stream
 
@@ -663,7 +665,7 @@ class Session[HandshakeMetadata]:
                 yield elem
 
         try:
-            yield (backpressured_waiter, error_checking_output())
+            yield (backpressured_waiter, error_channel, error_checking_output())
         finally:
             stream_meta = self._streams.get(stream_id)
             if not stream_meta:
@@ -706,14 +708,16 @@ class Session[HandshakeMetadata]:
 
         async with self._with_stream(span, stream_id, 1) as (
             backpressured_waiter,
+            error_channel,
             output,
         ):
             # Handle potential errors during communication
             try:
                 async with asyncio.timeout(timeout.total_seconds()):
-                    # Block for backpressure and emission errors from the ws
+                    # Block for backpressure
                     await backpressured_waiter()
-                    result = await anext(output)
+                    # Race output and error channels
+                    raced = await _race2(anext(output), error_channel.get())
             except asyncio.TimeoutError as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
@@ -728,17 +732,24 @@ class Session[HandshakeMetadata]:
                     service_name,
                     procedure_name,
                 ) from e
+            except Exception as e:
+                raise RiverException(ERROR_CODE_STREAM_CLOSED, str(e)) from e
+            match raced:
+                case _FinishedA(result):
+                    if "ok" not in result or not result["ok"]:
+                        try:
+                            error = error_deserializer(result["payload"])
+                        except Exception as e:
+                            raise RiverException("error_deserializer", str(e)) from e
+                        raise exception_from_message(error.code)(
+                            error.code, error.message, service_name, procedure_name
+                        )
 
-            if "ok" not in result or not result["ok"]:
-                try:
-                    error = error_deserializer(result["payload"])
-                except Exception as e:
-                    raise RiverException("error_deserializer", str(e)) from e
-                raise exception_from_message(error.code)(
-                    error.code, error.message, service_name, procedure_name
-                )
-
-            return response_deserializer(result["payload"])
+                    return response_deserializer(result["payload"])
+                case _FinishedB(err):
+                    raise err
+                case other:
+                    assert_never(other)
 
     async def send_upload[I, R, A](
         self,
@@ -768,6 +779,7 @@ class Session[HandshakeMetadata]:
 
         async with self._with_stream(span, stream_id, 1) as (
             backpressured_waiter,
+            error_channel,
             output,
         ):
             try:
@@ -776,6 +788,12 @@ class Session[HandshakeMetadata]:
                 async for item in request:
                     # Block for backpressure and emission errors from the ws
                     await backpressured_waiter()
+                    try:
+                        raise error_channel.get_nowait()
+                    except (ChannelClosed, ChannelEmpty):
+                        # No errors, off to the next message
+                        pass
+
                     try:
                         payload = request_serializer(item)
                     except Exception as e:
@@ -867,6 +885,7 @@ class Session[HandshakeMetadata]:
         )
 
         async with self._with_stream(span, stream_id, MAX_MESSAGE_BUFFER_SIZE) as (
+            backpressured_waiter,
             _,
             output,
         ):
@@ -904,9 +923,12 @@ class Session[HandshakeMetadata]:
         error_deserializer: Callable[[Any], E],
         span: Span,
     ) -> AsyncGenerator[A | E, None]:
-        """Sends a subscription request to the server.
+        """Sends a bidirectional stream request to the server.
 
-        Expects the input and output be messages that will be msgpacked.
+        When the request AsyncIterable finishes, a "CLOSE" event is sent to the server.
+
+        If a "CLOSE" event is received from the server, the output channel will be
+        closed, but the requests will still be sent.
         """
 
         stream_id = nanoid.generate()
@@ -921,19 +943,13 @@ class Session[HandshakeMetadata]:
 
         async with self._with_stream(span, stream_id, MAX_MESSAGE_BUFFER_SIZE) as (
             backpressured_waiter,
+            error_channel,
             output,
         ):
             # Create the encoder task
-            async def _encode_stream() -> None:
-                if not request:
-                    await self._send_close_stream(
-                        stream_id=stream_id,
-                        span=span,
-                    )
-                    return
-
-                assert request_serializer, "send_stream missing request_serializer"
-
+            async def _encode_stream(
+                request: AsyncIterable[R], request_serializer: Callable[[R], Any]
+            ) -> None:
                 async for item in request:
                     # Block for backpressure (or errors)
                     await backpressured_waiter()
@@ -948,23 +964,54 @@ class Session[HandshakeMetadata]:
                     span=span,
                 )
 
-            emitter_task = self._task_manager.create_task(_encode_stream())
+            emitter_task = None
+            if not request:
+                await self._send_close_stream(
+                    stream_id=stream_id,
+                    span=span,
+                )
+            else:
+                assert request_serializer, "send_stream missing request_serializer"
+
+                # Now that we've validated these values, shadow them in the Task
+                emitter_task = self._task_manager.create_task(
+                    _encode_stream(request, request_serializer)
+                )
 
             # Handle potential errors during communication
             try:
                 async for result in output:
                     # Raise as early as we possibly can in case of an emission error
-                    if emitter_task.done() and (err := emitter_task.exception()):
+                    if (
+                        emitter_task
+                        and emitter_task.done()
+                        and (err := emitter_task.exception())
+                    ):
                         raise err
+
+                    # If the emitter channel has finished, we still need to check in
+                    # the consumer channel.
+                    try:
+                        err = error_channel.get_nowait()
+                        await self._send_close_stream(
+                            stream_id=stream_id,
+                            span=span,
+                        )
+                        raise err
+                    except (ChannelClosed, ChannelEmpty):
+                        # No errors, off to the next message
+                        pass
+
                     if result.get("type") == "CLOSE":
                         break
+
                     if "ok" not in result or not result["ok"]:
                         yield error_deserializer(result["payload"])
                         continue
                     yield response_deserializer(result["payload"])
-                # ... block the outer function until the emitter is finished emitting,
-                #     possibly raising a terminal exception.
-                await emitter_task
+                # ... block the outer function until the emitter is finished emitting.
+                if emitter_task:
+                    await emitter_task
             except Exception as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
@@ -1356,3 +1403,32 @@ async def _recv_from_ws(
             )
             raise unhandled
     logger.debug(f"_recv_from_ws exiting normally after {connection_attempts} loops")
+
+
+@dataclass(frozen=True)
+class _FinishedA[A]:
+    value: A
+
+
+@dataclass(frozen=True)
+class _FinishedB[B]:
+    value: B
+
+
+async def _race2[A, B](
+    a: Awaitable[A],
+    b: Awaitable[B],
+) -> _FinishedA[A] | _FinishedB[B]:
+    _a = asyncio.ensure_future(a)
+    _b = asyncio.ensure_future(b)
+    await asyncio.wait([_a, _b], return_when=asyncio.FIRST_COMPLETED)
+
+    if _a.done():
+        _b.cancel()
+        if err := _a.exception():
+            raise err
+        return _FinishedA(_a.result())
+    _a.cancel()
+    if err := _b.exception():
+        raise err
+    return _FinishedB(_b.result())
