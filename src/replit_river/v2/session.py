@@ -4,7 +4,7 @@ from collections import deque
 from collections.abc import AsyncIterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import (
     Any,
     AsyncGenerator,
@@ -82,6 +82,8 @@ STREAM_CANCEL_BIT: STREAM_CANCEL_BIT_TYPE = 0b00100
 STREAM_CLOSED_BIT_TYPE = Literal[0b01000]
 STREAM_CLOSED_BIT: STREAM_CLOSED_BIT_TYPE = 0b01000
 
+
+SESSION_CLOSE_TIMEOUT_SEC = 2
 
 _BackpressuredWaiter: TypeAlias = Callable[[], Awaitable[None]]
 
@@ -403,7 +405,15 @@ class Session[HandshakeMetadata]:
     ) -> None:
         """Close the session and all associated streams."""
         if (current_state or self._state) in TerminalStates:
+            start = datetime.now()
             while (current_state or self._state) != SessionState.CLOSED:
+                elapsed = (datetime.now() - start).total_seconds()
+                if elapsed >= SESSION_CLOSE_TIMEOUT_SEC:
+                    logger.warning(
+                        f"Session took longer than {SESSION_CLOSE_TIMEOUT_SEC} "
+                        "seconds to close, leaking",
+                    )
+                    break
                 logger.debug("Session already closing, waiting...")
                 await asyncio.sleep(0.2)
             # already closing
