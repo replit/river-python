@@ -1221,8 +1221,8 @@ async def _recv_from_ws(
     """
     our_task = asyncio.current_task()
     connection_attempts = 0
-    try:
-        while our_task and not our_task.cancelling() and not our_task.cancelled():
+    while our_task and not our_task.cancelling() and not our_task.cancelled():
+        try:
             logger.debug(f"_recv_from_ws loop count={connection_attempts}")
             connection_attempts += 1
             ws = None
@@ -1359,21 +1359,22 @@ async def _recv_from_ws(
                     logger.debug(
                         "FailedSendingMessageException while serving", exc_info=True
                     )
-                    break
+                    break  # Inner loop
                 except Exception:
                     logger.exception("caught exception at message iterator")
-                    break
+                    await transition_no_connection()
+                    break  # Inner loop
             logger.debug("_handle_messages_from_ws exiting")
-    except ExceptionGroup as eg:
-        _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))
-        if unhandled:
-            # We're in a task, there's not that much that can be done.
-            unhandled = ExceptionGroup(
-                "Unhandled exceptions on River server", unhandled.exceptions
-            )
-            logger.exception(
-                "caught exception at message iterator",
-                exc_info=unhandled,
-            )
-            raise unhandled
+        except ExceptionGroup as eg:
+            _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))
+            if unhandled:
+                # We're in a task, there's not that much that can be done.
+                unhandled = ExceptionGroup(
+                    "Unhandled exceptions on River server", unhandled.exceptions
+                )
+                logger.exception(
+                    "caught exception at message iterator",
+                    exc_info=unhandled,
+                )
+                raise unhandled
     logger.debug(f"_recv_from_ws exiting normally after {connection_attempts} loops")
