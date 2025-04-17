@@ -494,7 +494,8 @@ class Session[HandshakeMetadata]:
         Building on buffered_message_sender's documentation, we implement backpressure
         per-stream by way of self._streams'
 
-            error_channel: Channel[Exception | None]
+            error_channel: Channel[Exception]
+            backpressured_waiter: Callable[[], Awaitable[None]]
 
         This is accomplished via the following strategy:
         - If buffered_message_sender encounters an error, we transition back to
@@ -506,8 +507,11 @@ class Session[HandshakeMetadata]:
         -  Alternately, if buffered_message_sender successfully writes back to the
 
         - Finally, if _recv_from_ws encounters an error (transport or deserialization),
-          we emit an informative error to close_session which gets emitted to all
-          backpressured client methods.
+          it transitions to NO_CONNECTION and defers to the client_transport to
+          reestablish a connection.
+
+          The in-flight messages are still valid, as if we can reconnect to the server
+          in time, those responses can be marshalled to their respective callbacks.
         """
 
         async def commit(msg: TransportMessage) -> None:
@@ -729,7 +733,8 @@ class Session[HandshakeMetadata]:
             # Handle potential errors during communication
             try:
                 async with asyncio.timeout(timeout.total_seconds()):
-                    # Block for backpressure
+                    # Block for backpressure. For an RPC this is trivially true
+                    # but here for consistency with the other methods.
                     await backpressured_waiter()
                     # Race output and error channels
                     raced = await _race2(anext(output), error_channel.get())
@@ -801,9 +806,11 @@ class Session[HandshakeMetadata]:
                 # If this request is not closed and the session is killed, we should
                 # throw exception here
                 async for item in request:
-                    # Block for backpressure and emission errors from the ws
+                    # Block for backpressure
                     await backpressured_waiter()
                     try:
+                        # We check every tick to see whether we've seen an error
+                        # since we're responsible for emitting as quickly as possible.
                         raise error_channel.get_nowait()
                     except (ChannelClosed, ChannelEmpty):
                         # No errors, off to the next message
@@ -900,12 +907,20 @@ class Session[HandshakeMetadata]:
         )
 
         async with self._with_stream(span, stream_id, MAX_MESSAGE_BUFFER_SIZE) as (
-            backpressured_waiter,
             _,
+            error_channel,
             output,
         ):
             try:
                 async for item in output:
+                    try:
+                        # We check every tick to see whether we've seen an error
+                        # since we're responsible for emitting as quickly as possible.
+                        raise error_channel.get_nowait()
+                    except (ChannelClosed, ChannelEmpty):
+                        # No errors, off to the next message
+                        pass
+
                     if item.get("type") == "CLOSE":
                         break
                     if not item.get("ok", False):
@@ -966,9 +981,16 @@ class Session[HandshakeMetadata]:
                 request: AsyncIterable[R], request_serializer: Callable[[R], Any]
             ) -> None:
                 async for item in request:
-                    # Block for backpressure (or errors)
+                    # Block for backpressure
                     await backpressured_waiter()
-                    # If there are any errors so far, raise them
+                    try:
+                        # We check every tick to see whether we've seen an error
+                        # since we're responsible for emitting as quickly as possible.
+                        raise error_channel.get_nowait()
+                    except (ChannelClosed, ChannelEmpty):
+                        # No errors, off to the next message
+                        pass
+
                     await self._enqueue_message(
                         stream_id=stream_id,
                         control_flags=0,
