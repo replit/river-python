@@ -494,7 +494,8 @@ class Session[HandshakeMetadata]:
         Building on buffered_message_sender's documentation, we implement backpressure
         per-stream by way of self._streams'
 
-            error_channel: Channel[Exception | None]
+            error_channel: Channel[Exception]
+            backpressured_waiter: Callable[[], Awaitable[None]]
 
         This is accomplished via the following strategy:
         - If buffered_message_sender encounters an error, we transition back to
@@ -506,8 +507,11 @@ class Session[HandshakeMetadata]:
         -  Alternately, if buffered_message_sender successfully writes back to the
 
         - Finally, if _recv_from_ws encounters an error (transport or deserialization),
-          we emit an informative error to close_session which gets emitted to all
-          backpressured client methods.
+          it transitions to NO_CONNECTION and defers to the client_transport to
+          reestablish a connection.
+
+          The in-flight messages are still valid, as if we can reconnect to the server
+          in time, those responses can be marshalled to their respective callbacks.
         """
 
         async def commit(msg: TransportMessage) -> None:
@@ -789,7 +793,7 @@ class Session[HandshakeMetadata]:
                 # If this request is not closed and the session is killed, we should
                 # throw exception here
                 async for item in request:
-                    # Block for backpressure and emission errors from the ws
+                    # Block for backpressure
                     await backpressured_waiter()
                     try:
                         payload = request_serializer(item)
@@ -950,9 +954,9 @@ class Session[HandshakeMetadata]:
                 assert request_serializer, "send_stream missing request_serializer"
 
                 async for item in request:
-                    # Block for backpressure (or errors)
+                    # Block for backpressure
                     await backpressured_waiter()
-                    # If there are any errors so far, raise them
+
                     await self._enqueue_message(
                         stream_id=stream_id,
                         control_flags=0,
