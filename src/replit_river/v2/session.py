@@ -268,13 +268,16 @@ class Session[HandshakeMetadata]:
                     self.close(reason, current_state=current_state),
                 )
 
-        def transition_connecting() -> None:
+        def transition_connecting(ws: ClientConnection) -> None:
             if self._state in TerminalStates:
                 return
             logger.debug("transition_connecting")
             self._state = SessionState.CONNECTING
             # "Clear" here means observers should wait until we are connected.
             self._wait_for_connected.clear()
+
+            # Expose the current ws to be collected by close()
+            self._ws = ws
 
         def transition_connected(ws: ClientConnection) -> None:
             if self._state in TerminalStates:
@@ -1043,7 +1046,7 @@ async def _do_ensure_connected[HandshakeMetadata](
     get_next_sent_seq: Callable[[], int],
     get_current_ack: Callable[[], int],
     get_state: Callable[[], SessionState],
-    transition_connecting: Callable[[], None],
+    transition_connecting: Callable[[ClientConnection], None],
     close_ws_in_background: Callable[[ClientConnection], None],
     transition_connected: Callable[[ClientConnection], None],
     unbind_connecting_task: Callable[[], None],
@@ -1063,12 +1066,12 @@ async def _do_ensure_connected[HandshakeMetadata](
         attempt_count += 1
 
         rate_limiter.consume_budget(client_id)
-        transition_connecting()
 
         ws: ClientConnection | None = None
         try:
             uri_and_metadata = await uri_and_metadata_factory()
             ws = await websockets.asyncio.client.connect(uri_and_metadata["uri"])
+            transition_connecting(ws)
 
             try:
                 handshake_request = ControlMessageHandshakeRequest[HandshakeMetadata](
