@@ -1274,6 +1274,9 @@ async def _recv_from_ws(
                 # is no @overrides in `websockets` to hint this.
                 try:
                     message = await ws.recv(decode=False)
+                except ConnectionClosedOK as e:
+                    close_session(e)
+                    continue
                 except ConnectionClosed:
                     # This triggers a break in the inner loop so we can get back to
                     # the outer loop.
