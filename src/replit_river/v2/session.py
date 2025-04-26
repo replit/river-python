@@ -26,6 +26,7 @@ from aiochannel.errors import ChannelClosed
 from opentelemetry.trace import Span, use_span
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from pydantic import ValidationError
+from websockets import ConnectionClosedOK
 from websockets.asyncio.client import ClientConnection
 from websockets.exceptions import ConnectionClosed
 
@@ -1119,6 +1120,9 @@ async def _do_ensure_connected[HandshakeMetadata](
 
             try:
                 data = await ws.recv(decode=False)
+            except ConnectionClosedOK as e:
+                close_session(e)
+                continue
             except ConnectionClosed as e:
                 logger.debug(
                     "_do_ensure_connected: Connection closed during waiting "
