@@ -265,7 +265,11 @@ class Session[HandshakeMetadata]:
                 # during the cleanup procedure.
 
                 self._terminating_task = asyncio.create_task(
-                    self.close(reason, current_state=current_state),
+                    self.close(
+                        reason,
+                        current_state=current_state,
+                        _wait_for_closed=False,
+                    ),
                 )
 
         def transition_connecting(ws: ClientConnection) -> None:
@@ -405,12 +409,18 @@ class Session[HandshakeMetadata]:
         self._process_messages.set()
 
     async def close(
-        self, reason: Exception | None = None, current_state: SessionState | None = None
+        self,
+        reason: Exception | None = None,
+        current_state: SessionState | None = None,
+        _wait_for_closed: bool = True,
     ) -> None:
         """Close the session and all associated streams."""
         if (current_state or self._state) in TerminalStates:
             start = datetime.now()
-            while (current_state or self._state) != SessionState.CLOSED:
+            while (
+                _wait_for_closed
+                and (current_state or self._state) != SessionState.CLOSED
+            ):
                 elapsed = (datetime.now() - start).total_seconds()
                 if elapsed >= SESSION_CLOSE_TIMEOUT_SEC:
                     logger.warning(
@@ -632,7 +642,7 @@ class Session[HandshakeMetadata]:
                 get_state=lambda: self._state,
                 get_ws=lambda: self._ws,
                 transition_no_connection=transition_no_connection,
-                close_session=self.close,
+                close_session=lambda err: self.close(err, _wait_for_closed=False),
                 assert_incoming_seq_bookkeeping=assert_incoming_seq_bookkeeping,
                 get_stream=lambda stream_id: self._streams.get(stream_id),
                 enqueue_message=self._enqueue_message,
