@@ -54,7 +54,7 @@ from replit_river.messages import (
     parse_transport_msg,
     send_transport_message,
 )
-from replit_river.rate_limiter import LeakyBucketRateLimit
+from replit_river.rate_limiter import RateLimiter
 from replit_river.rpc import (
     ACK_BIT,
     STREAM_OPEN_BIT,
@@ -143,7 +143,7 @@ class Session[HandshakeMetadata]:
     _wait_for_connected: asyncio.Event
 
     _client_id: str
-    _rate_limiter: LeakyBucketRateLimit
+    _rate_limiter: RateLimiter
     _uri_and_metadata_factory: Callable[
         [], Awaitable[UriAndMetadata[HandshakeMetadata]]
     ]
@@ -176,7 +176,7 @@ class Session[HandshakeMetadata]:
         transport_options: TransportOptions,
         close_session_callback: CloseSessionCallback,
         client_id: str,
-        rate_limiter: LeakyBucketRateLimit,
+        rate_limiter: RateLimiter,
         uri_and_metadata_factory: Callable[
             [], Awaitable[UriAndMetadata[HandshakeMetadata]]
         ],
@@ -1034,7 +1034,7 @@ async def _do_ensure_connected[HandshakeMetadata](
     client_id: str,
     session_id: str,
     server_id: str,
-    rate_limiter: LeakyBucketRateLimit,
+    rate_limiter: RateLimiter,
     uri_and_metadata_factory: Callable[
         [], Awaitable[UriAndMetadata[HandshakeMetadata]]
     ],

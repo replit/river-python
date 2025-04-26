@@ -2,6 +2,7 @@ import asyncio
 import logging
 import random
 from contextvars import Context
+from typing import Protocol
 
 from replit_river.error_schema import RiverException
 from replit_river.transport_options import ConnectionRetryOptions
@@ -13,6 +14,13 @@ class BudgetExhaustedException(RiverException):
     def __init__(self, code: str, message: str, client_id: str) -> None:
         super().__init__(code, message)
         self.client_id = client_id
+
+
+class RateLimiter(Protocol):
+    def start_restoring_budget(self, user: str) -> None: ...
+    def get_backoff_ms(self, user: str) -> float: ...
+    def has_budget(self, user: str) -> bool: ...
+    def consume_budget(self, user: str) -> None: ...
 
 
 class LeakyBucketRateLimit:
