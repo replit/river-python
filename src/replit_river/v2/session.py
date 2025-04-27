@@ -4,7 +4,7 @@ from collections import deque
 from collections.abc import AsyncIterable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import timedelta
 from typing import (
     Any,
     AsyncGenerator,
@@ -169,6 +169,7 @@ class Session[HandshakeMetadata]:
 
     # Terminating
     _terminating_task: asyncio.Task[None] | None
+    _closing_waiter: asyncio.Event | None
 
     def __init__(
         self,
@@ -228,6 +229,7 @@ class Session[HandshakeMetadata]:
 
         # Terminating
         self._terminating_task = None
+        self._closing_waiter = None
 
         self._start_recv_from_ws()
         self._start_buffered_message_sender()
@@ -415,27 +417,25 @@ class Session[HandshakeMetadata]:
         _wait_for_closed: bool = True,
     ) -> None:
         """Close the session and all associated streams."""
-        if (current_state or self._state) in TerminalStates:
-            start = datetime.now()
-            while (
-                _wait_for_closed
-                and (current_state or self._state) != SessionState.CLOSED
-            ):
-                elapsed = (datetime.now() - start).total_seconds()
-                if elapsed >= SESSION_CLOSE_TIMEOUT_SEC:
-                    logger.warning(
-                        f"Session took longer than {SESSION_CLOSE_TIMEOUT_SEC} "
-                        "seconds to close, leaking",
-                    )
-                    break
+        if self._closing_waiter:
+            # Break early for internal callers
+            if not _wait_for_closed:
+                return
+            try:
                 logger.debug("Session already closing, waiting...")
-                await asyncio.sleep(0.2)
-            # already closing
+                async with asyncio.timeout(SESSION_CLOSE_TIMEOUT_SEC):
+                    await self._closing_waiter.wait()
+            except asyncio.TimeoutError:
+                logger.warning(
+                    f"Session took longer than {SESSION_CLOSE_TIMEOUT_SEC} "
+                    "seconds to close, leaking",
+                )
             return
         logger.info(
             f"{self.session_id} closing session to {self._server_id}, ws: {self._ws}"
         )
         self._state = SessionState.CLOSING
+        self._closing_waiter = asyncio.Event()
 
         # We're closing, so we need to wake up...
         # ... tasks waiting for connection to be established
@@ -500,6 +500,10 @@ class Session[HandshakeMetadata]:
         # Clear the session in transports
         # This will get us GC'd, so this should be the last thing.
         self._close_session_callback(self)
+
+        # Release waiters, then release the event
+        self._closing_waiter.set()
+        self._closing_waiter = None
 
     def _start_buffered_message_sender(
         self,
