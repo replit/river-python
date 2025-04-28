@@ -169,7 +169,6 @@ class Session[HandshakeMetadata]:
 
     # Terminating
     _terminating_task: asyncio.Task[None] | None
-    _closing_waiter: asyncio.Event | None
 
     def __init__(
         self,
@@ -229,7 +228,6 @@ class Session[HandshakeMetadata]:
 
         # Terminating
         self._terminating_task = None
-        self._closing_waiter = None
 
         self._start_recv_from_ws()
         self._start_buffered_message_sender()
@@ -393,11 +391,11 @@ class Session[HandshakeMetadata]:
         reason: Exception | None = None,
     ) -> None:
         """Close the session and all associated streams."""
-        if self._closing_waiter:
+        if self._terminating_task:
             try:
                 logger.debug("Session already closing, waiting...")
                 async with asyncio.timeout(SESSION_CLOSE_TIMEOUT_SEC):
-                    await self._closing_waiter.wait()
+                    await self._terminating_task
             except asyncio.TimeoutError:
                 logger.warning(
                     f"Session took longer than {SESSION_CLOSE_TIMEOUT_SEC} "
@@ -436,7 +434,6 @@ class Session[HandshakeMetadata]:
                 f"ws: {self._ws}"
             )
             self._state = SessionState.CLOSING
-            self._closing_waiter = asyncio.Event()
 
             # We're closing, so we need to wake up...
             # ... tasks waiting for connection to be established
@@ -502,14 +499,11 @@ class Session[HandshakeMetadata]:
             # This will get us GC'd, so this should be the last thing.
             self._close_session_callback(self)
 
-            # Release waiters, then release the event
-            self._closing_waiter.set()
-            self._closing_waiter = None
-
         if self._terminating_task:
             return self._terminating_task
 
-        return asyncio.create_task(do_close())
+        self._terminating_task = asyncio.create_task(do_close())
+        return self._terminating_task
 
     def _start_buffered_message_sender(
         self,
