@@ -252,28 +252,6 @@ class Session[HandshakeMetadata]:
                 return self._send_buffer[0].seq
             return self.seq
 
-        def close_session(reason: Exception | None) -> None:
-            # If we're already closing, just let whoever's currently doing it handle it.
-            if self._state in TerminalStates:
-                return
-
-            # Avoid closing twice
-            if self._terminating_task is None:
-                current_state = self._state
-                self._state = SessionState.CLOSING
-
-                # We can't just call self.close() directly because
-                # we're inside a thread that will eventually be awaited
-                # during the cleanup procedure.
-
-                self._terminating_task = asyncio.create_task(
-                    self.close(
-                        reason,
-                        current_state=current_state,
-                        _wait_for_closed=False,
-                    ),
-                )
-
         def transition_connecting(ws: ClientConnection) -> None:
             if self._state in TerminalStates:
                 return
@@ -328,7 +306,7 @@ class Session[HandshakeMetadata]:
                     close_ws_in_background=close_ws_in_background,
                     transition_connected=transition_connected,
                     unbind_connecting_task=unbind_connecting_task,
-                    close_session=close_session,
+                    close_session=self._close_internal_nowait,
                 )
             )
 
@@ -413,14 +391,9 @@ class Session[HandshakeMetadata]:
     async def close(
         self,
         reason: Exception | None = None,
-        current_state: SessionState | None = None,
-        _wait_for_closed: bool = True,
     ) -> None:
         """Close the session and all associated streams."""
         if self._closing_waiter:
-            # Break early for internal callers
-            if not _wait_for_closed:
-                return
             try:
                 logger.debug("Session already closing, waiting...")
                 async with asyncio.timeout(SESSION_CLOSE_TIMEOUT_SEC):
@@ -431,79 +404,112 @@ class Session[HandshakeMetadata]:
                     "seconds to close, leaking",
                 )
             return
-        logger.info(
-            f"{self.session_id} closing session to {self._server_id}, ws: {self._ws}"
-        )
-        self._state = SessionState.CLOSING
-        self._closing_waiter = asyncio.Event()
+        await self._close_internal(reason)
 
-        # We're closing, so we need to wake up...
-        # ... tasks waiting for connection to be established
-        self._wait_for_connected.set()
-        # ... consumers waiting to enqueue messages
-        self._space_available.set()
-        # ... message processor so it can exit cleanly
-        self._process_messages.set()
+    def _close_internal_nowait(self, reason: Exception | None = None) -> None:
+        """
+        When calling close() from asyncio Tasks, we must not block.
 
-        # Wait to permit the waiting tasks to shut down gracefully
-        await asyncio.sleep(0.25)
+        This function does so, deferring to the underlying infrastructure for
+        creating self._terminating_task.
+        """
+        self._close_internal(reason)
 
-        await self._task_manager.cancel_all_tasks()
+    def _close_internal(self, reason: Exception | None = None) -> asyncio.Task[None]:
+        """
+        Internal close method. Subsequent calls past the first do not block.
 
-        for stream_meta in self._streams.values():
-            stream_meta["output"].close()
-            # Wake up backpressured writers
-            try:
-                stream_meta["error_channel"].put_nowait(
-                    reason
-                    or SessionClosedRiverServiceException(
-                        "river session is closed",
-                    )
-                )
-            except ChannelFull:
-                logger.exception(
-                    "Unable to tell the caller that the session is going away",
-                )
-            stream_meta["release_backpressured_waiter"]()
-        # Before we GC the streams, let's wait for all tasks to be closed gracefully.
-        try:
-            async with asyncio.timeout(
-                self._transport_options.shutdown_all_streams_timeout_ms
-            ):
-                # Block for backpressure and emission errors from the ws
-                await asyncio.gather(
-                    *[
-                        stream_meta["output"].join()
-                        for stream_meta in self._streams.values()
-                    ]
-                )
-        except asyncio.TimeoutError:
-            spans: list[Span] = [
-                stream_meta["span"]
-                for stream_meta in self._streams.values()
-                if not stream_meta["output"].closed()
-            ]
-            span_ids = [span.get_span_context().span_id for span in spans]
-            logger.exception(
-                "Timeout waiting for output streams to finallize",
-                extra={"span_ids": span_ids},
+        This is intended to be the primary driver of a session being torn down
+        and returned to its initial state.
+
+        NB: This function is intended to be the sole lifecycle manager of
+            self._terminating_task. Waiting on the completion of that task is optional,
+            but the population of that property is critical.
+
+        NB: We must not await the task returned from this function from chained tasks
+            inside this session, otherwise we will create a thread loop.
+        """
+
+        async def do_close() -> None:
+            logger.info(
+                f"{self.session_id} closing session to {self._server_id}, "
+                f"ws: {self._ws}"
             )
-        self._streams.clear()
+            self._state = SessionState.CLOSING
+            self._closing_waiter = asyncio.Event()
 
-        if self._ws:
-            # The Session isn't guaranteed to live much longer than this close()
-            # invocation, so let's await this close to avoid dropping the socket.
-            await self._ws.close()
+            # We're closing, so we need to wake up...
+            # ... tasks waiting for connection to be established
+            self._wait_for_connected.set()
+            # ... consumers waiting to enqueue messages
+            self._space_available.set()
+            # ... message processor so it can exit cleanly
+            self._process_messages.set()
 
-        self._state = SessionState.CLOSED
+            # Wait to permit the waiting tasks to shut down gracefully
+            await asyncio.sleep(0.25)
 
-        # Clear the session in transports
-        # This will get us GC'd, so this should be the last thing.
-        self._close_session_callback(self)
+            await self._task_manager.cancel_all_tasks()
 
-        # Release waiters, then release the event
-        self._closing_waiter.set()
-        self._closing_waiter = None
+            for stream_meta in self._streams.values():
+                stream_meta["output"].close()
+                # Wake up backpressured writers
+                try:
+                    stream_meta["error_channel"].put_nowait(
+                        reason
+                        or SessionClosedRiverServiceException(
+                            "river session is closed",
+                        )
+                    )
+                except ChannelFull:
+                    logger.exception(
+                        "Unable to tell the caller that the session is going away",
+                    )
+                stream_meta["release_backpressured_waiter"]()
+            # Before we GC the streams, let's wait for all tasks to be closed gracefully
+            try:
+                async with asyncio.timeout(
+                    self._transport_options.shutdown_all_streams_timeout_ms
+                ):
+                    # Block for backpressure and emission errors from the ws
+                    await asyncio.gather(
+                        *[
+                            stream_meta["output"].join()
+                            for stream_meta in self._streams.values()
+                        ]
+                    )
+            except asyncio.TimeoutError:
+                spans: list[Span] = [
+                    stream_meta["span"]
+                    for stream_meta in self._streams.values()
+                    if not stream_meta["output"].closed()
+                ]
+                span_ids = [span.get_span_context().span_id for span in spans]
+                logger.exception(
+                    "Timeout waiting for output streams to finallize",
+                    extra={"span_ids": span_ids},
+                )
+            self._streams.clear()
+
+            if self._ws:
+                # The Session isn't guaranteed to live much longer than this close()
+                # invocation, so let's await this close to avoid dropping the socket.
+                await self._ws.close()
+
+            self._state = SessionState.CLOSED
+
+            # Clear the session in transports
+            # This will get us GC'd, so this should be the last thing.
+            self._close_session_callback(self)
+
+            # Release waiters, then release the event
+            self._closing_waiter.set()
+            self._closing_waiter = None
+
+        if self._terminating_task:
+            return self._terminating_task
+
+        return asyncio.create_task(do_close())
 
     def _start_buffered_message_sender(
         self,
@@ -646,7 +652,7 @@ class Session[HandshakeMetadata]:
                 get_state=lambda: self._state,
                 get_ws=lambda: self._ws,
                 transition_no_connection=transition_no_connection,
-                close_session=lambda err: self.close(err, _wait_for_closed=False),
+                close_session=self._close_internal_nowait,
                 assert_incoming_seq_bookkeeping=assert_incoming_seq_bookkeeping,
                 get_stream=lambda stream_id: self._streams.get(stream_id),
                 enqueue_message=self._enqueue_message,
@@ -1137,8 +1143,11 @@ async def _do_ensure_connected[HandshakeMetadata](
 
             try:
                 data = await ws.recv(decode=False)
-            except ConnectionClosedOK as e:
-                close_session(e)
+            except ConnectionClosedOK:
+                # In the case of a normal connection closure, we defer to
+                # the outer loop to determine next steps.
+                # A call to close(...) should set the SessionState to a terminal one,
+                # otherwise we should try again.
                 continue
             except ConnectionClosed as e:
                 logger.debug(
@@ -1226,7 +1235,7 @@ async def _recv_from_ws(
     get_state: Callable[[], SessionState],
     get_ws: Callable[[], ClientConnection | None],
     transition_no_connection: Callable[[], Awaitable[None]],
-    close_session: Callable[[Exception | None], Awaitable[None]],
+    close_session: Callable[[Exception | None], None],
     assert_incoming_seq_bookkeeping: Callable[
         [str, int, int], Literal[True] | _IgnoreMessage
     ],
@@ -1361,7 +1370,7 @@ async def _recv_from_ws(
                         stream_meta["output"].close()
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
-                    await close_session(
+                    close_session(
                         SessionClosedRiverServiceException(
                             "Out of order message, closing connection"
                         )
@@ -1371,7 +1380,7 @@ async def _recv_from_ws(
                     logger.exception(
                         "Got invalid transport message, closing session",
                     )
-                    await close_session(
+                    close_session(
                         SessionClosedRiverServiceException(
                             "Out of order message, closing connection"
                         )
