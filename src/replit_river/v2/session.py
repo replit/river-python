@@ -509,7 +509,8 @@ class Session[HandshakeMetadata]:
         if self._terminating_task:
             return self._terminating_task
 
-        return asyncio.create_task(do_close())
+        self._terminating_task = asyncio.create_task(do_close())
+        return self._terminating_task
 
     def _start_buffered_message_sender(
         self,
