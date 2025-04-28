@@ -54,8 +54,10 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         call ensure_connected on whatever session is active.
         """
         existing_session = self._session
-        if not existing_session or existing_session.is_closed():
+        if not existing_session or existing_session.is_terminal():
             logger.info("Creating new session")
+            if existing_session:
+                await existing_session.close()
             new_session = Session(
                 client_id=self._client_id,
                 server_id=self._server_id,
@@ -80,7 +82,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         logger.debug("Triggering get_or_create_session")
         return await self.get_or_create_session()
 
-    async def _delete_session(self, session: Session) -> None:
+    def _delete_session(self, session: Session) -> None:
         if self._session is session:
             self._session = None
         else:
