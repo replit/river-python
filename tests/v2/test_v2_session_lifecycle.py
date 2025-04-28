@@ -6,6 +6,7 @@ from websockets import ConnectionClosedOK
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.typing import Data
 
+from replit_river.common_session import SessionState
 from replit_river.messages import parse_transport_msg
 from replit_river.rate_limiter import RateLimiter
 from replit_river.rpc import TransportMessage
@@ -114,14 +115,20 @@ async def test_connect(ws_server: WsServerFixture) -> None:
     await connecting
 
 
-async def test_reconnect(ws_server: WsServerFixture) -> None:
+async def test_close_race(ws_server: WsServerFixture) -> None:
     (urimeta, recv, conn) = ws_server
+
+    callcount = 0
+
+    def close_session_callback(_session: Session) -> None:
+        nonlocal callcount
+        callcount += 1
 
     session = Session(
         server_id="SERVER",
         session_id="SESSION1",
         transport_options=TransportOptions(),
-        close_session_callback=lambda _: None,
+        close_session_callback=close_session_callback,
         client_id="CLIENT1",
         rate_limiter=_PermissiveRateLimiter(),
         uri_and_metadata_factory=urimeta,
@@ -132,4 +139,9 @@ async def test_reconnect(ws_server: WsServerFixture) -> None:
     assert isinstance(msg, TransportMessage)
     assert msg.payload["type"] == "HANDSHAKE_REQ"
     await session.close()
+    await session.close()
+    await session.close()
+    await session.close()
     await connecting
+    assert session._state == SessionState.CLOSED
+    assert callcount == 1
