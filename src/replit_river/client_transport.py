@@ -170,7 +170,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
 
             try:
                 uri_and_metadata = await self._uri_and_metadata_factory()
-                ws = await websockets.connect(uri_and_metadata["uri"])
+                ws = await websockets.connect(uri_and_metadata["uri"], max_size=None)
                 session_id = (
                     self.generate_nanoid()
                     if not old_session

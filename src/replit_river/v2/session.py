@@ -1084,7 +1084,10 @@ async def _do_ensure_connected[HandshakeMetadata](
         ws: ClientConnection | None = None
         try:
             uri_and_metadata = await uri_and_metadata_factory()
-            ws = await websockets.asyncio.client.connect(uri_and_metadata["uri"])
+            ws = await websockets.asyncio.client.connect(
+                uri_and_metadata["uri"],
+                max_size=None,
+            )
             transition_connecting(ws)
 
             try:
