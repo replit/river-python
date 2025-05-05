@@ -751,6 +751,13 @@ class Session[HandshakeMetadata]:
                     # Block for backpressure and emission errors from the ws
                     await backpressured_waiter()
                     result = await anext(output)
+            except asyncio.CancelledError:
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    message="RPC cancelled",
+                    span=span,
+                )
+                raise
             except asyncio.TimeoutError as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
@@ -835,6 +842,13 @@ class Session[HandshakeMetadata]:
                         payload=payload,
                         span=span,
                     )
+            except asyncio.CancelledError:
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    message="Upload cancelled",
+                    span=span,
+                )
+                raise
             except Exception as e:
                 # If we get any exception other than WebsocketClosedException,
                 # cancel the stream.
@@ -916,6 +930,13 @@ class Session[HandshakeMetadata]:
                         continue
                     yield response_deserializer(item["payload"])
                 await self._send_close_stream(stream_id, span)
+            except asyncio.CancelledError:
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    message="Subscription cancelled",
+                    span=span,
+                )
+                raise
             except Exception as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
@@ -1002,6 +1023,13 @@ class Session[HandshakeMetadata]:
                 # ... block the outer function until the emitter is finished emitting,
                 #     possibly raising a terminal exception.
                 await emitter_task
+            except asyncio.CancelledError:
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    message="Stream cancelled",
+                    span=span,
+                )
+                raise
             except Exception as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
