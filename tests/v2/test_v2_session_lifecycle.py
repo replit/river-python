@@ -231,7 +231,7 @@ async def test_big_packet(ws_server: WsServerFixture) -> None:
         stream_close_msg = msgpack.unpackb(await recv.get())
         assert stream_close_msg["controlFlags"] == STREAM_CLOSED_BIT
 
-    stream_handler = asyncio.create_task(handle_server_messages())
+    server_handler = asyncio.create_task(handle_server_messages())
 
     try:
         async for datagram in client.send_subscription(
@@ -245,5 +245,5 @@ async def test_big_packet(ws_server: WsServerFixture) -> None:
     await connecting
 
     # Ensure we're listening to close messages as well
-    stream_handler.cancel()
-    await stream_handler
+    server_handler.cancel()
+    await server_handler
