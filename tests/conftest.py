@@ -17,7 +17,7 @@ from replit_river.rpc import (
 pytest_plugins = [
     "tests.v1.river_fixtures.logging",
     "tests.v1.river_fixtures.clientserver",
-    "tests.v2.fixtures",
+    "tests.v2.fixtures.bound_client",
 ]
 
 HandlerKind = Literal["rpc", "subscription-stream", "upload-stream", "stream"]
