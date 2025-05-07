@@ -353,6 +353,7 @@ class Session[HandshakeMetadata]:
             # session is closing / closed, raise
             raise SessionClosedRiverServiceException(
                 "river session is closed, dropping message",
+                stream_id,
             )
 
         # Begin critical section: Avoid any await between here and _send_buffer.append
@@ -448,7 +449,7 @@ class Session[HandshakeMetadata]:
 
             await self._task_manager.cancel_all_tasks()
 
-            for stream_meta in self._streams.values():
+            for stream_id, stream_meta in self._streams.items():
                 stream_meta["output"].close()
                 # Wake up backpressured writers
                 try:
@@ -456,6 +457,7 @@ class Session[HandshakeMetadata]:
                         reason
                         or SessionClosedRiverServiceException(
                             "river session is closed",
+                            stream_id,
                         )
                     )
                 except ChannelFull:
@@ -751,6 +753,13 @@ class Session[HandshakeMetadata]:
                     # Block for backpressure and emission errors from the ws
                     await backpressured_waiter()
                     result = await anext(output)
+            except asyncio.CancelledError:
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    message="RPC cancelled",
+                    span=span,
+                )
+                raise
             except asyncio.TimeoutError as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
@@ -835,6 +844,13 @@ class Session[HandshakeMetadata]:
                         payload=payload,
                         span=span,
                     )
+            except asyncio.CancelledError:
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    message="Upload cancelled",
+                    span=span,
+                )
+                raise
             except Exception as e:
                 # If we get any exception other than WebsocketClosedException,
                 # cancel the stream.
@@ -916,6 +932,13 @@ class Session[HandshakeMetadata]:
                         continue
                     yield response_deserializer(item["payload"])
                 await self._send_close_stream(stream_id, span)
+            except asyncio.CancelledError:
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    message="Subscription cancelled",
+                    span=span,
+                )
+                raise
             except Exception as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
@@ -1002,6 +1025,15 @@ class Session[HandshakeMetadata]:
                 # ... block the outer function until the emitter is finished emitting,
                 #     possibly raising a terminal exception.
                 await emitter_task
+            except asyncio.CancelledError as e:
+                await self._send_cancel_stream(
+                    stream_id=stream_id,
+                    message="Stream cancelled",
+                    span=span,
+                )
+                if emitter_task.done() and (err := emitter_task.exception()):
+                    raise e from err
+                raise
             except Exception as e:
                 await self._send_cancel_stream(
                     stream_id=stream_id,
@@ -1288,6 +1320,7 @@ async def _recv_from_ws(
                     # the outer loop.
                     await transition_no_connection()
                     break
+                msg: TransportMessage | str | None = None
                 try:
                     msg = parse_transport_msg(message)
                     logger.debug(
@@ -1367,9 +1400,13 @@ async def _recv_from_ws(
                         stream_meta["output"].close()
                 except OutOfOrderMessageException:
                     logger.exception("Out of order message, closing connection")
+                    stream_id = "unknown"
+                    if isinstance(msg, TransportMessage):
+                        stream_id = msg.streamId
                     close_session(
                         SessionClosedRiverServiceException(
-                            "Out of order message, closing connection"
+                            "Out of order message, closing connection",
+                            stream_id,
                         )
                     )
                     continue
@@ -1377,9 +1414,13 @@ async def _recv_from_ws(
                     logger.exception(
                         "Got invalid transport message, closing session",
                     )
+                    stream_id = "unknown"
+                    if isinstance(msg, TransportMessage):
+                        stream_id = msg.streamId
                     close_session(
                         SessionClosedRiverServiceException(
-                            "Out of order message, closing connection"
+                            "Out of order message, closing connection",
+                            stream_id,
                         )
                     )
                     continue

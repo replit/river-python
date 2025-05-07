@@ -1,13 +1,8 @@
 import asyncio
 import logging
-from typing import AsyncIterator, Awaitable, Callable, TypeAlias, TypedDict
 
 import msgpack
 import nanoid
-import pytest
-from websockets import ConnectionClosed, ConnectionClosedOK
-from websockets.asyncio.server import ServerConnection, serve
-from websockets.typing import Data
 
 from replit_river.common_session import SessionState
 from replit_river.messages import parse_transport_msg
@@ -18,9 +13,10 @@ from replit_river.rpc import (
     HandShakeStatus,
     TransportMessage,
 )
-from replit_river.transport_options import TransportOptions, UriAndMetadata
+from replit_river.transport_options import TransportOptions
 from replit_river.v2.client import Client
 from replit_river.v2.session import STREAM_CLOSED_BIT, Session
+from tests.v2.fixtures.raw_ws_server import WsServerFixture
 
 
 class _PermissiveRateLimiter(RateLimiter):
@@ -34,77 +30,6 @@ class _PermissiveRateLimiter(RateLimiter):
         return True
 
     def consume_budget(self, user: str) -> None:
-        pass
-
-
-WsServerFixture: TypeAlias = tuple[
-    Callable[[], Awaitable[UriAndMetadata[None]]],
-    asyncio.Queue[bytes],
-    Callable[[], ServerConnection | None],
-]
-
-
-class _WsServerState(TypedDict):
-    ipv4_laddr: tuple[str, int] | None
-
-
-async def _ws_server_internal(
-    recv: asyncio.Queue[bytes],
-    set_conn: Callable[[ServerConnection], None],
-    state: _WsServerState,
-) -> AsyncIterator[None]:
-    async def handle(websocket: ServerConnection) -> None:
-        set_conn(websocket)
-        datagram: Data
-        try:
-            while datagram := await websocket.recv(decode=False):
-                if isinstance(datagram, str):
-                    continue
-                await recv.put(datagram)
-        except ConnectionClosedOK:
-            pass
-        except ConnectionClosed:
-            pass
-
-    port: int | None = None
-    if state["ipv4_laddr"]:
-        port = state["ipv4_laddr"][1]
-    async with serve(handle, "localhost", port=port) as server:
-        for sock in server.sockets:
-            if (pair := sock.getsockname())[0] == "127.0.0.1":
-                if state["ipv4_laddr"] is None:
-                    state["ipv4_laddr"] = pair
-        serve_forever = asyncio.create_task(server.serve_forever())
-        yield None
-        server.close()
-        await server.wait_closed()
-        # "serve_forever" should always be done after wait_closed finishes
-        assert serve_forever.done()
-
-
-@pytest.fixture
-async def ws_server() -> AsyncIterator[WsServerFixture]:
-    recv: asyncio.Queue[bytes] = asyncio.Queue(maxsize=1)
-    connection: ServerConnection | None = None
-    state: _WsServerState = {"ipv4_laddr": None}
-
-    def set_conn(new_conn: ServerConnection) -> None:
-        nonlocal connection
-        connection = new_conn
-
-    server_generator = _ws_server_internal(recv, set_conn, state)
-    await anext(server_generator)
-
-    async def urimeta() -> UriAndMetadata[None]:
-        ipv4_laddr = state["ipv4_laddr"]
-        assert ipv4_laddr
-        return UriAndMetadata(uri="ws://%s:%d" % ipv4_laddr, metadata=None)
-
-    yield (urimeta, recv, lambda: connection)
-
-    try:
-        await anext(server_generator)
-    except StopAsyncIteration:
         pass
 
 
@@ -229,7 +154,7 @@ async def test_big_packet(ws_server: WsServerFixture) -> None:
         stream_close_msg = msgpack.unpackb(await recv.get())
         assert stream_close_msg["controlFlags"] == STREAM_CLOSED_BIT
 
-    stream_handler = asyncio.create_task(handle_server_messages())
+    server_handler = asyncio.create_task(handle_server_messages())
 
     try:
         async for datagram in client.send_subscription(
@@ -243,5 +168,5 @@ async def test_big_packet(ws_server: WsServerFixture) -> None:
     await connecting
 
     # Ensure we're listening to close messages as well
-    stream_handler.cancel()
-    await stream_handler
+    server_handler.cancel()
+    await server_handler

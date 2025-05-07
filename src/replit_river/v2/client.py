@@ -190,11 +190,11 @@ def _trace_procedure(
     except RiverException as e:
         span.record_exception(e, escaped=True)
         _record_river_error(span_handle, RiverError(code=e.code, message=e.message))
-        raise e
+        raise
     except BaseException as e:
         span.record_exception(e, escaped=True)
         span_handle.set_status(StatusCode.ERROR, f"{type(e).__name__}: {e}")
-        raise e
+        raise
     finally:
         span.end()
 
