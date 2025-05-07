@@ -86,8 +86,10 @@ class SessionClosedRiverServiceException(RiverException):
     def __init__(
         self,
         message: str,
+        streamId: str,
     ) -> None:
         super().__init__(SYNTHETIC_ERROR_CODE_SESSION_CLOSED, message)
+        self.streamId = streamId
 
 
 def exception_from_message(code: str) -> type[RiverServiceException]:

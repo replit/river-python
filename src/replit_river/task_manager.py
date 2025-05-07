@@ -2,7 +2,11 @@ import asyncio
 import logging
 from typing import Coroutine, Set
 
-from replit_river.error_schema import ERROR_CODE_STREAM_CLOSED, RiverException
+from replit_river.error_schema import (
+    ERROR_CODE_STREAM_CLOSED,
+    RiverException,
+    SessionClosedRiverServiceException,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +41,13 @@ class BackgroundTaskManager:
             # If we cancel the task manager we will get called here as well,
             # if we want to handle the cancellation differently we can do it here.
             logger.debug("Task was cancelled %r", task_to_remove)
+        except SessionClosedRiverServiceException as e:
+            logger.warning(
+                "Session was closed",
+                extra={
+                    "stream_id": e.streamId,
+                },
+            )
         except RiverException as e:
             if e.code == ERROR_CODE_STREAM_CLOSED:
                 # Task is cancelled
@@ -76,6 +87,14 @@ class BackgroundTaskManager:
             ):
                 # Task is cancelled
                 pass
+            elif isinstance(exception, SessionClosedRiverServiceException):
+                # Session is closed, don't bother logging
+                logger.info(
+                    "Session closed",
+                    extra={
+                        "stream_id": exception.streamId,
+                    },
+                )
             else:
                 logger.error(
                     "Exception on cancelling task",
