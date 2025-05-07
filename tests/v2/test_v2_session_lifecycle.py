@@ -102,6 +102,8 @@ async def ws_server() -> AsyncIterator[WsServerFixture]:
 
     yield (urimeta, recv, lambda: connection)
 
+    connection = None
+
     try:
         await anext(server_generator)
     except StopAsyncIteration:
