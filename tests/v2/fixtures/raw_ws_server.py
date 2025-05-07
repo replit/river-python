@@ -3,6 +3,7 @@ from typing import (
     AsyncIterator,
     Awaitable,
     Callable,
+    Literal,
     TypeAlias,
     TypedDict,
 )
@@ -18,6 +19,11 @@ WsServerFixture: TypeAlias = tuple[
     asyncio.Queue[bytes],
     Callable[[], ServerConnection | None],
 ]
+
+
+class OuterPayload[A](TypedDict):
+    ok: Literal[True]
+    payload: A
 
 
 class _WsServerState(TypedDict):

@@ -1,9 +1,5 @@
 import asyncio
 import logging
-from typing import (
-    Literal,
-    TypedDict,
-)
 
 import msgpack
 import nanoid
@@ -21,11 +17,6 @@ from replit_river.transport_options import TransportOptions
 from replit_river.v2.client import Client
 from replit_river.v2.session import STREAM_CLOSED_BIT, Session
 from tests.v2.fixtures.raw_ws_server import WsServerFixture
-
-
-class OuterPayload[A](TypedDict):
-    ok: Literal[True]
-    payload: A
 
 
 class _PermissiveRateLimiter(RateLimiter):

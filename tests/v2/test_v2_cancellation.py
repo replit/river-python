@@ -3,8 +3,6 @@ import logging
 from typing import (
     Any,
     AsyncIterator,
-    Literal,
-    TypedDict,
 )
 
 import msgpack
@@ -20,12 +18,7 @@ from replit_river.rpc import (
 from replit_river.transport_options import TransportOptions
 from replit_river.v2.client import Client
 from replit_river.v2.session import STREAM_CANCEL_BIT
-from tests.v2.fixtures.raw_ws_server import WsServerFixture
-
-
-class OuterPayload[A](TypedDict):
-    ok: Literal[True]
-    payload: A
+from tests.v2.fixtures.raw_ws_server import OuterPayload, WsServerFixture
 
 
 async def test_upload_cancel(ws_server: WsServerFixture) -> None:
