@@ -90,7 +90,7 @@ async def test_rpc_cancel(ws_server: WsServerFixture) -> None:
     rpc_task = asyncio.create_task(
         client.send_rpc(
             "test",
-            "bigstream",
+            "cancel_rpc",
             {"ok": True, "payload": {"hello": "world"}},
             lambda x: x,
             lambda x: x,
@@ -218,7 +218,7 @@ async def test_stream_cancel(
 
         async for chunk in client.send_stream(
             "test",
-            "bigstream",
+            "cancel_stream",
             {},
             _upload_chunks(),
             lambda x: x,
@@ -352,7 +352,7 @@ async def test_subscription_cancel(ws_server: WsServerFixture) -> None:
     async def receive_chunks() -> None:
         async for chunk in client.send_subscription(
             "test",
-            "bigstream",
+            "subscription_cancel",
             {},
             lambda x: x,
             lambda x: x,
@@ -455,7 +455,7 @@ async def test_upload_cancel(ws_server: WsServerFixture) -> None:
     upload_task = asyncio.create_task(
         client.send_upload(
             "test",
-            "bigstream",
+            "upload_cancel",
             {},
             upload_chunks(),
             lambda x: x,
