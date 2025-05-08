@@ -511,10 +511,9 @@ class Session[HandshakeMetadata]:
             # This will get us GC'd, so this should be the last thing.
             self._close_session_callback(self)
 
-        if self._terminating_task:
-            return self._terminating_task
+        if not self._terminating_task:
+            self._terminating_task = asyncio.create_task(do_close())
 
-        self._terminating_task = asyncio.create_task(do_close())
         return self._terminating_task
 
     def _start_buffered_message_sender(
