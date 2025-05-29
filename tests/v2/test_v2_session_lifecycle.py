@@ -1,8 +1,10 @@
 import asyncio
 import logging
+from typing import Awaitable, Callable
 
 import msgpack
 import nanoid
+from websockets.asyncio.client import ClientConnection
 
 from replit_river.common_session import SessionState
 from replit_river.messages import parse_transport_msg
@@ -13,6 +15,7 @@ from replit_river.rpc import (
     HandShakeStatus,
     TransportMessage,
 )
+from replit_river.task_manager import BackgroundTaskManager
 from replit_river.transport_options import TransportOptions
 from replit_river.v2.client import Client
 from replit_river.v2.session import STREAM_CLOSED_BIT, Session
@@ -36,21 +39,33 @@ class _PermissiveRateLimiter(RateLimiter):
 async def test_connect(ws_server: WsServerFixture) -> None:
     (urimeta, recv, conn) = ws_server
 
+    def trigger_close(
+        signal_closing: Callable[[], None],
+        task_manager: BackgroundTaskManager,  # .cancel_all_tasks()
+        terminate_remaining_output_streams: Callable[[], None],
+        join_output_streams_with_timeout: Callable[[], Awaitable[None]],
+        ws: ClientConnection | None,
+        become_closed: Callable[[], None],
+    ) -> asyncio.Event:
+        event = asyncio.Event()
+        event.set()
+        return event
+
     session = Session(
         server_id="SERVER",
         session_id="SESSION1",
         transport_options=TransportOptions(),
-        close_session_callback=lambda _: None,
         client_id="CLIENT1",
         rate_limiter=_PermissiveRateLimiter(),
         uri_and_metadata_factory=urimeta,
+        trigger_close=trigger_close,
     )
 
     connecting = asyncio.create_task(session.ensure_connected())
     msg = parse_transport_msg(await recv.get())
     assert isinstance(msg, TransportMessage)
     assert msg.payload["type"] == "HANDSHAKE_REQ"
-    await session.close()
+    await session.close().wait()
     await connecting
 
 
@@ -59,28 +74,42 @@ async def test_close_race(ws_server: WsServerFixture) -> None:
 
     callcount = 0
 
-    def close_session_callback(_session: Session) -> None:
-        nonlocal callcount
-        callcount += 1
+    event: asyncio.Event | None = None
+
+    def trigger_close(
+        signal_closing: Callable[[], None],
+        task_manager: BackgroundTaskManager,  # .cancel_all_tasks()
+        terminate_remaining_output_streams: Callable[[], None],
+        join_output_streams_with_timeout: Callable[[], Awaitable[None]],
+        ws: ClientConnection | None,
+        become_closed: Callable[[], None],
+    ) -> asyncio.Event:
+        nonlocal event
+        if event is None:
+            event = asyncio.Event()
+            event.set()
+            nonlocal callcount
+            callcount += 1
+        return event
 
     session = Session(
         server_id="SERVER",
         session_id="SESSION1",
         transport_options=TransportOptions(),
-        close_session_callback=close_session_callback,
         client_id="CLIENT1",
         rate_limiter=_PermissiveRateLimiter(),
         uri_and_metadata_factory=urimeta,
+        trigger_close=trigger_close,
     )
 
     connecting = asyncio.create_task(session.ensure_connected())
     msg = parse_transport_msg(await recv.get())
     assert isinstance(msg, TransportMessage)
     assert msg.payload["type"] == "HANDSHAKE_REQ"
-    await session.close()
-    await session.close()
-    await session.close()
-    await session.close()
+    await session.close().wait()
+    await session.close().wait()
+    await session.close().wait()
+    await session.close().wait()
     await connecting
     assert session._state == SessionState.CLOSED
     assert callcount == 1
