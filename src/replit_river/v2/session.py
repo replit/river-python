@@ -832,6 +832,10 @@ class Session[HandshakeMetadata]:
                     span=span,
                 )
                 raise
+            except SessionClosedRiverServiceException as e:
+                raise RiverServiceException(
+                    ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
+                ) from e
             except Exception as e:
                 # If we get any exception other than WebsocketClosedException,
                 # cancel the stream.
