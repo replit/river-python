@@ -21,6 +21,8 @@ from replit_river.v2.client import Client
 from replit_river.v2.session import STREAM_CLOSED_BIT, Session
 from tests.v2.fixtures.raw_ws_server import WsServerFixture
 
+logger = logging.getLogger(__file__)
+
 
 class _PermissiveRateLimiter(RateLimiter):
     def start_restoring_budget(self, user: str) -> None:
@@ -189,9 +191,9 @@ async def test_big_packet(ws_server: WsServerFixture) -> None:
         async for datagram in client.send_subscription(
             "test", "bigstream", {}, lambda x: x, lambda x: x, lambda x: x
         ):
-            print(datagram)
+            logger.debug(datagram)
     except Exception:
-        logging.exception("Interrupted")
+        logger.exception("Interrupted")
 
     await client.close()
     await connecting

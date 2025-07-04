@@ -24,6 +24,8 @@ from replit_river.v2.client import Client
 from replit_river.v2.session import STREAM_CANCEL_BIT, STREAM_CLOSED_BIT
 from tests.v2.fixtures.raw_ws_server import OuterPayload, WsServerFixture
 
+logger = logging.getLogger(__file__)
+
 
 async def test_rpc_cancel(ws_server: WsServerFixture) -> None:
     (urimeta, recv, conn) = ws_server
@@ -226,7 +228,7 @@ async def test_stream_cancel(
             lambda x: x,
             lambda x: x,
         ):
-            print(repr(chunk))
+            logger.debug(repr(chunk))
 
     receive_task = asyncio.create_task(receive_chunks())
     request_msg = parse_transport_msg(await recv.get())
@@ -358,7 +360,7 @@ async def test_subscription_cancel(ws_server: WsServerFixture) -> None:
             lambda x: x,
             lambda x: x,
         ):
-            print(repr(chunk))
+            logger.debug(repr(chunk))
 
     receive_task = asyncio.create_task(receive_chunks())
 
