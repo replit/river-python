@@ -10,6 +10,7 @@ from typing import (
 import msgpack
 import nanoid
 import pytest
+from pydantic import TypeAdapter
 
 from replit_river.messages import parse_transport_msg
 from replit_river.rpc import (
@@ -279,9 +280,9 @@ async def test_subscription_cancel(ws_server: WsServerFixture) -> None:
 
     assert not isinstance(request_msg, str)
     assert (serverconn := conn())
-    handshake_request: ControlMessageHandshakeRequest[None] = (
-        ControlMessageHandshakeRequest(**request_msg.payload)
-    )
+    handshake_request = TypeAdapter(
+        ControlMessageHandshakeRequest[None]
+    ).validate_python(request_msg.payload)
 
     handshake_resp = ControlMessageHandshakeResponse(
         status=HandShakeStatus(
