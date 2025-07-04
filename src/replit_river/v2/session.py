@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from collections import deque
 from collections.abc import AsyncIterable
 from contextlib import asynccontextmanager
@@ -308,7 +309,7 @@ class Session[HandshakeMetadata]:
                     uri_and_metadata_factory=self._uri_and_metadata_factory,
                     get_next_sent_seq=get_next_sent_seq,
                     get_current_ack=lambda: self.ack,
-                    get_current_time=self._get_current_time,
+                    get_current_time=lambda: time.time(),
                     get_state=lambda: self._state,
                     transition_connecting=transition_connecting,
                     close_ws_in_background=close_ws_in_background,
@@ -333,9 +334,6 @@ class Session[HandshakeMetadata]:
 
     def is_connected(self) -> bool:
         return self._state in ActiveStates
-
-    async def _get_current_time(self) -> float:
-        return asyncio.get_event_loop().time()
 
     async def _enqueue_message(
         self,
@@ -1073,7 +1071,7 @@ async def _do_ensure_connected[HandshakeMetadata](
     uri_and_metadata_factory: Callable[
         [], Awaitable[UriAndMetadata[HandshakeMetadata]]
     ],
-    get_current_time: Callable[[], Awaitable[float]],
+    get_current_time: Callable[[], float],
     get_next_sent_seq: Callable[[], int],
     get_current_ack: Callable[[], int],
     get_state: Callable[[], SessionState],
@@ -1146,10 +1144,10 @@ async def _do_ensure_connected[HandshakeMetadata](
                 ) from e
 
             handshake_deadline_ms = (
-                await get_current_time() + transport_options.handshake_timeout_ms
+                get_current_time() + transport_options.handshake_timeout_ms
             )
 
-            if await get_current_time() >= handshake_deadline_ms:
+            if get_current_time() >= handshake_deadline_ms:
                 raise RiverException(
                     ERROR_HANDSHAKE,
                     "Handshake response timeout, closing connection",
