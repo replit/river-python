@@ -377,6 +377,9 @@ async def test_subscription_cancel(ws_server: WsServerFixture) -> None:
     await client.close()
     await connecting
 
+    # Wait until the close signal makes it back to the server
+    await asyncio.sleep(0.1)
+
     # Ensure we're listening to close messages as well
     server_handler.cancel()
     await server_handler
