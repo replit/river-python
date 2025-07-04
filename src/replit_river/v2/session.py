@@ -1155,7 +1155,9 @@ async def _do_ensure_connected[HandshakeMetadata](
                 )
 
             try:
-                data = await ws.recv(decode=False)
+                timeout = handshake_deadline_ms - get_current_time() / 1000.0
+                async with asyncio.timeout(timeout):
+                    data = await ws.recv(decode=False)
             except ConnectionClosedOK:
                 # In the case of a normal connection closure, we defer to
                 # the outer loop to determine next steps.
@@ -1171,6 +1173,16 @@ async def _do_ensure_connected[HandshakeMetadata](
                 raise RiverException(
                     ERROR_HANDSHAKE,
                     "Handshake failed, conn closed while waiting for response",
+                ) from e
+            except asyncio.CancelledError as e:
+                logger.debug(
+                    "_do_ensure_connected: Response timeout while waiting "
+                    "for handshake response",
+                    exc_info=True,
+                )
+                raise RiverException(
+                    ERROR_HANDSHAKE,
+                    "Handshake failed, timeout while waiting for response",
                 ) from e
 
             try:
