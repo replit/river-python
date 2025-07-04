@@ -1086,13 +1086,12 @@ async def _do_ensure_connected[HandshakeMetadata](
     last_error: Exception | None = None
     attempt_count = 0
 
-    handshake_deadline_ms = (
+    handshake_deadline = (
         get_current_time() + transport_options.handshake_timeout_ms / 1000
     )
 
     while (
-        rate_limiter.has_budget(client_id)
-        and get_current_time() < handshake_deadline_ms
+        rate_limiter.has_budget(client_id) and get_current_time() < handshake_deadline
     ):
         if (state := get_state()) in TerminalStates or state in ActiveStates:
             logger.info(f"_do_ensure_connected stopping due to state={state}")
@@ -1154,14 +1153,14 @@ async def _do_ensure_connected[HandshakeMetadata](
                     "Handshake failed, conn closed while sending response",
                 ) from e
 
-            if get_current_time() >= handshake_deadline_ms:
+            if get_current_time() >= handshake_deadline:
                 raise RiverException(
                     ERROR_HANDSHAKE,
                     "Handshake response timeout, closing connection",
                 )
 
             try:
-                timeout = handshake_deadline_ms - get_current_time() / 1000.0
+                timeout = handshake_deadline - get_current_time()
                 async with asyncio.timeout(timeout):
                     data = await ws.recv(decode=False)
             except ConnectionClosedOK:
@@ -1237,15 +1236,15 @@ async def _do_ensure_connected[HandshakeMetadata](
             transition_connected(ws)
             break
         except Exception as e:
-            backoff_time = rate_limiter.get_backoff_ms(client_id)
+            backoff_time_ms = rate_limiter.get_backoff_ms(client_id)
             logger.exception(
-                f"Error connecting, retrying with {backoff_time}ms backoff"
+                f"Error connecting, retrying with {backoff_time_ms}ms backoff"
             )
             if ws:
                 close_ws_in_background(ws)
                 ws = None
             last_error = e
-            await asyncio.sleep(backoff_time / 1000)
+            await asyncio.sleep(backoff_time_ms / 1000)
         logger.debug("Here, about to retry")
     unbind_connecting_task()
 
