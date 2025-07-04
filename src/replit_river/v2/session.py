@@ -1085,6 +1085,11 @@ async def _do_ensure_connected[HandshakeMetadata](
 
     last_error: Exception | None = None
     attempt_count = 0
+
+    handshake_deadline_ms = (
+        get_current_time() + transport_options.handshake_timeout_ms / 1000
+    )
+
     while rate_limiter.has_budget(client_id):
         if (state := get_state()) in TerminalStates or state in ActiveStates:
             logger.info(f"_do_ensure_connected stopping due to state={state}")
@@ -1142,10 +1147,6 @@ async def _do_ensure_connected[HandshakeMetadata](
                     ERROR_HANDSHAKE,
                     "Handshake failed, conn closed while sending response",
                 ) from e
-
-            handshake_deadline_ms = (
-                get_current_time() + transport_options.handshake_timeout_ms
-            )
 
             if get_current_time() >= handshake_deadline_ms:
                 raise RiverException(
