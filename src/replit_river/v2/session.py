@@ -1090,9 +1090,15 @@ async def _do_ensure_connected[HandshakeMetadata](
         get_current_time() + transport_options.handshake_timeout_ms / 1000
     )
 
-    while rate_limiter.has_budget(client_id):
+    while (
+        rate_limiter.has_budget(client_id)
+        and get_current_time() < handshake_deadline_ms
+    ):
         if (state := get_state()) in TerminalStates or state in ActiveStates:
             logger.info(f"_do_ensure_connected stopping due to state={state}")
+            break
+
+        if (task := asyncio.current_task()) and task.cancelled():
             break
 
         if attempt_count > 0:
