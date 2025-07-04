@@ -41,6 +41,8 @@ class _PermissiveRateLimiter(RateLimiter):
 async def test_connect(ws_server: WsServerFixture) -> None:
     (urimeta, recv, conn) = ws_server
 
+    ws_close: asyncio.Task | None = None
+
     def trigger_close(
         signal_closing: Callable[[], None],
         task_manager: BackgroundTaskManager,  # .cancel_all_tasks()
@@ -49,9 +51,23 @@ async def test_connect(ws_server: WsServerFixture) -> None:
         ws: ClientConnection | None,
         become_closed: Callable[[], None],
     ) -> asyncio.Event:
-        event = asyncio.Event()
-        event.set()
-        return event
+        nonlocal ws_close
+
+        closing_event = asyncio.Event()
+
+        async def _do_close() -> None:
+            signal_closing()
+            await task_manager.cancel_all_tasks()
+            terminate_remaining_output_streams()
+            await join_output_streams_with_timeout()
+            if ws:
+                await ws.close()
+            become_closed()
+            closing_event.set()
+
+        ws_close = asyncio.create_task(_do_close())
+
+        return closing_event
 
     session = Session(
         server_id="SERVER",
@@ -68,6 +84,8 @@ async def test_connect(ws_server: WsServerFixture) -> None:
     assert isinstance(msg, TransportMessage)
     assert msg.payload["type"] == "HANDSHAKE_REQ"
     await session.close().wait()
+    assert ws_close is not None
+    await ws_close
     await connecting
 
 
@@ -77,6 +95,7 @@ async def test_close_race(ws_server: WsServerFixture) -> None:
     callcount = 0
 
     event: asyncio.Event | None = None
+    ws_close: asyncio.Task | None = None
 
     def trigger_close(
         signal_closing: Callable[[], None],
@@ -87,11 +106,25 @@ async def test_close_race(ws_server: WsServerFixture) -> None:
         become_closed: Callable[[], None],
     ) -> asyncio.Event:
         nonlocal event
+        nonlocal ws_close
+
         if event is None:
             event = asyncio.Event()
             event.set()
             nonlocal callcount
             callcount += 1
+
+        async def _do_close() -> None:
+            signal_closing()
+            await task_manager.cancel_all_tasks()
+            terminate_remaining_output_streams()
+            await join_output_streams_with_timeout()
+            if ws:
+                await ws.close()
+            become_closed()
+
+        ws_close = asyncio.create_task(_do_close())
+
         return event
 
     session = Session(
