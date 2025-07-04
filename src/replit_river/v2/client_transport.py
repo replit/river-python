@@ -50,7 +50,7 @@ class ClientTransport(Generic[HandshakeMetadataType]):
         """
         self._rate_limiter.close()
         if self._session:
-            self._session.close()
+            await self._session.close().wait()
 
         if self._closing_event:
             await self._closing_event[1].wait()
