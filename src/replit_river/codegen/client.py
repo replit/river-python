@@ -514,25 +514,6 @@ def encode_type(
                 in_module,
                 permit_unknown_members=permit_unknown_members,
             )
-            # TODO(dstewart): This structure changed since we were incorrectly leaking
-            #                 ListTypeExprs into codegen. This generated code is
-            #                 probably wrong.
-            match type_name:
-                case ListTypeExpr(inner_type_name):
-                    typeddict_encoder.append(
-                        f"encode_{render_literal_type(inner_type_name)}(x)"
-                    )
-                case DictTypeExpr(_):
-                    raise ValueError(
-                        "What does it mean to try and encode a dict in this position?"
-                    )
-                case LiteralTypeExpr(const):
-                    typeddict_encoder.append(repr(const))
-                case TypeName(value):
-                    typeddict_encoder.append(f"encode_{value}(x)")
-                case other:
-                    _o1: NoneTypeExpr | OpenUnionTypeExpr | UnionTypeExpr = other
-                    raise ValueError(f"What does it mean to have {_o1} here?")
             return (DictTypeExpr(type_name), module_info, type_chunks, encoder_names)
         assert type.type == "object", type.type
 
