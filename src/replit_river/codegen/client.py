@@ -535,7 +535,7 @@ def encode_type(
                 type_name, _, contents, _ = encode_type(
                     prop,
                     TypeName(prefix.value + name.title()),
-                    base_model,
+                    "BaseModel" if base_model == "RiverError" else base_model,
                     in_module,
                     permit_unknown_members=permit_unknown_members,
                 )
