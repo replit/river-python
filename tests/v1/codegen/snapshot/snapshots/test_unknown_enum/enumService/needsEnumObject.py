@@ -104,19 +104,19 @@ NeedsenumobjectOutputTypeAdapter: TypeAdapter[NeedsenumobjectOutput] = TypeAdapt
 )
 
 
-class NeedsenumobjectErrorsFooAnyOf_0(RiverError):
+class NeedsenumobjectErrorsFooAnyOf_0(BaseModel):
     beep: Literal["err_first"] | None = None
 
 
-class NeedsenumobjectErrorsFooAnyOf_1(RiverError):
+class NeedsenumobjectErrorsFooAnyOf_1(BaseModel):
     borp: Literal["err_second"] | None = None
 
 
 NeedsenumobjectErrorsFoo = Annotated[
     NeedsenumobjectErrorsFooAnyOf_0
     | NeedsenumobjectErrorsFooAnyOf_1
-    | RiverUnknownError,
-    WrapValidator(translate_unknown_error),
+    | RiverUnknownValue,
+    WrapValidator(translate_unknown_value),
 ]
 
 
