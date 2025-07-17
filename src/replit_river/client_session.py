@@ -252,7 +252,11 @@ class ClientSession(Session):
                 except Exception as e:
                     raise RiverException("error_deserializer", str(e)) from e
                 raise exception_from_message(error.code)(
-                    error.code, error.message, service_name, procedure_name
+                    error.code,
+                    error.message,
+                    service_name,
+                    procedure_name,
+                    underlying_error=error,
                 )
             return response_deserializer(response["payload"])
         except RiverException as e:
@@ -338,7 +342,11 @@ class ClientSession(Session):
                 except Exception as e:
                     raise RiverException("error_deserializer", str(e)) from e
                 raise exception_from_message(error.code)(
-                    error.code, error.message, service_name, procedure_name
+                    error.code,
+                    error.message,
+                    service_name,
+                    procedure_name,
+                    underlying_error=error,
                 )
 
             return response_deserializer(response["payload"])

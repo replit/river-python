@@ -51,12 +51,18 @@ class RiverServiceException(RiverException):
     """Exception raised by river as a result of a fault in the service running river."""
 
     def __init__(
-        self, code: str, message: str, service: str | None, procedure: str | None
+        self,
+        code: str,
+        message: str,
+        service: str | None,
+        procedure: str | None,
+        underlying_error: RiverError | None = None,
     ) -> None:
         self.code = code
         self.message = message
         self.service = service
         self.procedure = procedure
+        self.underlying_error = underlying_error
         service = service or "N/A"
         procedure = procedure or "N/A"
         msg = (
