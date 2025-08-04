@@ -1,6 +1,8 @@
 from dataclasses import dataclass
 from typing import NewType, assert_never, cast
 
+SPECIAL_CHARS = [".", "-", ":", "/", "@", " ", "$", "!", "?", "=", "&", "|", "~", "`"]
+
 ModuleName = NewType("ModuleName", str)
 ClassName = NewType("ClassName", str)
 FileContents = NewType("FileContents", str)
@@ -18,6 +20,20 @@ class TypeName:
 
     def __eq__(self, other: object) -> bool:
         return isinstance(other, TypeName) and other.value == self.value
+
+    def __lt__(self, other: object) -> bool:
+        return hash(self) < hash(other)
+
+
+@dataclass(frozen=True)
+class LiteralType:
+    value: str
+
+    def __str__(self) -> str:
+        raise Exception("Complex type must be put through render_type_expr!")
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, LiteralType) and other.value == self.value
 
     def __lt__(self, other: object) -> bool:
         return hash(self) < hash(other)
@@ -111,6 +127,7 @@ class OpenUnionTypeExpr:
 
 TypeExpression = (
     TypeName
+    | LiteralType
     | NoneTypeExpr
     | DictTypeExpr
     | ListTypeExpr
@@ -143,6 +160,12 @@ def _flatten_nested_unions(value: TypeExpression) -> TypeExpression:
         return UnionTypeExpr(_inner)
     else:
         raise ValueError("Incoherent state when trying to flatten unions")
+
+
+def normalize_special_chars(value: str) -> str:
+    for char in SPECIAL_CHARS:
+        value = value.replace(char, "_")
+    return value
 
 
 def render_type_expr(value: TypeExpression) -> str:
@@ -192,7 +215,9 @@ def render_type_expr(value: TypeExpression) -> str:
                 "]"
             )
         case TypeName(name):
-            return name
+            return normalize_special_chars(name)
+        case LiteralType(literal_value):
+            return literal_value
         case NoneTypeExpr():
             return "None"
         case other:
@@ -223,6 +248,10 @@ def extract_inner_type(value: TypeExpression) -> TypeName:
             )
         case TypeName(name):
             return TypeName(name)
+        case LiteralType(name):
+            raise ValueError(
+                f"Attempting to extract from a literal type: {repr(value)}"
+            )
         case NoneTypeExpr():
             raise ValueError(
                 f"Attempting to extract from a literal 'None': {repr(value)}",

@@ -24,6 +24,7 @@ from replit_river.codegen.typing import (
     FileContents,
     HandshakeType,
     ListTypeExpr,
+    LiteralType,
     LiteralTypeExpr,
     ModuleName,
     NoneTypeExpr,
@@ -33,6 +34,7 @@ from replit_river.codegen.typing import (
     TypeName,
     UnionTypeExpr,
     extract_inner_type,
+    normalize_special_chars,
     render_literal_type,
     render_type_expr,
 )
@@ -396,9 +398,12 @@ def encode_type(
                         case NoneTypeExpr():
                             typeddict_encoder.append("None")
                         case other:
-                            _o2: DictTypeExpr | OpenUnionTypeExpr | UnionTypeExpr = (
-                                other
-                            )
+                            _o2: (
+                                DictTypeExpr
+                                | OpenUnionTypeExpr
+                                | UnionTypeExpr
+                                | LiteralType
+                            ) = other
                             raise ValueError(f"What does it mean to have {_o2} here?")
         if permit_unknown_members:
             union = _make_open_union_type_expr(any_of)
@@ -491,7 +496,7 @@ def encode_type(
             return (NoneTypeExpr(), [], [], set())
         elif type.type == "Date":
             typeddict_encoder.append("TODO: dstewart")
-            return (TypeName("datetime.datetime"), [], [], set())
+            return (LiteralType("datetime.datetime"), [], [], set())
         elif type.type == "array" and type.items:
             type_name, module_info, type_chunks, encoder_names = encode_type(
                 type.items,
@@ -692,8 +697,21 @@ def encode_type(
                                 )
                             )
                     else:
+                        specialized_name = normalize_special_chars(name)
+                        effective_name = name
+                        extras = ""
+                        if name != specialized_name:
+                            if base_model != "BaseModel":
+                                # TODO: alias support for TypedDict
+                                raise ValueError(
+                                    f"Field {name} is not a valid Python identifier, but it is in the schema"  # noqa: E501
+                                )
+                            # Pydantic doesn't allow leading underscores in field names
+                            effective_name = specialized_name.lstrip("_")
+                            extras = f" = Field(serialization_alias={repr(name)})"
+
                         current_chunks.append(
-                            f"  {name}: {render_type_expr(type_name)}"
+                            f"  {effective_name}: {render_type_expr(type_name)}{extras}"
                         )
                 typeddict_encoder.append(",")
             typeddict_encoder.append("}")
