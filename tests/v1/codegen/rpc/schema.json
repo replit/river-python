@@ -8,18 +8,33 @@
             "properties": {
               "data": {
                 "type": "string"
+              },
+              "data2": {
+                "type": "Date"
               }
             },
-            "required": ["data"]
+            "required": ["data", "data2"]
           },
           "output": {
             "type": "object",
             "properties": {
               "data": {
                 "type": "string"
+              },
+              "data2": {
+                "type": "Date"
+              },
+              "data-3": {
+                "type": "object",
+                "properties": {
+                  "data-test": {
+                    "type": "string"
+                  }
+                },
+                "required": []
               }
             },
-            "required": ["data"]
+            "required": ["data", "data2", "data-3"]
           },
           "errors": {
             "not": {}

@@ -96,7 +96,7 @@ NeedsenumobjectOutputFoo = Annotated[
 
 
 class NeedsenumobjectOutput(BaseModel):
-    foo: NeedsenumobjectOutputFoo | None = None
+    foo: NeedsenumobjectOutputFoo | None = Field(default=None)
 
 
 NeedsenumobjectOutputTypeAdapter: TypeAdapter[NeedsenumobjectOutput] = TypeAdapter(
@@ -105,11 +105,11 @@ NeedsenumobjectOutputTypeAdapter: TypeAdapter[NeedsenumobjectOutput] = TypeAdapt
 
 
 class NeedsenumobjectErrorsFooAnyOf_0(BaseModel):
-    beep: Literal["err_first"] | None = None
+    beep: Literal["err_first"] | None = Field(default=None)
 
 
 class NeedsenumobjectErrorsFooAnyOf_1(BaseModel):
-    borp: Literal["err_second"] | None = None
+    borp: Literal["err_second"] | None = Field(default=None)
 
 
 NeedsenumobjectErrorsFoo = Annotated[
@@ -121,7 +121,7 @@ NeedsenumobjectErrorsFoo = Annotated[
 
 
 class NeedsenumobjectErrors(RiverError):
-    foo: NeedsenumobjectErrorsFoo | None = None
+    foo: NeedsenumobjectErrorsFoo | None = Field(default=None)
 
 
 NeedsenumobjectErrorsTypeAdapter: TypeAdapter[NeedsenumobjectErrors] = TypeAdapter(

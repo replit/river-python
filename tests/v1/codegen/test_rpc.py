@@ -2,7 +2,7 @@ import asyncio
 import importlib
 import os
 import shutil
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import TextIO
 
@@ -52,6 +52,7 @@ async def test_basic_rpc(client: Client) -> None:
     res = await RpcClient(client).test_service.rpc_method(
         {
             "data": "feep",
+            "data2": datetime.now(timezone.utc),
         },
         timedelta(seconds=5),
     )
@@ -80,8 +81,6 @@ async def test_rpc_timeout(client: Client) -> None:
 
     with pytest.raises(RiverException):
         await RpcClient(client).test_service.rpc_method(
-            {
-                "data": "feep",
-            },
+            {"data": "feep", "data2": datetime.now(timezone.utc)},
             timedelta(milliseconds=200),
         )

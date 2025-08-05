@@ -1,6 +1,7 @@
 import json
 import re
 import subprocess
+from collections import defaultdict
 from pathlib import Path
 from textwrap import dedent
 from typing import (
@@ -529,6 +530,9 @@ def encode_type(
         # lambda x: ... vs lambda _: {}
         needs_binding = False
         encoder_names = set()
+        # Track effective field names to detect collisions after normalization
+        # Maps effective name -> list of original field names
+        effective_field_names: defaultdict[str, list[str]] = defaultdict(list)
         if type.properties:
             needs_binding = True
             typeddict_encoder.append("{")
@@ -658,19 +662,37 @@ def encode_type(
                         value = ""
                         if base_model != "TypedDict":
                             value = f"= {field_value}"
+                    # Track $kind -> "kind" mapping for collision detection
+                    effective_field_names["kind"].append(name)
+
                     current_chunks.append(
                         f"  kind: Annotated[{render_type_expr(type_name)}, Field(alias={
                             repr(name)
                         })]{value}"
                     )
                 else:
+                    specialized_name = normalize_special_chars(name)
+                    effective_name = name
+                    extras = []
+                    if name != specialized_name:
+                        if base_model != "BaseModel":
+                            # TODO: alias support for TypedDict
+                            raise ValueError(
+                                f"Field {name} is not a valid Python identifier, but it is in the schema"  # noqa: E501
+                            )
+                        # Pydantic doesn't allow leading underscores in field names
+                        effective_name = specialized_name.lstrip("_")
+                        extras.append(f"alias={repr(name)}")
+
+                    effective_field_names[effective_name].append(name)
+
                     if name not in type.required:
                         if base_model == "TypedDict":
                             current_chunks.append(
                                 reindent(
                                     "  ",
                                     f"""\
-                        {name}: NotRequired[{
+                        {effective_name}: NotRequired[{
                                         render_type_expr(
                                             UnionTypeExpr([type_name, NoneTypeExpr()])
                                         )
@@ -679,11 +701,13 @@ def encode_type(
                                 )
                             )
                         else:
+                            extras.append("default=None")
+
                             current_chunks.append(
                                 reindent(
                                     "  ",
                                     f"""\
-                        {name}: {
+                        {effective_name}: {
                                         render_type_expr(
                                             UnionTypeExpr(
                                                 [
@@ -692,28 +716,30 @@ def encode_type(
                                                 ]
                                             )
                                         )
-                                    } = None
+                                    } = Field({", ".join(extras)})
                                 """,
                                 )
                             )
                     else:
-                        specialized_name = normalize_special_chars(name)
-                        effective_name = name
-                        extras = ""
-                        if name != specialized_name:
-                            if base_model != "BaseModel":
-                                # TODO: alias support for TypedDict
-                                raise ValueError(
-                                    f"Field {name} is not a valid Python identifier, but it is in the schema"  # noqa: E501
-                                )
-                            # Pydantic doesn't allow leading underscores in field names
-                            effective_name = specialized_name.lstrip("_")
-                            extras = f" = Field(serialization_alias={repr(name)})"
+                        extras_str = ""
+                        if len(extras) != 0:
+                            extras_str = f" = Field({', '.join(extras)})"
 
                         current_chunks.append(
-                            f"  {effective_name}: {render_type_expr(type_name)}{extras}"
+                            f"  {effective_name}: {render_type_expr(type_name)}{extras_str}"  # noqa: E501
                         )
                 typeddict_encoder.append(",")
+
+            # Check for field name collisions after processing all fields
+            for effective_name, original_names in effective_field_names.items():
+                if len(original_names) > 1:
+                    error_msg = (
+                        f"Field name collision: fields {original_names} all normalize "
+                        f"to the same effective name '{effective_name}'"
+                    )
+
+                    raise ValueError(error_msg)
+
             typeddict_encoder.append("}")
             # exclude_none
             typeddict_encoder = (
