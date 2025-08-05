@@ -1,3 +1,4 @@
+from datetime import datetime, timezone
 from typing import Any, Literal, Mapping
 
 import nanoid
@@ -55,7 +56,11 @@ def deserialize_request(request: dict) -> str:
 
 
 def serialize_response(response: str) -> dict:
-    return {"data": response}
+    return {
+        "data": response,
+        "data2": datetime.now(timezone.utc),
+        "data-3": {"data-test": "test"},
+    }
 
 
 def deserialize_response(response: dict) -> str:

@@ -30,6 +30,7 @@ def encode_Rpc_MethodInput(
         for (k, v) in (
             {
                 "data": x.get("data"),
+                "data2": x.get("data2"),
             }
         ).items()
         if v is not None
@@ -38,10 +39,17 @@ def encode_Rpc_MethodInput(
 
 class Rpc_MethodInput(TypedDict):
     data: str
+    data2: datetime.datetime
+
+
+class Rpc_MethodOutputData_3(BaseModel):
+    data_test: str | None = Field(alias="data-test", default=None)
 
 
 class Rpc_MethodOutput(BaseModel):
     data: str
+    data_3: Rpc_MethodOutputData_3 = Field(alias="data-3")
+    data2: datetime.datetime
 
 
 Rpc_MethodOutputTypeAdapter: TypeAdapter[Rpc_MethodOutput] = TypeAdapter(
