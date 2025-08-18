@@ -122,8 +122,8 @@ async def special_chars_handler(
     for field in required_fields:
         if field not in request:
             raise ValueError(
-                f"Missing required field: {field}. Available keys: {list(request.keys())}"
-            )  # noqa: E501
+                f"Missing required field: {field}. Available keys: {list(request.keys())}"  # noqa: E501
+            )
 
     # Verify the values are of expected types
     if not isinstance(request["data-field1"], str):
