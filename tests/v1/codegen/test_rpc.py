@@ -104,8 +104,8 @@ def deserialize_special_chars_request(request: dict) -> dict:
     return request
 
 
-def serialize_special_chars_response(response: bool) -> dict:
-    """Serialize response for special chars test."""
+def serialize_special_chars_response(response: bool) -> bool:
+    """Serialize response for special chars test - pass through boolean."""
     return response
 
 

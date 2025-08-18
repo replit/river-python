@@ -60,7 +60,7 @@ lint = { workspace = true }
 
 [tool.ruff]
 lint.select = ["F", "E", "W", "I001"]
-exclude = ["*/generated/*", "*/snapshots/*"]
+exclude = ["*/generated/*", "*/snapshots/*", "*/generated_special_chars/*"]
 
 # Should be kept in sync with mypy.ini in the project root.
 # The VSCode mypy extension can only read /mypy.ini.
