@@ -6,11 +6,12 @@ from replit_river.codegen.client import schema_to_river_client_codegen
 
 
 def test_input_special_chars_basemodel() -> None:
-    """Test that codegen handles special characters in input field names for BaseModel."""
-    
-    # Test should pass without raising an exception
+    """Handles special characters in input field names for BaseModel."""
+
     schema_to_river_client_codegen(
-        read_schema=lambda: open("tests/v1/codegen/rpc/input-special-chars-schema.json"),
+        read_schema=lambda: open(
+            "tests/v1/codegen/rpc/input-special-chars-schema.json"
+        ),  # noqa: E501
         target_path="tests/v1/codegen/rpc/generated_input_special",
         client_name="InputSpecialClient",
         typed_dict_inputs=False,  # BaseModel inputs
@@ -21,11 +22,13 @@ def test_input_special_chars_basemodel() -> None:
 
 
 def test_input_special_chars_typeddict() -> None:
-    """Test that codegen handles special characters in input field names for TypedDict."""
-    
+    """Handles special characters in input field names for TypedDict."""
+
     # Test should pass without raising an exception
     schema_to_river_client_codegen(
-        read_schema=lambda: open("tests/v1/codegen/rpc/input-special-chars-schema.json"),
+        read_schema=lambda: open(
+            "tests/v1/codegen/rpc/input-special-chars-schema.json"
+        ),  # noqa: E501
         target_path="tests/v1/codegen/rpc/generated_input_special_td",
         client_name="InputSpecialTDClient",
         typed_dict_inputs=True,  # TypedDict inputs
@@ -36,11 +39,13 @@ def test_input_special_chars_typeddict() -> None:
 
 
 def test_input_collision_error_basemodel() -> None:
-    """Test that codegen raises ValueError for input field name collisions with BaseModel."""
+    """Raises ValueError for input field name collisions with BaseModel."""
 
     with pytest.raises(ValueError) as exc_info:
         schema_to_river_client_codegen(
-            read_schema=lambda: open("tests/v1/codegen/rpc/input-collision-schema.json"),
+            read_schema=lambda: open(
+                "tests/v1/codegen/rpc/input-collision-schema.json"
+            ),  # noqa: E501
             target_path="tests/v1/codegen/rpc/generated_input_collision",
             client_name="InputCollisionClient",
             typed_dict_inputs=False,  # BaseModel inputs
@@ -58,11 +63,13 @@ def test_input_collision_error_basemodel() -> None:
 
 
 def test_input_collision_error_typeddict() -> None:
-    """Test that codegen raises ValueError for input field name collisions with TypedDict."""
+    """Raises ValueError for input field name collisions with TypedDict."""
 
     with pytest.raises(ValueError) as exc_info:
         schema_to_river_client_codegen(
-            read_schema=lambda: open("tests/v1/codegen/rpc/input-collision-schema.json"),
+            read_schema=lambda: open(
+                "tests/v1/codegen/rpc/input-collision-schema.json"
+            ),  # noqa: E501
             target_path="tests/v1/codegen/rpc/generated_input_collision_td",
             client_name="InputCollisionTDClient",
             typed_dict_inputs=True,  # TypedDict inputs
@@ -80,8 +87,8 @@ def test_input_collision_error_typeddict() -> None:
 
 
 def test_init_special_chars_basemodel() -> None:
-    """Test that codegen handles special characters in init field names for BaseModel."""
-    
+    """Handles special characters in init field names for BaseModel."""
+
     init_schema = {
         "services": {
             "test_service": {
@@ -92,21 +99,21 @@ def test_init_special_chars_basemodel() -> None:
                             "properties": {
                                 "init-field1": {"type": "string"},
                                 "init:field2": {"type": "number"},
-                                "init.field3": {"type": "boolean"}
+                                "init.field3": {"type": "boolean"},
                             },
-                            "required": ["init-field1"]
+                            "required": ["init-field1"],
                         },
                         "output": {"type": "boolean"},
                         "errors": {"not": {}},
-                        "type": "stream"
+                        "type": "stream",
                     }
                 }
             }
         }
     }
-    
+
     import json
-    
+
     # Test should pass without raising an exception
     schema_to_river_client_codegen(
         read_schema=lambda: StringIO(json.dumps(init_schema)),
@@ -120,8 +127,8 @@ def test_init_special_chars_basemodel() -> None:
 
 
 def test_init_special_chars_typeddict() -> None:
-    """Test that codegen handles special characters in init field names for TypedDict."""
-    
+    """Handles special characters in init field names for TypedDict."""
+
     init_schema = {
         "services": {
             "test_service": {
@@ -132,21 +139,21 @@ def test_init_special_chars_typeddict() -> None:
                             "properties": {
                                 "init-field1": {"type": "string"},
                                 "init:field2": {"type": "number"},
-                                "init.field3": {"type": "boolean"}
+                                "init.field3": {"type": "boolean"},
                             },
-                            "required": ["init-field1"]
+                            "required": ["init-field1"],
                         },
                         "output": {"type": "boolean"},
                         "errors": {"not": {}},
-                        "type": "stream"
+                        "type": "stream",
                     }
                 }
             }
         }
     }
-    
+
     import json
-    
+
     # Test should pass without raising an exception
     schema_to_river_client_codegen(
         read_schema=lambda: StringIO(json.dumps(init_schema)),
