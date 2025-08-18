@@ -1,0 +1,29 @@
+{
+  "services": {
+    "test_service": {
+      "procedures": {
+        "rpc_method": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "data-3": {
+                "type": "string"
+              },
+              "data:3": {
+                "type": "number"
+              }
+            },
+            "required": ["data-3", "data:3"]
+          },
+          "output": {
+            "type": "boolean"
+          },
+          "errors": {
+            "not": {}
+          },
+          "type": "rpc"
+        }
+      }
+    }
+  }
+}

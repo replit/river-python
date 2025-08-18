@@ -165,7 +165,7 @@ def _flatten_nested_unions(value: TypeExpression) -> TypeExpression:
 def normalize_special_chars(value: str) -> str:
     for char in SPECIAL_CHARS:
         value = value.replace(char, "_")
-    return value
+    return value.lstrip("_")
 
 
 def render_type_expr(value: TypeExpression) -> str:

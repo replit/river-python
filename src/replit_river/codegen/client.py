@@ -575,7 +575,13 @@ def encode_type(
                         if name == "$kind":
                             safe_name = "kind"
                         else:
-                            safe_name = name
+                            # For TypedDict encoder, use normalized name to access
+                            # the TypedDict field but the output dictionary key should
+                            # use the original name
+                            if base_model == "TypedDict":
+                                safe_name = normalize_special_chars(name)
+                            else:
+                                safe_name = name
                         if prop.type == "object" and not prop.patternProperties:
                             encoder_name = TypeName(
                                 f"encode_{render_literal_type(type_name)}"
@@ -675,14 +681,20 @@ def encode_type(
                     effective_name = name
                     extras = []
                     if name != specialized_name:
-                        if base_model != "BaseModel":
-                            # TODO: alias support for TypedDict
-                            raise ValueError(
-                                f"Field {name} is not a valid Python identifier, but it is in the schema"  # noqa: E501
-                            )
-                        # Pydantic doesn't allow leading underscores in field names
-                        effective_name = specialized_name.lstrip("_")
-                        extras.append(f"alias={repr(name)}")
+                        if base_model == "BaseModel":
+                            # Pydantic doesn't allow leading underscores in field names
+                            effective_name = specialized_name
+                            extras.append(f"alias={repr(name)}")
+                        elif base_model == "TypedDict":
+                            # For TypedDict, we use the normalized name directly
+                            # TypedDict doesn't support aliases, so we normalize
+                            # the field name
+                            effective_name = specialized_name
+                        else:
+                            # For RiverError (which extends BaseModel), use alias
+                            # like BaseModel
+                            effective_name = specialized_name
+                            extras.append(f"alias={repr(name)}")
 
                     effective_field_names[effective_name].append(name)
 
