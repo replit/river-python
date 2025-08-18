@@ -1,0 +1,41 @@
+{
+  "services": {
+    "test_service": {
+      "procedures": {
+        "rpc_method": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "data-field1": {
+                "type": "string"
+              },
+              "data:field2": {
+                "type": "number"
+              },
+              "data.field3": {
+                "type": "boolean"
+              },
+              "data/field4": {
+                "type": "string"
+              },
+              "data@field5": {
+                "type": "integer"
+              },
+              "data field6": {
+                "type": "string"
+              }
+            },
+            "required": ["data-field1", "data:field2"]
+          },
+          "output": {
+            "type": "boolean"
+          },
+          "errors": {
+            "not": {}
+          },
+          "type": "rpc"
+        }
+      }
+    }
+  }
+}
