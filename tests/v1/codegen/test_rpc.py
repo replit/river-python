@@ -46,7 +46,9 @@ def generate_special_chars_client() -> None:
         return open(path, "w")
 
     schema_to_river_client_codegen(
-        read_schema=lambda: open("tests/v1/codegen/rpc/input-special-chars-schema.json"),  # noqa: E501
+        read_schema=lambda: open(
+            "tests/v1/codegen/rpc/input-special-chars-schema.json"
+        ),  # noqa: E501
         target_path="tests/v1/codegen/rpc/generated_special_chars",
         client_name="SpecialCharsClient",
         typed_dict_inputs=True,
@@ -57,7 +59,9 @@ def generate_special_chars_client() -> None:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def reload_rpc_import(generate_rpc_client: None, generate_special_chars_client: None) -> None:  # noqa: E501
+def reload_rpc_import(
+    generate_rpc_client: None, generate_special_chars_client: None
+) -> None:  # noqa: E501
     import tests.v1.codegen.rpc.generated
     import tests.v1.codegen.rpc.generated_special_chars
 
@@ -105,7 +109,9 @@ def serialize_special_chars_response(response: bool) -> dict:
     return response
 
 
-async def special_chars_handler(request: dict, context: grpc.aio.ServicerContext) -> bool:  # noqa: E501
+async def special_chars_handler(
+    request: dict, context: grpc.aio.ServicerContext
+) -> bool:  # noqa: E501
     """Handler that processes input with special character field names."""
     # The request comes with original field names (with special characters)
     # as they are sent over the wire before normalization
@@ -115,7 +121,9 @@ async def special_chars_handler(request: dict, context: grpc.aio.ServicerContext
 
     for field in required_fields:
         if field not in request:
-            raise ValueError(f"Missing required field: {field}. Available keys: {list(request.keys())}")  # noqa: E501
+            raise ValueError(
+                f"Missing required field: {field}. Available keys: {list(request.keys())}"
+            )  # noqa: E501
 
     # Verify the values are of expected types
     if not isinstance(request["data-field1"], str):
@@ -161,11 +169,11 @@ async def test_special_chars_rpc(client: Client) -> None:
     result = await SpecialCharsClient(client).test_service.rpc_method(
         {
             "data_field1": "test_value1",  # Required: data-field1 -> data_field1
-            "data_field2": 42.5,          # Required: data:field2 -> data_field2
-            "data_field3": True,          # Optional: data.field3 -> data_field3
-            "data_field4": "test_value4", # Optional: data/field4 -> data_field4
-            "data_field5": 123,           # Optional: data@field5 -> data_field5
-            "data_field6": "test_value6", # Optional: data field6 -> data_field6
+            "data_field2": 42.5,  # Required: data:field2 -> data_field2
+            "data_field3": True,  # Optional: data.field3 -> data_field3
+            "data_field4": "test_value4",  # Optional: data/field4 -> data_field4
+            "data_field5": 123,  # Optional: data@field5 -> data_field5
+            "data_field6": "test_value6",  # Optional: data field6 -> data_field6
         },
         timedelta(seconds=5),
     )
