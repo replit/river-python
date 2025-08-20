@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from collections import deque
 from collections.abc import AsyncIterable
 from contextlib import asynccontextmanager
@@ -14,6 +15,7 @@ from typing import (
     Coroutine,
     Literal,
     NotRequired,
+    Protocol,
     TypeAlias,
     TypedDict,
     assert_never,
@@ -112,7 +114,6 @@ logger = logging.getLogger(__name__)
 trace_propagator = TraceContextTextMapPropagator()
 trace_setter = TransportMessageTracingSetter()
 
-CloseSessionCallback: TypeAlias = Callable[["Session"], None]
 RetryConnectionCallback: TypeAlias = Callable[
     [],
     Coroutine[Any, Any, Any],
@@ -131,6 +132,18 @@ class StreamMeta(TypedDict):
     output: Channel[ResultType]
 
 
+class TriggerCloseCall(Protocol):
+    def __call__(
+        self,
+        signal_closing: Callable[[], None],
+        task_manager: BackgroundTaskManager,  # .cancel_all_tasks()
+        terminate_remaining_output_streams: Callable[[], None],
+        join_output_streams_with_timeout: Callable[[], Awaitable[None]],
+        ws: ClientConnection | None,
+        become_closed: Callable[[], None],
+    ) -> asyncio.Event: ...
+
+
 class Session[HandshakeMetadata]:
     _server_id: str
     session_id: str
@@ -138,7 +151,6 @@ class Session[HandshakeMetadata]:
 
     # session state, only modified during closing
     _state: SessionState
-    _close_session_callback: CloseSessionCallback
     _close_session_after_time_secs: float | None
     _connecting_task: asyncio.Task[None] | None
     _wait_for_connected: asyncio.Event
@@ -168,19 +180,19 @@ class Session[HandshakeMetadata]:
     seq: int  # Last sent sequence number
 
     # Terminating
-    _terminating_task: asyncio.Task[None] | None
+    _trigger_close: TriggerCloseCall
 
     def __init__(
         self,
         server_id: str,
         session_id: str,
         transport_options: TransportOptions,
-        close_session_callback: CloseSessionCallback,
         client_id: str,
         rate_limiter: RateLimiter,
         uri_and_metadata_factory: Callable[
             [], Awaitable[UriAndMetadata[HandshakeMetadata]]
         ],
+        trigger_close: TriggerCloseCall,
         retry_connection_callback: RetryConnectionCallback | None = None,
     ) -> None:
         self._server_id = server_id
@@ -189,7 +201,6 @@ class Session[HandshakeMetadata]:
 
         # session state
         self._state = SessionState.NO_CONNECTION
-        self._close_session_callback = close_session_callback
         self._close_session_after_time_secs: float | None = None
         self._connecting_task = None
         self._wait_for_connected = asyncio.Event()
@@ -227,7 +238,7 @@ class Session[HandshakeMetadata]:
         self.seq = 0
 
         # Terminating
-        self._terminating_task = None
+        self._trigger_close = trigger_close
 
         self._start_recv_from_ws()
         self._start_buffered_message_sender()
@@ -298,13 +309,13 @@ class Session[HandshakeMetadata]:
                     uri_and_metadata_factory=self._uri_and_metadata_factory,
                     get_next_sent_seq=get_next_sent_seq,
                     get_current_ack=lambda: self.ack,
-                    get_current_time=self._get_current_time,
+                    get_current_time=lambda: time.time(),
                     get_state=lambda: self._state,
                     transition_connecting=transition_connecting,
                     close_ws_in_background=close_ws_in_background,
                     transition_connected=transition_connected,
                     unbind_connecting_task=unbind_connecting_task,
-                    close_session=self._close_internal_nowait,
+                    close_session=self.close,
                 )
             )
 
@@ -312,12 +323,6 @@ class Session[HandshakeMetadata]:
             await self._connecting_task
         except asyncio.CancelledError:
             pass
-
-        if self._terminating_task:
-            try:
-                await self._terminating_task
-            except asyncio.CancelledError:
-                pass
 
     def is_terminal(self) -> bool:
         """
@@ -329,9 +334,6 @@ class Session[HandshakeMetadata]:
 
     def is_connected(self) -> bool:
         return self._state in ActiveStates
-
-    async def _get_current_time(self) -> float:
-        return asyncio.get_event_loop().time()
 
     async def _enqueue_message(
         self,
@@ -394,52 +396,16 @@ class Session[HandshakeMetadata]:
         # Wake up buffered_message_sender
         self._process_messages.set()
 
-    async def close(
+    def close(
         self,
         reason: Exception | None = None,
-    ) -> None:
+    ) -> asyncio.Event:
         """Close the session and all associated streams."""
-        if self._terminating_task:
-            try:
-                logger.debug("Session already closing, waiting...")
-                async with asyncio.timeout(SESSION_CLOSE_TIMEOUT_SEC):
-                    await self._terminating_task
-            except asyncio.TimeoutError:
-                logger.warning(
-                    f"Session took longer than {SESSION_CLOSE_TIMEOUT_SEC} "
-                    "seconds to close, leaking",
-                )
-            return
-        try:
-            await self._close_internal(reason)
-        except asyncio.CancelledError:
-            pass
 
-    def _close_internal_nowait(self, reason: Exception | None = None) -> None:
-        """
-        When calling close() from asyncio Tasks, we must not block.
-
-        This function does so, deferring to the underlying infrastructure for
-        creating self._terminating_task.
-        """
-        self._close_internal(reason)
-
-    def _close_internal(self, reason: Exception | None = None) -> asyncio.Task[None]:
-        """
-        Internal close method. Subsequent calls past the first do not block.
-
-        This is intended to be the primary driver of a session being torn down
-        and returned to its initial state.
-
-        NB: This function is intended to be the sole lifecycle manager of
-            self._terminating_task. Waiting on the completion of that task is optional,
-            but the population of that property is critical.
-
-        NB: We must not await the task returned from this function from chained tasks
-            inside this session, otherwise we will create a thread loop.
-        """
-
-        async def do_close() -> None:
+        def signal_closing() -> None:
+            """
+            Roughly "kill 15"
+            """
             logger.info(
                 f"{self.session_id} closing session to {self._server_id}, "
                 f"ws: {self._ws}"
@@ -454,11 +420,10 @@ class Session[HandshakeMetadata]:
             # ... message processor so it can exit cleanly
             self._process_messages.set()
 
-            # Wait to permit the waiting tasks to shut down gracefully
-            await asyncio.sleep(0.25)
-
-            await self._task_manager.cancel_all_tasks()
-
+        def terminate_remaining_output_streams() -> None:
+            """
+            Roughly "kill 9"
+            """
             for stream_id, stream_meta in self._streams.items():
                 stream_meta["output"].close()
                 # Wake up backpressured writers
@@ -475,6 +440,11 @@ class Session[HandshakeMetadata]:
                         "Unable to tell the caller that the session is going away",
                     )
                 stream_meta["release_backpressured_waiter"]()
+
+        async def join_output_streams_with_timeout() -> None:
+            """
+            Roughly "wait"
+            """
             # Before we GC the streams, let's wait for all tasks to be closed gracefully
             try:
                 async with asyncio.timeout(
@@ -500,21 +470,21 @@ class Session[HandshakeMetadata]:
                 )
             self._streams.clear()
 
-            if self._ws:
-                # The Session isn't guaranteed to live much longer than this close()
-                # invocation, so let's await this close to avoid dropping the socket.
-                await self._ws.close()
-
+        def become_closed() -> None:
+            pass
             self._state = SessionState.CLOSED
 
             # Clear the session in transports
             # This will get us GC'd, so this should be the last thing.
-            self._close_session_callback(self)
 
-        if not self._terminating_task:
-            self._terminating_task = asyncio.create_task(do_close())
-
-        return self._terminating_task
+        return self._trigger_close(
+            signal_closing,
+            self._task_manager,  # .cancel_all_tasks()
+            terminate_remaining_output_streams,
+            join_output_streams_with_timeout,
+            self._ws,
+            become_closed,
+        )
 
     def _start_buffered_message_sender(
         self,
@@ -657,7 +627,7 @@ class Session[HandshakeMetadata]:
                 get_state=lambda: self._state,
                 get_ws=lambda: self._ws,
                 transition_no_connection=transition_no_connection,
-                close_session=self._close_internal_nowait,
+                close_session=self.close,
                 assert_incoming_seq_bookkeeping=assert_incoming_seq_bookkeeping,
                 get_stream=lambda stream_id: self._streams.get(stream_id),
                 enqueue_message=self._enqueue_message,
@@ -864,6 +834,10 @@ class Session[HandshakeMetadata]:
                     span=span,
                 )
                 raise
+            except SessionClosedRiverServiceException as e:
+                raise RiverServiceException(
+                    ERROR_CODE_STREAM_CLOSED, str(e), service_name, procedure_name
+                ) from e
             except Exception as e:
                 # If we get any exception other than WebsocketClosedException,
                 # cancel the stream.
@@ -1105,7 +1079,7 @@ async def _do_ensure_connected[HandshakeMetadata](
     uri_and_metadata_factory: Callable[
         [], Awaitable[UriAndMetadata[HandshakeMetadata]]
     ],
-    get_current_time: Callable[[], Awaitable[float]],
+    get_current_time: Callable[[], float],
     get_next_sent_seq: Callable[[], int],
     get_current_ack: Callable[[], int],
     get_state: Callable[[], SessionState],
@@ -1113,15 +1087,25 @@ async def _do_ensure_connected[HandshakeMetadata](
     close_ws_in_background: Callable[[ClientConnection], None],
     transition_connected: Callable[[ClientConnection], None],
     unbind_connecting_task: Callable[[], None],
-    close_session: Callable[[Exception | None], None],
+    close_session: Callable[[Exception | None], asyncio.Event],
 ) -> None:
     logger.info("Attempting to establish new ws connection")
 
     last_error: Exception | None = None
     attempt_count = 0
-    while rate_limiter.has_budget(client_id):
+
+    handshake_deadline = (
+        get_current_time() + transport_options.handshake_timeout_ms / 1000
+    )
+
+    while (
+        rate_limiter.has_budget(client_id) and get_current_time() < handshake_deadline
+    ):
         if (state := get_state()) in TerminalStates or state in ActiveStates:
             logger.info(f"_do_ensure_connected stopping due to state={state}")
+            break
+
+        if (task := asyncio.current_task()) and task.cancelled():
             break
 
         if attempt_count > 0:
@@ -1177,18 +1161,16 @@ async def _do_ensure_connected[HandshakeMetadata](
                     "Handshake failed, conn closed while sending response",
                 ) from e
 
-            handshake_deadline_ms = (
-                await get_current_time() + transport_options.handshake_timeout_ms
-            )
-
-            if await get_current_time() >= handshake_deadline_ms:
+            if get_current_time() >= handshake_deadline:
                 raise RiverException(
                     ERROR_HANDSHAKE,
                     "Handshake response timeout, closing connection",
                 )
 
             try:
-                data = await ws.recv(decode=False)
+                timeout = handshake_deadline - get_current_time()
+                async with asyncio.timeout(timeout):
+                    data = await ws.recv(decode=False)
             except ConnectionClosedOK:
                 # In the case of a normal connection closure, we defer to
                 # the outer loop to determine next steps.
@@ -1204,6 +1186,16 @@ async def _do_ensure_connected[HandshakeMetadata](
                 raise RiverException(
                     ERROR_HANDSHAKE,
                     "Handshake failed, conn closed while waiting for response",
+                ) from e
+            except asyncio.CancelledError as e:
+                logger.debug(
+                    "_do_ensure_connected: Response timeout while waiting "
+                    "for handshake response",
+                    exc_info=True,
+                )
+                raise RiverException(
+                    ERROR_HANDSHAKE,
+                    "Handshake failed, timeout while waiting for response",
                 ) from e
 
             try:
@@ -1252,15 +1244,15 @@ async def _do_ensure_connected[HandshakeMetadata](
             transition_connected(ws)
             break
         except Exception as e:
-            backoff_time = rate_limiter.get_backoff_ms(client_id)
+            backoff_time_ms = rate_limiter.get_backoff_ms(client_id)
             logger.exception(
-                f"Error connecting, retrying with {backoff_time}ms backoff"
+                f"Error connecting, retrying with {backoff_time_ms}ms backoff"
             )
             if ws:
                 close_ws_in_background(ws)
                 ws = None
             last_error = e
-            await asyncio.sleep(backoff_time / 1000)
+            await asyncio.sleep(backoff_time_ms / 1000)
         logger.debug("Here, about to retry")
     unbind_connecting_task()
 
@@ -1281,7 +1273,7 @@ async def _recv_from_ws(
     get_state: Callable[[], SessionState],
     get_ws: Callable[[], ClientConnection | None],
     transition_no_connection: Callable[[], Awaitable[None]],
-    close_session: Callable[[Exception | None], None],
+    close_session: Callable[[Exception | None], asyncio.Event],
     assert_incoming_seq_bookkeeping: Callable[
         [str, int, int], Literal[True] | _IgnoreMessage
     ],
