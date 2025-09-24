@@ -496,8 +496,8 @@ def encode_type(
             typeddict_encoder.append("None")
             return (NoneTypeExpr(), [], [], set())
         elif type.type == "Date":
-            typeddict_encoder.append("TODO: dstewart")
-            return (LiteralType("datetime.datetime"), [], [], set())
+            typeddict_encoder.append("datetime.datetime")
+            return (LiteralTypeExpr("datetime.datetime"), [], [], set())
         elif type.type == "array" and type.items:
             type_name, module_info, type_chunks, encoder_names = encode_type(
                 type.items,
