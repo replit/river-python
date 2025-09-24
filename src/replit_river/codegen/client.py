@@ -405,7 +405,11 @@ def encode_type(
                                 | UnionTypeExpr
                                 | LiteralType
                             ) = other
-                            raise ValueError(f"What does it mean to have {_o2} here?")
+                            raise ValueError(
+                                f"What does it mean to have {
+                                    render_type_expr(_o2)
+                                } here?"
+                            )
         if permit_unknown_members:
             union = _make_open_union_type_expr(any_of)
         else:
@@ -496,7 +500,7 @@ def encode_type(
             typeddict_encoder.append("None")
             return (NoneTypeExpr(), [], [], set())
         elif type.type == "Date":
-            typeddict_encoder.append("TODO: dstewart")
+            typeddict_encoder.append("datetime.datetime")
             return (LiteralType("datetime.datetime"), [], [], set())
         elif type.type == "array" and type.items:
             type_name, module_info, type_chunks, encoder_names = encode_type(
