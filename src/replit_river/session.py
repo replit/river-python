@@ -286,6 +286,17 @@ class Session:
         if should_retry and self._retry_connection_callback:
             self._task_manager.create_task(self._retry_connection_callback())
 
+    def _should_abort_streams_after_transport_failure(self) -> bool:
+        return not self._transport_options.transparent_reconnect
+
+    def _abort_all_streams(self) -> None:
+        """Close all active stream channels, notifying any waiting consumers."""
+        if not self._streams:
+            return
+        for stream in self._streams.values():
+            stream.close()
+        self._streams.clear()
+
     async def close(self) -> None:
         """Close the session and all associated streams."""
         logger.info(
@@ -310,9 +321,7 @@ class Session:
 
             # TODO: unexpected_close should close stream differently here to
             # throw exception correctly.
-            for stream in self._streams.values():
-                stream.close()
-            self._streams.clear()
+            self._abort_all_streams()
 
             self._state = SessionState.CLOSED
 
