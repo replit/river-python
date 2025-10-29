@@ -153,35 +153,18 @@ class ServerTransport:
                         close_session_callback=self._delete_session,
                     )
                 else:
-                    if not await old_session.is_session_open():
-                        logger.info(
-                            'Session "%s" is not active, creating replacement '
-                            "session %s instead of reusing",
-                            to_id,
-                            session_id,
-                        )
-                        new_session = ServerSession(
-                            transport_id,
-                            to_id,
-                            session_id,
-                            websocket,
-                            self._transport_options,
-                            self._handlers,
-                            close_session_callback=self._delete_session,
-                        )
-                    else:
-                        # If the instance id is the same, we reuse the session and assign
-                        # a new websocket to it.
-                        logger.debug(
-                            'Reuse old session with "%s" using new ws: %s',
-                            to_id,
-                            websocket.id,
-                        )
-                        try:
-                            await old_session.replace_with_new_websocket(websocket)
-                            new_session = old_session
-                        except FailedSendingMessageException as e:
-                            raise e
+                    # If the instance id is the same, we reuse the session and assign
+                    # a new websocket to it.
+                    logger.debug(
+                        'Reuse old session with "%s" using new ws: %s',
+                        to_id,
+                        websocket.id,
+                    )
+                    try:
+                        await old_session.replace_with_new_websocket(websocket)
+                        new_session = old_session
+                    except FailedSendingMessageException as e:
+                        raise e
 
             self._sessions[new_session._to_id] = new_session
 
@@ -328,6 +311,5 @@ class ServerTransport:
 
     async def _delete_session(self, session: Session) -> None:
         async with self._session_lock:
-            existing_session = self._sessions.get(session._to_id)
-            if existing_session is session:
+            if session._to_id in self._sessions:
                 del self._sessions[session._to_id]

@@ -100,7 +100,7 @@ class ClientSession(Session):
                 await self._handle_messages_from_ws()
             except ConnectionClosed:
                 if self._should_abort_streams_after_transport_failure():
-                    self._abort_all_streams()
+                    await self.close()
                 if self._retry_connection_callback:
                     self._task_manager.create_task(self._retry_connection_callback())
 
@@ -109,12 +109,12 @@ class ClientSession(Session):
             except FailedSendingMessageException:
                 # Expected error if the connection is closed.
                 if self._should_abort_streams_after_transport_failure():
-                    self._abort_all_streams()
+                    await self.close()
                 logger.debug(
                     "FailedSendingMessageException while serving", exc_info=True
                 )
             except Exception:
-                self._abort_all_streams()
+                await self.close()
                 logger.exception("caught exception at message iterator")
         except ExceptionGroup as eg:
             _, unhandled = eg.split(lambda e: isinstance(e, ConnectionClosed))

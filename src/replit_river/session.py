@@ -287,7 +287,7 @@ class Session:
             self._task_manager.create_task(self._retry_connection_callback())
 
     def _should_abort_streams_after_transport_failure(self) -> bool:
-        return self._retry_connection_callback is None
+        return not self._transport_options.transparent_reconnect
 
     def _abort_all_streams(self) -> None:
         """Close all active stream channels, notifying any waiting consumers."""
