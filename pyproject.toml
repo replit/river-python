@@ -20,7 +20,7 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "pydantic==2.9.2",
+    "pydantic>=2.9.0,<3",
     "aiochannel>=1.2.1",
     "grpcio-tools>=1.59.3",
     "grpcio>=1.59.3",
