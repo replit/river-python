@@ -1,0 +1,42 @@
+{
+  "services": {
+    "recursiveService": {
+      "procedures": {
+        "getTree": {
+          "type": "rpc",
+          "input": {
+            "type": "object",
+            "properties": {
+              "rootId": {
+                "type": "string"
+              }
+            },
+            "required": ["rootId"]
+          },
+          "output": {
+            "$id": "TreeNode",
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "children": {
+                "type": "array",
+                "items": {
+                  "$ref": "TreeNode"
+                }
+              }
+            },
+            "required": ["id", "name", "children"]
+          },
+          "errors": {
+            "not": {}
+          }
+        }
+      }
+    }
+  }
+}

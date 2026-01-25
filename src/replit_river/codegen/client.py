@@ -101,6 +101,8 @@ class RiverConcreteType(BaseModel):
     items: "RiverType | None" = Field(default=None)
     const: str | int | None = Field(default=None)
     patternProperties: dict[str, "RiverType"] = Field(default_factory=lambda: dict())
+    id_: str | None = Field(default=None, alias="$id")
+    ref: str | None = Field(default=None, alias="$ref")
 
 
 class RiverUnionType(BaseModel):
@@ -158,7 +160,12 @@ def encode_type(
     base_model: str,
     in_module: list[ModuleName],
     permit_unknown_members: bool,
+    type_registry: dict[str, TypeName] | None = None,
 ) -> tuple[TypeExpression, list[ModuleName], list[FileContents], set[TypeName]]:
+    # Registry to track $id -> TypeName mappings for resolving $ref
+    if type_registry is None:
+        type_registry = {}
+
     def _make_open_union_type_expr(one_of: list[TypeExpression]) -> OpenUnionTypeExpr:
         if base_model == "RiverError":
             return OpenUnionTypeExpr(
@@ -175,6 +182,17 @@ def encode_type(
 
     encoder_name: TypeName | None = None  # defining this up here to placate mypy
     chunks: list[FileContents] = []
+
+    # Handle $ref - return a forward reference to the registered type
+    if isinstance(type, RiverConcreteType) and type.ref is not None:
+        ref_id = type.ref
+        if ref_id in type_registry:
+            # Use forward reference string for the type
+            return (TypeName(f'"{type_registry[ref_id].value}"'), [], [], set())
+        else:
+            # Unknown ref, fall back to Any
+            return (TypeName("Any"), [], [], set())
+
     if isinstance(type, RiverNotType):
         return (NoneTypeExpr(), [], [], set())
     elif isinstance(type, RiverUnionType):
@@ -269,6 +287,7 @@ def encode_type(
                                 base_model,
                                 in_module,
                                 permit_unknown_members=permit_unknown_members,
+                                type_registry=type_registry,
                             )
                             one_of.append(type_name)
                             chunks.extend(contents)
@@ -304,6 +323,7 @@ def encode_type(
                             base_model,
                             in_module,
                             permit_unknown_members=permit_unknown_members,
+                            type_registry=type_registry,
                         )
                         one_of.append(type_name)
                         chunks.extend(contents)
@@ -377,6 +397,7 @@ def encode_type(
                 base_model,
                 in_module,
                 permit_unknown_members=permit_unknown_members,
+                type_registry=type_registry,
             )
             any_of.append(type_name)
             chunks.extend(contents)
@@ -462,6 +483,7 @@ def encode_type(
             base_model,
             in_module,
             permit_unknown_members=permit_unknown_members,
+            type_registry=type_registry,
         )
     elif isinstance(type, RiverConcreteType):
         typeddict_encoder = list[str]()
@@ -509,6 +531,7 @@ def encode_type(
                 base_model,
                 in_module,
                 permit_unknown_members=permit_unknown_members,
+                type_registry=type_registry,
             )
             typeddict_encoder.append("TODO: dstewart")
             return (ListTypeExpr(type_name), module_info, type_chunks, encoder_names)
@@ -523,9 +546,14 @@ def encode_type(
                 base_model,
                 in_module,
                 permit_unknown_members=permit_unknown_members,
+                type_registry=type_registry,
             )
             return (DictTypeExpr(type_name), module_info, type_chunks, encoder_names)
         assert type.type == "object", type.type
+
+        # Register $id for this type so $ref can resolve to it
+        if type.id_ is not None:
+            type_registry[type.id_] = prefix
 
         current_chunks: list[str] = [
             f"class {render_literal_type(prefix)}({base_model}):"
@@ -551,6 +579,7 @@ def encode_type(
                     "BaseModel" if base_model == "RiverError" else base_model,
                     in_module,
                     permit_unknown_members=permit_unknown_members,
+                    type_registry=type_registry,
                 )
                 encoder_name = None
                 chunks.extend(contents)
