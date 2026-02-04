@@ -1,0 +1,85 @@
+{
+  "services": {
+    "test_service": {
+      "procedures": {
+        "anyof_mixed_method": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "run_command": {
+                "description": "Command can be object with args, string, or array of strings",
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "args": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "env": {
+                        "type": "object",
+                        "patternProperties": {
+                          "^(.*)$": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    },
+                    "required": ["args"]
+                  },
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                ]
+              },
+              "value_or_null": {
+                "description": "Value can be string or null",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "number_or_string": {
+                "description": "Can be number or string",
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              }
+            },
+            "required": ["run_command"]
+          },
+          "output": {
+            "type": "object",
+            "properties": {
+              "success": {
+                "type": "boolean"
+              }
+            },
+            "required": ["success"]
+          },
+          "errors": {
+            "not": {}
+          },
+          "type": "rpc"
+        }
+      }
+    }
+  }
+}

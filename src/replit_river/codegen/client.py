@@ -389,7 +389,8 @@ def encode_type(
         type = original_type
         any_of: list[TypeExpression] = []
 
-        typeddict_encoder = []
+        # Collect (type_check, encoder_expr) pairs for building ternary chain
+        encoder_parts: list[tuple[str | None, str]] = []
         for i, t in enumerate(type.anyOf):
             type_name, _, contents, _ = encode_type(
                 t,
@@ -403,34 +404,63 @@ def encode_type(
             chunks.extend(contents)
             if isinstance(t, RiverConcreteType):
                 if t.type == "string":
-                    typeddict_encoder.extend(["x", " if isinstance(x, str) else "])
-                else:
-                    # TODO(dstewart): This structure changed since we were incorrectly
-                    #                 leaking ListTypeExprs into codegen. This generated
-                    #                 code is probably wrong.
+                    encoder_parts.append(("isinstance(x, str)", "x"))
+                elif t.type == "array":
                     match type_name:
                         case ListTypeExpr(inner_type_name):
-                            typeddict_encoder.append(
-                                f"encode_{render_literal_type(inner_type_name)}(x)"
-                            )
-                        case LiteralTypeExpr(const):
-                            typeddict_encoder.append(repr(const))
+                            # Primitives don't need encoding
+                            inner_type_str = render_literal_type(inner_type_name)
+                            if inner_type_str in ("str", "int", "float", "bool", "Any"):
+                                encoder_parts.append(("isinstance(x, list)", "list(x)"))
+                            else:
+                                encoder_parts.append(
+                                    (
+                                        "isinstance(x, list)",
+                                        f"[encode_{inner_type_str}(y) for y in x]",
+                                    )
+                                )
+                        case _:
+                            encoder_parts.append(("isinstance(x, list)", "list(x)"))
+                elif t.type == "object":
+                    match type_name:
                         case TypeName(value):
-                            typeddict_encoder.append(f"encode_{value}(x)")
-                        case NoneTypeExpr():
-                            typeddict_encoder.append("None")
-                        case other:
-                            _o2: (
-                                DictTypeExpr
-                                | OpenUnionTypeExpr
-                                | UnionTypeExpr
-                                | LiteralType
-                            ) = other
-                            raise ValueError(
-                                f"What does it mean to have {
-                                    render_type_expr(_o2)
-                                } here?"
+                            encoder_parts.append(
+                                ("isinstance(x, dict)", f"encode_{value}(x)")
                             )
+                        case _:
+                            encoder_parts.append(("isinstance(x, dict)", "dict(x)"))
+                elif t.type in ("number", "integer"):
+                    match type_name:
+                        case LiteralTypeExpr(const):
+                            encoder_parts.append((f"x == {repr(const)}", repr(const)))
+                        case _:
+                            encoder_parts.append(("isinstance(x, (int, float))", "x"))
+                elif t.type == "boolean":
+                    encoder_parts.append(("isinstance(x, bool)", "x"))
+                elif t.type == "null" or t.type == "undefined":
+                    encoder_parts.append(("x is None", "None"))
+                else:
+                    # Fallback for other types
+                    match type_name:
+                        case TypeName(value):
+                            encoder_parts.append((None, f"encode_{value}(x)"))
+                        case LiteralTypeExpr(const):
+                            encoder_parts.append((None, repr(const)))
+                        case NoneTypeExpr():
+                            encoder_parts.append((None, "None"))
+                        case _:
+                            encoder_parts.append((None, "x"))
+
+        # Build the ternary chain from encoder_parts
+        typeddict_encoder = list[str]()
+        for i, (type_check, encoder_expr) in enumerate(encoder_parts):
+            is_last = i == len(encoder_parts) - 1
+            if is_last or type_check is None:
+                # Last item or no type check - just the expression
+                typeddict_encoder.append(encoder_expr)
+            else:
+                # Add expression with type check
+                typeddict_encoder.append(f"{encoder_expr} if {type_check} else")
         if permit_unknown_members:
             union = _make_open_union_type_expr(any_of)
         else:
