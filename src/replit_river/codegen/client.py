@@ -452,7 +452,7 @@ def encode_type(
                             encoder_parts.append((None, "x"))
 
         # Build the ternary chain from encoder_parts
-        typeddict_encoder: list[str] = []
+        typeddict_encoder = list[str]()
         for i, (type_check, encoder_expr) in enumerate(encoder_parts):
             is_last = i == len(encoder_parts) - 1
             if is_last or type_check is None:
