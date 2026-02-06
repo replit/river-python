@@ -407,7 +407,9 @@ def encode_type(
                     encoder_parts.append(("isinstance(x, str)", "x"))
                 elif t.type == "array":
                     match type_name:
-                        case ListTypeExpr(inner_type_name):
+                        case ListTypeExpr(inner_type_name) if isinstance(
+                            inner_type_name, TypeName
+                        ):
                             # Primitives don't need encoding
                             inner_type_str = render_literal_type(inner_type_name)
                             if inner_type_str in ("str", "int", "float", "bool", "Any"):
@@ -633,7 +635,9 @@ def encode_type(
                             f"encode_{render_literal_type(type_name)}"
                         )
                         encoder_names.add(encoder_name)
-                        typeddict_encoder.append(f"{encoder_name}(x[{repr(name)}])")
+                        typeddict_encoder.append(
+                            f"{render_literal_type(encoder_name)}(x[{repr(name)}])"
+                        )
                     elif isinstance(prop, RiverConcreteType):
                         if name == "$kind":
                             safe_name = "kind"
