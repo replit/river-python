@@ -633,7 +633,7 @@ def encode_type(
                             f"encode_{render_literal_type(type_name)}"
                         )
                         encoder_names.add(encoder_name)
-                        typeddict_encoder.append(f"{encoder_name}(x[{repr(name)}])")
+                        typeddict_encoder.append(f"{render_literal_type(encoder_name)}(x[{repr(name)}])")
                     elif isinstance(prop, RiverConcreteType):
                         if name == "$kind":
                             safe_name = "kind"
