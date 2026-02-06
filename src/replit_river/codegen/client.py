@@ -407,7 +407,7 @@ def encode_type(
                     encoder_parts.append(("isinstance(x, str)", "x"))
                 elif t.type == "array":
                     match type_name:
-                        case ListTypeExpr(inner_type_name):
+                        case ListTypeExpr(inner_type_name) if isinstance(inner_type_name, TypeName):
                             # Primitives don't need encoding
                             inner_type_str = render_literal_type(inner_type_name)
                             if inner_type_str in ("str", "int", "float", "bool", "Any"):
