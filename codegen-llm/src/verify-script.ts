@@ -76,6 +76,18 @@ _BANNED_NAME_RE = re.compile(
     re.MULTILINE,
 )
 
+# Regex for ALLCAPS class names — e.g. NOTFOUNDError, CGROUPCLEANUPERRORError.
+# These come from a broken to_pascal_case that just strips underscores from
+# UPPER_SNAKE_CASE instead of properly title-casing each word.
+# Allows known abbreviations: API, RPC, URL, HTTP, SQL, ID, FS, PTY, MCP, PDF.
+_ALLCAPS_NAME_RE = re.compile(
+    r'^class\\s+((?:[A-Z]{4,})+\\w*)\\s*\\(',
+    re.MULTILINE,
+)
+_ALLCAPS_WHITELIST = frozenset({
+    # Add known abbreviation-heavy names that are actually correct
+})
+
 
 def check_code_quality(generated_dir: Path) -> list[str]:
     """Scan generated Python files for banned patterns."""
@@ -102,6 +114,18 @@ def check_code_quality(generated_dir: Path) -> list[str]:
                 f'their kind value (e.g. FinishedOutput), and types after '
                 f'their TypeScript schema name.'
             )
+
+        # Check for ALLCAPS class names (broken PascalCase conversion)
+        for m in _ALLCAPS_NAME_RE.finditer(content):
+            class_name = m.group(1)
+            if class_name not in _ALLCAPS_WHITELIST:
+                errors.append(
+                    f'[{rel}] BANNED NAME: "{class_name}" — class name has 4+ '
+                    f'consecutive uppercase letters, indicating a broken '
+                    f'PascalCase conversion. Use the names from '
+                    f'naming_hints.json (e.g. NOT_FOUND → NotFoundError, '
+                    f'not NOTFOUNDError).'
+                )
 
         # Check for standard error classes redefined outside _errors.py
         if rel.name != '_errors.py':

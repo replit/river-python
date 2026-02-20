@@ -162,9 +162,160 @@ function validatePrerequisites(opts: CodegenOptions): void {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Naming hints extraction
+// ---------------------------------------------------------------------------
+
+interface NamingHints {
+  /** Maps error code literals (e.g. "NOT_FOUND") to PascalCase class names (e.g. "NotFoundError"). */
+  errorCodeToClassName: Record<string, string>;
+  /** The four standard River error codes that appear in every procedure. */
+  standardErrorCodes: string[];
+  /** Maps $kind literal values to suggested variant class name prefixes. */
+  kindValueToClassName: Record<string, string>;
+}
+
+/**
+ * Walk schema.json and extract naming hints the agent should use.
+ *
+ * This lets us compute correct PascalCase names for error codes and $kind
+ * variants mechanically, so the agent doesn't need to implement its own
+ * (broken) conversion.
+ */
+function extractNamingHints(schemaPath: string): NamingHints {
+  const schema = JSON.parse(fs.readFileSync(schemaPath, "utf8"));
+  const errorCodes = new Set<string>();
+  const kindValues = new Set<string>();
+
+  // Walk all procedures to find error codes and $kind values
+  for (const svc of Object.values(schema.services ?? {})) {
+    const service = svc as { procedures: Record<string, Record<string, unknown>> };
+    for (const proc of Object.values(service.procedures ?? {})) {
+      // Collect error codes
+      collectErrorCodes(proc.errors, errorCodes);
+      // Collect $kind values from input, output, init
+      for (const facet of ["input", "output", "init"]) {
+        collectKindValues(proc[facet], kindValues);
+      }
+    }
+  }
+
+  // Build error code → class name map
+  const errorCodeToClassName: Record<string, string> = {};
+  for (const code of errorCodes) {
+    errorCodeToClassName[code] = errorCodeToPascal(code);
+  }
+
+  // Build $kind value → class name map
+  const kindValueToClassName: Record<string, string> = {};
+  for (const kind of kindValues) {
+    kindValueToClassName[kind] = kindValueToPascal(kind);
+  }
+
+  // Standard error codes (appear in virtually every procedure)
+  const standardErrorCodes = [
+    "UNCAUGHT_ERROR",
+    "UNEXPECTED_DISCONNECT",
+    "INVALID_REQUEST",
+    "CANCEL",
+  ];
+
+  return { errorCodeToClassName, standardErrorCodes, kindValueToClassName };
+}
+
+/** Recursively find all `const` values under `properties.code` in error schemas. */
+function collectErrorCodes(node: unknown, codes: Set<string>): void {
+  if (!node || typeof node !== "object") return;
+  const obj = node as Record<string, unknown>;
+
+  // If this is an error variant with properties.code.const
+  if (obj.properties && typeof obj.properties === "object") {
+    const props = obj.properties as Record<string, unknown>;
+    if (props.code && typeof props.code === "object") {
+      const codeSchema = props.code as Record<string, unknown>;
+      if (typeof codeSchema.const === "string") {
+        codes.add(codeSchema.const);
+      }
+    }
+  }
+
+  // Recurse into anyOf / oneOf / allOf
+  for (const key of ["anyOf", "oneOf", "allOf"]) {
+    if (Array.isArray(obj[key])) {
+      for (const item of obj[key] as unknown[]) {
+        collectErrorCodes(item, codes);
+      }
+    }
+  }
+}
+
+/** Recursively find all `$kind` literal values in schemas. */
+function collectKindValues(node: unknown, kinds: Set<string>): void {
+  if (!node || typeof node !== "object") return;
+  const obj = node as Record<string, unknown>;
+
+  if (obj.properties && typeof obj.properties === "object") {
+    const props = obj.properties as Record<string, unknown>;
+    if (props["$kind"] && typeof props["$kind"] === "object") {
+      const kindSchema = props["$kind"] as Record<string, unknown>;
+      if (typeof kindSchema.const === "string") {
+        kinds.add(kindSchema.const);
+      }
+    }
+  }
+
+  for (const key of ["anyOf", "oneOf", "allOf", "items"]) {
+    const val = obj[key];
+    if (Array.isArray(val)) {
+      for (const item of val) {
+        collectKindValues(item, kinds);
+      }
+    } else if (val && typeof val === "object") {
+      collectKindValues(val, kinds);
+    }
+  }
+}
+
+/**
+ * Convert an UPPER_SNAKE_CASE error code to a PascalCase class name.
+ * e.g. "NOT_FOUND" → "NotFoundError", "CGROUP_CLEANUP_ERROR" → "CgroupCleanupError"
+ */
+function errorCodeToPascal(code: string): string {
+  // If the code already ends with _ERROR, don't double-suffix
+  const stripped = code.replace(/_ERROR$/, "");
+  const pascal = stripped
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join("");
+  return `${pascal}Error`;
+}
+
+/**
+ * Convert a $kind value to a PascalCase class name prefix.
+ * e.g. "finished" → "Finished", "finalOutput" → "FinalOutput"
+ */
+function kindValueToPascal(kind: string): string {
+  // Already camelCase → just capitalise first letter
+  return kind.charAt(0).toUpperCase() + kind.slice(1);
+}
+
 function setupWorkspace(workDir: string, opts: CodegenOptions): void {
   // Copy the serialised schema
   fs.copyFileSync(opts.schemaPath, path.join(workDir, "schema.json"));
+
+  // Pre-compute naming hints from the schema so the agent doesn't need to
+  // implement PascalCase conversion (which it keeps getting wrong).
+  log(opts, "Extracting naming hints from schema...");
+  const namingHints = extractNamingHints(opts.schemaPath);
+  fs.writeFileSync(
+    path.join(workDir, "naming_hints.json"),
+    JSON.stringify(namingHints, null, 2),
+  );
+  log(
+    opts,
+    `Extracted ${Object.keys(namingHints.errorCodeToClassName).length} error names, ` +
+      `${Object.keys(namingHints.kindValueToClassName).length} $kind variant names`,
+  );
 
   // Write the verification script OUTSIDE the workspace so the agent
   // cannot read its source (workspace-write sandbox restricts reads to

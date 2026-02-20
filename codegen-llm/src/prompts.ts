@@ -4,7 +4,8 @@ import type { CodegenOptions } from "./types.js";
  * Build the initial prompt for the Codex agent.
  *
  * The agent has scoped filesystem access to:
- *   - Its workspace (working directory) — schema.json, verify script, venv
+ *   - Its workspace (working directory) — schema.json, naming_hints.json,
+ *     verify wrapper, venv
  *   - The TypeScript River server source (via additionalDirectories)
  *   - Optionally an existing generated Python client (via additionalDirectories)
  *
@@ -26,126 +27,132 @@ export function buildInitialPrompt(opts: CodegenOptions): string {
   return `
 # Task: Generate clean Pydantic v2 types from a River RPC server schema
 
-## Quality standard — READ THIS FIRST
+You are generating a Python client library from a TypeScript River RPC server.
+The generated code must read as if a senior Python engineer hand-wrote it.
 
-Your output will be evaluated on whether a Python developer can look at the
-generated code and immediately understand every type, every field, and every
-union variant. The generated types must be as clean and readable as if a
-senior engineer hand-wrote them.
+## WHY we use an LLM for this (not a codegen script)
 
-**If the output is not clean, readable, and the types are not easily understood
-and used by consumers, the output will be DISCARDED and the generation will be
-retried from scratch.**
+A mechanical codegen script walks JSON Schema and produces class names from
+JSON paths: \`CreateInputArtifactServicesItemProductionHealthLiveness\`,
+\`NOTFOUNDError\`, \`ReadErrorsVariant1\`.  Nobody can read that.
 
-The whole reason we use an LLM instead of a mechanical codegen script is to
-produce output that reads like human-written code. A developer should be able
-to open any generated file and instantly see:
-- What fields a request takes (with their types)
-- What a response looks like (with named variants in unions)
-- What errors can occur (with their codes and payloads)
+**Your job is to read the TypeScript source**, see that the developers named
+a schema \`ExitInfo\`, and use that same name in Python.  See that
+\`schemas.ts\` exports \`MonitorResponse\`, and call your class \`MonitorResponse\`.
+See that \`lib/fs/errors.ts\` defines a \`FilesystemError\` union, and reuse it.
 
-If your output consists of opaque wrappers around raw JSON Schema dicts, or
-dynamic class factories, or anything that hides the actual type structure from
-the developer — it has completely failed its purpose and will be thrown away.
-
-
-## BANNED patterns — automatic rejection
-
-The verification script scans for these patterns BEFORE comparing schemas.
-If ANY are found, verification fails immediately and you must rewrite.
-
-**Banned constructs:**
-- \`RootModel\` or \`RootModel[Any]\` — no root models wrapping raw schemas
-- \`__get_pydantic_json_schema__\` — no overriding Pydantic's schema generation
-- Any function like \`make_schema_model()\` that dynamically creates model
-  classes from dicts at runtime
-- Embedding raw JSON Schema dicts as Python dict literals in your code
-  (e.g. \`INPUT_SCHEMA = {"type": "object", ...}\`)
-- \`ClassVar[dict]\` storing JSON schemas on model classes
-- \`SchemaAdapter\` or \`make_schema_adapter()\` wrapper classes
-- \`create_model()\` from pydantic — no dynamic model creation
-- Any "helper" or "utility" that builds models from schema dicts at runtime
-- \`RiverTypeAdapter\` or any custom TypeAdapter subclass — use plain
-  \`TypeAdapter\` only.  Do NOT override \`json_schema()\` in any way.
-- \`schema_override_json\`, \`schema_override\`, or \`_schema_json\` — do NOT
-  embed or cache raw JSON schemas to return from \`json_schema()\`
-- Redefining \`UncaughtError\`, \`UnexpectedDisconnectError\`,
-  \`InvalidRequestError\`, or \`CancelError\` outside of \`_errors.py\` — these
-  standard River errors must be defined ONCE and imported everywhere
-
-**Banned naming patterns (the verifier enforces these with a regex):**
-- \`Variant\\d+\` anywhere in a class name — \`ErrorsVariant1\`, \`OutputVariant2\`,
-  \`AgentExecErrorsVariant3\`, \`ConnectErrorsVariant9\` are ALL banned
-- \`Input2\`, \`Output2\`, \`Init2\`, \`Errors3\` — numbered type suffixes
-- \`OutputVariant1Variant2\` — nested numbering
-- \`Input2ArtifactServicesItemDevelopmentRunVariant1\` — path-based names
-  derived from JSON Schema structure
-- Any class name that a developer cannot understand without looking at
-  the schema
-
-The verifier scans every class definition with a regex.  If ANY class
-name contains \`Variant\` followed by a digit, verification fails.
-Name error classes after their \`code\` literal, \`$kind\` variants after
-their kind value, and input/output types after the procedure or TS schema.
-
-**Required:**
-- Every Input, Output, and Error type MUST be a concrete \`BaseModel\` subclass
-  with explicitly declared, typed fields
-- \`TypeAdapter(MyModel).json_schema()\` must produce correct schemas through
-  Pydantic's own native schema generation — NOT through hardcoded overrides
-  or JSON embedding
-- Every class MUST have a meaningful name derived from reading the TypeScript
-  source code.  Examples:
-  - Error with \`code: Literal['NOT_FOUND']\` → \`NotFoundError\`
-  - Error with \`code: Literal['DISK_QUOTA_EXCEEDED']\` → \`DiskQuotaExceededError\`
-  - Output with \`$kind: 'finished'\` → \`FinishedOutput\` or \`ExitInfo\` (from TS)
-  - A ping procedure's output → \`PingOutput\`, not \`Output2\`
-- The four standard River error classes (UncaughtError, UnexpectedDisconnectError,
-  InvalidRequestError, CancelError) must be defined ONLY in \`_errors.py\` and
-  imported from there in every service module.  Do NOT redefine them.
+If you produce output that a codegen script could have produced, you have
+failed.  The output will be discarded and regenerated.
 
 
 ## File access scope
 
 You have access to these locations and ONLY these locations:
 
-1. **Your workspace** (current working directory) — contains \`schema.json\`,
-    \`./verify\` (verification tool), \`generated/\`, and \`.venv/\`
-2. **TypeScript server source**: \`${opts.serverSrcPath}\`
+1. **Your workspace** (current working directory):
+   - \`schema.json\` — serialised River JSON schema (ground truth for verification)
+   - \`naming_hints.json\` — pre-computed error and $kind class names (USE THESE)
+   - \`./verify\` — verification tool
+   - \`generated/\` — output directory
+   - \`.venv/\` — Python venv with pydantic
+
+2. **TypeScript server source** (READ-ONLY):
+   \`${opts.serverSrcPath}\`
 ${existingSection}
-**Do NOT attempt to browse, read, or access any other directories on the
-filesystem.** There is nothing useful elsewhere — everything you need is in
-the paths listed above.
+**Do NOT attempt to browse or access any other directories.**
+
+
+## naming_hints.json — USE THIS FILE
+
+This file in your workspace contains pre-computed class names for every error
+code and every \`$kind\` value found in schema.json:
+
+\`\`\`json
+{
+  "errorCodeToClassName": {
+    "NOT_FOUND": "NotFoundError",
+    "CGROUP_CLEANUP_ERROR": "CgroupCleanupError",
+    "PROCESS_IS_NOT_RUNNING": "ProcessIsNotRunningError",
+    "DISK_QUOTA_EXCEEDED": "DiskQuotaExceededError",
+    ...
+  },
+  "standardErrorCodes": ["UNCAUGHT_ERROR", "UNEXPECTED_DISCONNECT", "INVALID_REQUEST", "CANCEL"],
+  "kindValueToClassName": {
+    "finished": "Finished",
+    "output": "Output",
+    "result": "Result",
+    ...
+  }
+}
+\`\`\`
+
+**You MUST use the exact class names from this file** for error classes and
+\`$kind\` variants.  Do NOT invent your own PascalCase conversion.
+
+The verifier rejects class names with 4+ consecutive uppercase letters
+(e.g. \`NOTFOUNDError\`, \`CGROUPCLEANUPERRORError\` — these are BANNED).
+
+
+## BANNED patterns — automatic rejection
+
+The verifier scans BEFORE comparing schemas.  If ANY banned pattern is found,
+verification fails immediately.
+
+**Banned constructs:**
+- \`RootModel\`, \`__get_pydantic_json_schema__\`, \`create_model()\`
+- \`SchemaAdapter\`, \`make_schema_model\`, \`make_schema_adapter\`
+- \`RiverTypeAdapter\` or any custom TypeAdapter subclass
+- \`schema_override_json\`, \`schema_override\`, \`_schema_json\`
+- Raw JSON Schema dicts embedded as Python dict literals
+- Any helper/utility that builds models from schema dicts at runtime
+
+**Banned naming patterns (regex-enforced):**
+- \`Variant\\d+\` anywhere in a class name — ALL banned
+- \`Input2\`, \`Output2\`, \`Errors3\` — numbered suffixes
+- 4+ consecutive uppercase letters: \`NOTFOUNDError\`, \`PTYERRORError\` — banned
+- Long path-derived names: \`CreateInputArtifactServicesItemDevelopmentRunVariant1\`
+
+**Banned redefinitions:**
+- Redefining \`UncaughtError\`, \`UnexpectedDisconnectError\`,
+  \`InvalidRequestError\`, or \`CancelError\` outside \`_errors.py\`
+
+**Banned workflow:**
+- Do NOT write a standalone Python generator/scaffolding script (e.g.
+  \`build_generated.py\`, \`scaffold.py\`, \`generate.py\`).  You must write
+  each service file directly.
+
+**Required:**
+- Every type MUST be a concrete \`BaseModel\` subclass with typed fields
+- \`TypeAdapter(Model).json_schema()\` must produce correct schemas through
+  Pydantic's own native generation — no overrides or raw JSON embedding
+- Error class names must come from \`naming_hints.json\`
+- Standard River errors must be imported from \`_errors.py\`, not redefined
 
 
 ## Source of truth
 
-### TypeScript server source (how types are named and organised)
+### TypeScript server source — read this for naming
 
 The TypeScript service definitions live at:
 
     ${opts.serverSrcPath}
 
-Each service is typically in its own subdirectory. Inside you will find
-TypeBox schemas using \`Type.Object\`, \`Type.Union\`, \`Type.Literal\`, etc.,
-and procedure definitions using \`Procedure.rpc\`, \`Procedure.subscription\`,
-\`Procedure.upload\`, \`Procedure.stream\`.
+Each service is in its own subdirectory with \`index.ts\` (procedure
+definitions) and often \`schemas.ts\` (named TypeBox schemas).  Shared types
+live in \`lib/\` subdirectories.
 
-**Read these files** to understand:
-- How types are named — use the same names in Python
-- What shared/reusable types exist — look for \`schemas.ts\` files, and for
-  shared schemas in sibling \`lib/\` directories
-- How types compose together
-- How services and procedures are structured
+**You MUST read these files** for each service to learn:
+- What the developers named their schemas (use those names in Python)
+- Which types are shared across procedures
+- How unions and intersections are structured
 
-Look for an \`index.ts\` that registers all services — this gives you the
-complete list of service names and their mapping.
+The top-level \`index.ts\` registers all services.
 
-### Serialised JSON schema (ground truth for verification)
+### schema.json — ground truth for verification
 
-    schema.json  (in the workspace, copied from ${opts.schemaPath})
+    schema.json  (in workspace, copied from ${opts.schemaPath})
 
-This is the JSON output of River's \`serializeSchema(services)\`.  Structure:
+Structure:
 \`\`\`json
 {
   "handshakeSchema": { ... },
@@ -166,8 +173,6 @@ This is the JSON output of River's \`serializeSchema(services)\`.  Structure:
 
 
 ## Concrete translation examples
-
-Study these patterns carefully — they cover the common cases you will encounter.
 
 ### Example 1: Type.Object → BaseModel
 
@@ -198,22 +203,18 @@ class Response(BaseModel):
 Key points:
 - \`Type.Number()\` → \`float\`,  \`Type.Integer()\` → \`int\`,  \`Type.String()\` → \`str\`
 - Nested \`Type.Object\` → a separate BaseModel class
-- Field names match the TypeScript property names (camelCase is fine in Python
-  for JSON interop — do NOT rename to snake_case unless using Field(alias=...))
+- Field names match TypeScript property names (camelCase is fine)
 
 
-### Example 2: \`$kind\` discriminated union
+### Example 2: \`$kind\` discriminated union — use TS names
 
 TypeScript:
 \`\`\`typescript
+// In schemas.ts:
 const ExitInfo = Type.Object({
   $kind: Type.Literal('finished'),
   exitCode: Type.Integer(),
-  reason: Type.Union([
-    Type.Literal('Errored'),
-    Type.Literal('Exited'),
-    Type.Literal('Stopped'),
-  ]),
+  reason: Type.Union([Type.Literal('Errored'), Type.Literal('Exited'), Type.Literal('Stopped')]),
 });
 
 const OutputChunk = Type.Object({
@@ -221,10 +222,10 @@ const OutputChunk = Type.Object({
   output: Type.Uint8Array(),
 });
 
-const ResponseSchema = Type.Union([ExitInfo, OutputChunk]);
+const MonitorResponse = Type.Union([ExitInfo, OutputChunk]);
 \`\`\`
 
-Python:
+Python — use the **TypeScript names** (\`ExitInfo\`, \`OutputChunk\`):
 \`\`\`python
 class ExitInfo(BaseModel):
     kind: Literal['finished'] = Field(alias='$kind')
@@ -237,44 +238,32 @@ class OutputChunk(BaseModel):
     output: bytes
     model_config = ConfigDict(populate_by_name=True)
 
-Response = Annotated[
-    ExitInfo | OutputChunk,
-    Field(discriminator='kind'),
-]
+MonitorResponse = Annotated[ExitInfo | OutputChunk, Field(discriminator='kind')]
 \`\`\`
 
-Key points:
-- \`$kind\` cannot be a Python identifier — use \`Field(alias='$kind')\` with
-  a Python name like \`kind\`
-- \`model_config = ConfigDict(populate_by_name=True)\` so both names work
-- The \`discriminator\` value is the **Python field name**, not the alias
-- \`Type.Uint8Array()\` → \`bytes\` in Python
-- For a union of Type.Literal string values, use individual Literals joined
-  with \`|\`:  \`Literal['a'] | Literal['b'] | Literal['c']\`
-  (this produces \`anyOf\` with \`const\` in JSON Schema)
+Note: \`ExitInfo\` comes from the TS variable name, NOT from the $kind value.
+If you hadn't read the TS source, you'd call it \`FinishedOutput\` — which is
+worse.  **This is why reading the TypeScript source matters.**
 
 
-### Example 3: Error union discriminated by \`code\`
+### Example 3: Error union — use naming_hints.json
 
 TypeScript:
 \`\`\`typescript
 const FilesystemError = Type.Union([
-  Type.Object(
-    { code: Type.Literal('NOT_FOUND'), message: Type.String() },
-    { description: "File or directory wasn't found." },
-  ),
-  Type.Object(
-    { code: Type.Literal('PERMISSION_DENIED'), message: Type.String() },
-  ),
+  Type.Object({ code: Type.Literal('NOT_FOUND'), message: Type.String() }),
+  Type.Object({ code: Type.Literal('PERMISSION_DENIED'), message: Type.String() }),
 ]);
 \`\`\`
 
-Python:
+Python — look up names in naming_hints.json:
 \`\`\`python
+# naming_hints.json says: "NOT_FOUND" → "NotFoundError"
 class NotFoundError(BaseModel):
     code: Literal['NOT_FOUND']
     message: str
 
+# naming_hints.json says: "PERMISSION_DENIED" → "PermissionDeniedError"
 class PermissionDeniedError(BaseModel):
     code: Literal['PERMISSION_DENIED']
     message: str
@@ -285,59 +274,21 @@ FilesystemError = Annotated[
 ]
 \`\`\`
 
-Key points:
-- Each error variant gets its own BaseModel with \`code: Literal['...']\`
-- Descriptions on TypeBox schemas are metadata — they don't affect structure
-- The standard River errors (UNCAUGHT_ERROR, UNEXPECTED_DISCONNECT,
-  INVALID_REQUEST, CANCEL) appear in **every** procedure's error union.
-  Define them ONCE in \`_errors.py\` and import everywhere.
-
 
 ### Example 4: Optional fields, records, arrays
 
-TypeScript:
-\`\`\`typescript
-const ConfigSchema = Type.Object({
-  name: Type.String(),
-  tags: Type.Optional(Type.Array(Type.String())),
-  env: Type.Optional(Type.Record(Type.String(), Type.String())),
-  port: Type.Optional(Type.Integer()),
-  enabled: Type.Boolean(),
-});
-\`\`\`
-
-Python:
 \`\`\`python
 class Config(BaseModel):
     name: str
-    tags: list[str] | None = None
-    env: dict[str, str] | None = None
-    port: int | None = None
+    tags: list[str] | None = None          # Type.Optional(Type.Array(...))
+    env: dict[str, str] | None = None      # Type.Optional(Type.Record(...))
+    port: int | None = None                # Type.Optional(Type.Integer())
     enabled: bool
 \`\`\`
-
-Key points:
-- \`Type.Optional(X)\` → \`X | None = None\`
-- \`Type.Array(X)\` → \`list[X]\`
-- \`Type.Record(Type.String(), X)\` → \`dict[str, X]\`
-- \`Type.Boolean()\` → \`bool\`
 
 
 ### Example 5: Recursive types
 
-TypeScript:
-\`\`\`typescript
-const SkillSchema = Type.Recursive(
-  (This) => Type.Object({
-    name: Type.String(),
-    description: Type.String(),
-    children: Type.Array(This),
-  }),
-  { $id: 'Skill' },
-);
-\`\`\`
-
-Python:
 \`\`\`python
 class Skill(BaseModel):
     name: str
@@ -350,24 +301,9 @@ Skill.model_rebuild()   # Required for self-referencing models
 
 ### Example 6: Type.Intersect (allOf) — flatten into one model
 
-TypeScript:
-\`\`\`typescript
-const BaseSchema = Type.Object({ name: Type.String() });
-const ExtendedSchema = Type.Intersect([
-  BaseSchema,
-  Type.Object({ port: Type.Integer() }),
-]);
-\`\`\`
-
-Python — merge all properties into a single model:
-\`\`\`python
-class Extended(BaseModel):
-    name: str
-    port: int
-\`\`\`
-
-TypeBox \`Type.Intersect\` produces \`allOf\` in JSON Schema. In Python, just
-merge all properties into one BaseModel. Do NOT use allOf patterns in Pydantic.
+TypeBox \`Type.Intersect([A, B])\` produces \`allOf\` in JSON Schema.
+In Python, merge all properties into one BaseModel.  The verifier flattens
+\`allOf\` during normalisation, so a flat model matches correctly.
 
 
 ## What to generate
@@ -379,111 +315,50 @@ Write a complete Python package into: \`generated/\`
 \`\`\`
 generated/
   __init__.py              # ${opts.clientName} client class + top-level re-exports
-  _handshake.py            # HandshakeSchema model (from handshakeSchema in schema.json)
-  _errors.py               # Shared River error types: UncaughtError, UnexpectedDisconnectError,
-                           #   InvalidRequestError, CancelError, and the StandardRiverError union
-  _common.py               # Shared domain types (BaseModel classes) used across multiple services
-  <service_name>.py         # ALL types + service class for that service (one file per service)
-  _schema_map.py            # Verification mapping (see below)
+  _handshake.py            # HandshakeSchema model
+  _errors.py               # Standard River errors (UncaughtError, etc.)
+  _common.py               # Shared domain types used across multiple services
+  <service_name>.py        # ALL types + service class for that service
+  _schema_map.py           # Verification mapping
 \`\`\`
 
 **One file per service** — each \`<service_name>.py\` contains:
-- All BaseModel classes for every procedure in that service (input, output,
-  init, error types)
+- All BaseModel classes for every procedure (named from TS source + naming_hints.json)
+- Service-level shared error types (defined once, reused across procedures)
 - The service class with typed async methods
 - TypeAdapter instances for each procedure
-- Shared error types for that service (not the standard River errors —
-  those come from \`_errors.py\`)
-
-This keeps related types together so developers can see the full API for a
-service in one place, and makes it natural to share types across procedures
-within a service (e.g. a \`FilesystemError\` union used by multiple procedures).
-
-**Important:** \`_common.py\` must contain ONLY shared BaseModel classes — NOT
-utility functions, schema helpers, or dynamic class factories.
-
 
 ### Design principles
 
-1. **Mirror TypeScript naming.** Read the TypeBox definitions and use the same
-   names. If TypeScript has \`CreateOptionsSchema\`, your Python should have
-   \`CreateOptions\`. If a field references \`ServiceInputSchema\`, name your
-   model \`ServiceInput\`.
+1. **Mirror TypeScript naming.** Read the TypeBox definitions and use the
+   same names.  \`CreateOptionsSchema\` → \`CreateOptions\`.
 
-2. **Reuse shared types.** The four standard River errors appear in every
-   procedure's error union. Define them ONCE in \`_errors.py\` and import them.
-   Same for any domain type used across services — put it in \`_common.py\`.
+2. **Reuse shared types.** Standard River errors: import from \`_errors.py\`.
+   Same error type across procedures within a service: define once, reuse.
 
-3. **BaseModel everywhere.** Every type must be a \`BaseModel\` subclass with
-   explicitly typed fields. No TypedDict. No RootModel. No dynamic creation.
+3. **BaseModel everywhere.** No TypedDict, no RootModel, no dynamic creation.
 
-4. **Discriminated unions.** Use
-   \`Annotated[A | B, Field(discriminator='field')]\` where possible.
-   For the \`$kind\` pattern, use \`Field(alias='$kind')\` on each variant.
+4. **Discriminated unions.** \`Annotated[A | B, Field(discriminator='field')]\`.
+   For \`$kind\`: use \`Field(alias='$kind')\` on each variant.
 
-5. **TypeAdapters.** Each service module must define typed adapters for
-    every procedure in that service:
-    \`\`\`python
-    # Adapters for the "ping" procedure
-    PingInputAdapter: TypeAdapter[PingInput] = TypeAdapter(PingInput)
-    PingOutputAdapter: TypeAdapter[PingOutput] = TypeAdapter(PingOutput)
-    PingErrorsAdapter: TypeAdapter[PingErrors] = TypeAdapter(PingErrors)
-    \`\`\`
+5. **TypeAdapters** for each procedure in each service module.
 
-6. **Service classes.** Each service wraps a River client and exposes typed
-   async methods:
-   \`\`\`python
-   class MyService:
-       def __init__(self, client: Any):
-           self.client = client
+6. **Service classes** wrapping a River client with typed async methods.
 
-       async def my_rpc(self, input: MyInput, timeout: timedelta) -> MyOutput:
-           return await self.client.send_rpc(
-               "serviceName", "procName", input,
-               lambda x: InputAdapter.dump_python(
-                   InputAdapter.validate_python(x), by_alias=True, exclude_none=True),
-               lambda x: OutputAdapter.validate_python(x),
-               lambda x: ErrorsAdapter.validate_python(x),
-               timeout,
-           )
-   \`\`\`
-   For subscriptions (no timeout param), streams and uploads (init + data
-   stream params), adapt the method signatures accordingly.
+7. **String literal unions.** Use individual Literals: \`Literal['a'] | Literal['b']\`
+   (produces \`anyOf\` with \`const\` in JSON Schema, not \`enum\`).
 
-7. **String literal unions.** For TypeBox
-   \`Type.Union([Type.Literal('a'), Type.Literal('b')])\`, use individual
-   Literals joined with \`|\`:  \`Literal['a'] | Literal['b']\`.
-   This produces \`anyOf\` with \`const\` entries in the JSON Schema.
-   Do NOT use \`Literal['a', 'b']\` — that produces \`enum\` instead of
-   \`anyOf\`, which may not match.
+8. **Intersections.** Flatten all properties into a single BaseModel.
 
-8. **Intersections.** For \`Type.Intersect([A, B])\`, flatten all properties
-   into a single BaseModel. Do NOT try to represent \`allOf\` in Pydantic.
-   The verifier normalises \`allOf\` by merging schemas, so a flat model
-   is correct.  Do NOT subclass TypeAdapter or embed raw JSON to handle
-   \`allOf\` — just merge all properties into one model.
-
-9. **Error deduplication within a service.** Many procedures in a service
-   share the same error types (e.g. all filesystem operations share
-   \`NotFoundError\`, \`PermissionDeniedError\`, etc.).  Define each unique
-   error class ONCE at the top of the service file, then reference it in
-   every procedure's error union.  Do NOT create separate copies like
-   \`ReadNotFoundError\`, \`WriteNotFoundError\`, \`MkdirNotFoundError\` — if
-   they have the same \`code\` literal and fields, they are the same class.
+9. **Error deduplication.** Same \`code\` literal + same fields = same class.
+   Define once at the top of the service file.
 
 
 ### The _schema_map.py module
 
-This is **critical for verification**. It must export \`SCHEMA_MAP\`:
+Exports \`SCHEMA_MAP\` — a nested dict of service → procedure → adapters:
 
 \`\`\`python
-from pydantic import TypeAdapter
-# Import adapters from each service module...
-from .health_check import (
-    PingInputAdapter, PingOutputAdapter, PingErrorsAdapter,
-)
-# ... etc for every service
-
 SCHEMA_MAP: dict = {
     "<serviceName>": {
         "procedures": {
@@ -495,13 +370,10 @@ SCHEMA_MAP: dict = {
             }
         }
     },
-    # ... every service and every procedure
 }
 \`\`\`
 
-Every service and every procedure from schema.json must be represented.
-The TypeAdapter wrappers let the verification script call \`.json_schema()\`
-and compare against the original.
+Every service and procedure from schema.json must be represented.
 
 
 ## Verification
@@ -510,176 +382,133 @@ After generating all files, run:
 
     ./verify schema.json generated
 
-A Python venv with pydantic is already set up at \`.venv/\`.
-Always use \`.venv/bin/python\` to run Python scripts directly.
-
-The verification script runs two checks:
-
-1. **Code quality check**: Scans all generated \`.py\` files for banned
-   patterns (RootModel, make_schema_model, schema overrides, raw JSON Schema
-   dicts, etc.). If any are found, it fails immediately with detailed messages
-   telling you which files contain which banned patterns.
-
-2. **Schema comparison**: Loads schema.json and compares it against
-   \`TypeAdapter(Model).json_schema()\` output for every procedure, after
-   normalising both sides (stripping metadata, resolving refs, normalising
-   nullable types, handling Uint8Array, sorting unions).
-
 Exit codes: 0 = success, 1 = mismatches, 2 = import error or banned patterns.
 
-**If it fails, read the errors carefully, fix the models, and re-run.
-Repeat until verification passes.**
+**If it fails, read the errors, fix the models, and re-run.**
 
-### Known schema quirks the verifier handles
+### What the verifier normalises (so you don't need to worry about these)
 
-- Pydantic adds \`title\` fields — verifier strips them
-- Pydantic uses \`$ref\`/\`$defs\` — verifier inlines them
-- Pydantic's \`X | None\` produces \`anyOf: [X, null]\` — verifier strips the
-  null variant (TypeBox Optional just means "not required", not nullable)
-- TypeBox includes \`"type": "string"\` alongside \`"const": "foo"\` — verifier
-  strips \`type\` when \`const\` is present
-- TypeBox uses \`"type": "Uint8Array"\` — verifier normalises to \`"string"\`
-- Pydantic discriminated unions emit a \`discriminator\` key — verifier strips it
-- TypeBox \`additionalProperties\` — verifier strips it
-- Pydantic \`Literal['a', 'b']\` produces \`enum\` — verifier normalises
-  \`enum\` to \`anyOf\` with individual \`const\` entries
+- \`title\` fields — stripped
+- \`$ref\`/\`$defs\` — inlined
+- \`X | None\` → strips null variant (TypeBox Optional = not required, not nullable)
+- \`const\` + \`type\` → strips \`type\` (redundant when \`const\` present)
+- \`Uint8Array\` → normalised to \`string\`
+- \`discriminator\` metadata — stripped
+- \`additionalProperties\` — stripped
+- \`enum\` → normalised to \`anyOf\` with \`const\` entries
+- \`allOf\` → flattened into merged object
 
-Because of these normalisations, use \`bytes\` for Uint8Array fields and your
-preferred Literal style for string unions. The verifier handles the rest.
-
-### How the verifier handles allOf (intersections)
-
-When comparing schemas with \`allOf\`, the verifier flattens/merges the
-\`allOf\` entries into a single object schema, then compares.  This means
-if you flatten an \`allOf\` into a single BaseModel (as recommended), the
-schemas will match.  You do NOT need to make Pydantic produce \`allOf\` —
-the verifier normalises both sides.
-
-Do NOT create custom TypeAdapter subclasses or embed raw JSON schemas
-to handle \`allOf\` cases.  Just flatten the properties into one model.
-
-
-## How to approach this
-
-**Take your time.** There are many services and procedures. Work through
-them methodically, one service at a time. This is a LARGE task and it is
-expected to take a long time. Quality matters more than speed.
-
-### Scaffolding is OK — but the final output must be clean
-
-You MAY write a helper script to scaffold the initial file structure from
-schema.json — creating files, stubbing out classes, wiring up the schema map.
-This is a reasonable way to handle 50+ services efficiently.
-
-**However**, the scaffolded output MUST then be improved:
-- Every class name must come from reading the TypeScript source, not from
-  JSON Schema paths.  \`NotFoundError\`, not \`ErrorVariant8\`.
-  \`PingOutput\`, not \`Output2\`.  \`ExitInfo\`, not \`OutputVariant1Variant1\`.
-- Error types with the same structure that appear in multiple procedures
-  within a service (e.g. filesystem errors) should be defined ONCE at the
-  top of the service file and reused.
-- Shared error types across ALL services (the four standard River errors)
-  must come from \`_errors.py\` — do NOT redefine them locally.
-
-If your final output still has numbered names like \`ErrorVariant1\`,
-\`Input2\`, \`OutputVariant1Variant2\`, **the verifier will reject it**.
-The verifier enforces this with a regex — any class name containing
-\`Variant\` followed by a digit will fail.
-
-### Critical: the verifier WILL catch mechanical names
-
-Previous attempts failed because a scaffolding script generated all files
-with numbered names (e.g. \`ReadErrorsVariant1\` through \`ReadErrorsVariant16\`)
-and then never renamed them using the TypeScript source.
-
-The verifier now enforces:
-- **No \`Variant\\d+\` in any class name** (regex enforced)
-- **No redefinition of standard River errors** outside \`_errors.py\`
-- **No \`RiverTypeAdapter\` or \`schema_override\` patterns**
-
-If you write a scaffolding script, it MUST produce clean names from the
-start.  The easiest way: for error classes, read the \`code\` literal from
-the JSON Schema \`const\` field and convert it to PascalCase + "Error"
-(e.g. \`NOT_FOUND\` → \`NotFoundError\`).  For \`$kind\` variants, use the
-kind value.  For input/output, use \`<ProcedureName>Input/Output\`.
-
-### Where names come from
-
-- **Error classes**: Name them after their \`code\` literal.
-  \`code: Literal['NOT_FOUND']\` → \`NotFoundError\`.
-  \`code: Literal['PROCESS_IS_NOT_RUNNING']\` → \`ProcessIsNotRunningError\`.
-- **\`$kind\` variants**: Name them after their kind value, or use the
-  TypeScript schema name if one exists.
-  \`$kind: 'finished'\` → \`FinishedOutput\` or \`ExitInfo\` (from TS).
-- **Input/Output types**: Name them \`<ProcedureName>Input\`,
-  \`<ProcedureName>Output\`, or use the TypeScript schema name.
-  The ping procedure's output → \`PingOutput\`.
-  The artifact create input → \`CreateArtifactInput\` or \`CreateOptions\`
-  (from TS's \`CreateArtifactOptionsSchema\`).
-- **Nested types**: Name them after what they represent.
-  \`PingMetadata\`, \`ServiceConfig\`, \`HealthCheckConfig\` — not
-  \`Input2ArtifactServicesItemProductionHealth\`.
-
-### What NOT to do
-
-- Do NOT look for existing codegen tools or utilities on the filesystem
-- Do NOT leave scaffolded placeholder names in the final output
-- Do NOT create numbered classes (\`ErrorVariant1\`, \`ErrorVariant2\`, ...)
-- Do NOT create path-derived names (\`Input2ArtifactServicesItem...\`)
+Use \`bytes\` for Uint8Array fields.  The verifier handles the rest.
 
 
 ## Step-by-step process
 
-### Phase 1: Understand the landscape
+### Phase 1: Read the TypeScript source (MANDATORY)
 
-1. Read the service registry in the TypeScript source to get the full list
-   of services.
-2. Read 3–4 representative services (pick ones with varied procedure types:
-   rpc, subscription, upload, stream) to learn the patterns.
-3. Inspect a few services in schema.json via \`jq\` to see the JSON Schema
-   structure the verifier compares against.
+This phase is about READING, not writing.  Do not write any Python yet.
+
+1. Read \`${opts.serverSrcPath}/index.ts\` to get the full list of services.
+
+2. Read \`naming_hints.json\` to load the error code → class name mapping.
+
+3. For **every** service directory, read the TypeScript files (\`index.ts\`,
+   \`schemas.ts\`, etc.) and note:
+   - What named schemas are exported (e.g. \`MonitorResponse\`, \`ExitInfo\`,
+     \`FilesystemError\`, \`CreateArtifactOptionsSchema\`)
+   - What shared types are imported from \`lib/\` directories
+   - How procedures are defined and what types they reference
+
+   You don't need to memorise everything — you'll re-read individual services
+   when generating them.  But you need a high-level map of what names exist.
+
+4. Also scan schema.json to understand the structure:
+   \`jq '.services | keys' schema.json\` — list services
+   \`jq '.services.healthCheck' schema.json\` — sample service
 
 ### Phase 2: Shared types
 
-4. Write \`_errors.py\` with the four standard River error models
-   (UncaughtError, UnexpectedDisconnectError, InvalidRequestError, CancelError)
-   and the \`StandardRiverError\` discriminated union.
-5. Scan the TypeScript source for domain types reused across multiple
-   services. Write them as BaseModel classes in \`_common.py\`.
+5. Write \`_errors.py\` with the four standard River error models and the
+   \`StandardRiverError\` discriminated union.
+
+6. Write \`_common.py\` with any domain types reused across multiple services
+   (based on what you found in Phase 1).
 
 ### Phase 3: Service-by-service generation
 
-6. For **each** service, one at a time:
-   a. Read the TypeScript source for that service (\`index.ts\`,
-      \`schemas.ts\`, etc. in its directory).
-   b. Read the corresponding JSON Schema via
-      \`jq '.services.<serviceName>' schema.json\`.
-   c. Write a single \`<service_name>.py\` file containing:
-      - All Pydantic models for every procedure (named after the TS schemas)
-      - Error types shared across the service's procedures (defined once)
-      - The service class with typed async methods
-      - TypeAdapter instances for each procedure
+For **each** service:
 
-   Do this for every single service. Do not skip any.
+7. **Re-read** the TypeScript source for that service (\`index.ts\`,
+   \`schemas.ts\`).  Note the exported schema names.
+
+8. Read the JSON Schema: \`jq '.services.<serviceName>' schema.json\`
+
+9. Write \`<service_name>.py\` containing:
+   - All Pydantic models named after the TypeScript schemas
+   - Error classes named from \`naming_hints.json\`
+   - Shared service-level errors defined once
+   - Service class with typed async methods
+   - TypeAdapter instances
+
+   When a TypeScript file exports \`const FooSchema = Type.Object({...})\`,
+   your Python class should be called \`Foo\` (drop the "Schema" suffix).
+
+   Do this for **every** service.  Do not skip any.
 
 ### Phase 4: Assembly and verification
 
-7. Write \`_schema_map.py\` covering every service and procedure.
-8. Write the top-level \`__init__.py\` with the \`${opts.clientName}\` client class.
-9. Run \`./verify schema.json generated\`
-10. If it fails, read the errors, fix the models, and re-run.
-    Repeat until verification passes.
+10. Write \`_schema_map.py\` covering every service and procedure.
+11. Write \`__init__.py\` with the \`${opts.clientName}\` client class.
+12. Run \`./verify schema.json generated\`
+13. Fix failures and re-run until verification passes.
+
+
+## Previous failures — learn from these
+
+Previous generation attempts failed in specific ways.  Do NOT repeat them:
+
+### Failure 1: Writing a scaffolding script that walks schema.json
+
+The agent wrote \`build_generated.py\` — a Python script that walked
+schema.json and generated all files mechanically.  It never read the
+TypeScript source.  Result: every error class was named by mangling JSON
+paths (\`ReadErrorsVariant1\` through \`ReadErrorsVariant16\`), every type
+had a mechanical name (\`CreateInputArtifactServicesItemDevelopmentRunVariant1\`).
+
+**Do NOT write a generator script.**  Write each service file directly.
+
+### Failure 2: Broken PascalCase conversion for error codes
+
+The agent's scaffolding script converted \`NOT_FOUND\` to \`NOTFOUNDError\`
+(just stripped underscores) instead of \`NotFoundError\` (proper PascalCase).
+Result: \`CGROUPCLEANUPERRORError\`, \`PTYERRORError\`, \`DISKQUOTAEXCEEDEDError\`.
+
+**Use the names from naming_hints.json.** They are already correct.
+
+### Failure 3: Overriding TypeAdapter.json_schema() to cheat verification
+
+The agent created \`RiverTypeAdapter\` with \`schema_override_json\` that
+returned raw JSON Schema instead of letting Pydantic generate it.
+Verification "passed" but the models were wrong.
+
+**Use plain TypeAdapter only.**  Fix the models until they produce correct
+schemas natively.
+
+### Failure 4: Redefining standard errors in every file
+
+\`UncaughtError\`, \`UnexpectedDisconnectError\`, \`InvalidRequestError\`,
+\`CancelError\` were copy-pasted into all 56 service files instead of
+importing from \`_errors.py\`.
+
+**Import from _errors.py.**
 
 
 ## Important notes
 
-- schema.json is large. Don't try to read it all at once.
-  Use \`jq\`, \`head\`, \`grep\`, or read specific services.
-- \`jq '.services | keys' schema.json\` lists all service names.
-- \`jq '.services.<serviceName>' schema.json\` inspects a specific service.
-- When the verifier reports mismatches, look at both the original JSON Schema
-  (from schema.json) and what your Pydantic model produces
-  (\`TypeAdapter(Model).json_schema()\`) to understand the difference.
+- schema.json is large.  Use \`jq\` to read specific services.
+- \`jq '.services | keys' schema.json\` — list all service names
+- \`jq '.services.<name>' schema.json\` — inspect a specific service
+- When the verifier reports mismatches, compare original (from schema.json via
+  \`jq\`) against \`TypeAdapter(Model).json_schema()\` output.
 `.trim();
 }
 
@@ -697,26 +526,24 @@ ${verificationOutput}
 Read the error messages carefully and fix every issue:
 
 - **If there are "BANNED PATTERN" errors:** you used a shortcut that is not
-  allowed. You must rewrite those files with concrete BaseModel subclasses
-  that declare typed fields. No RootModel, no dynamic class creation, no raw
-  JSON Schema dicts embedded in Python code.
+  allowed. Rewrite those files with concrete BaseModel subclasses.
 
-- **If there are schema mismatches:** compare the original JSON Schema
-  (from schema.json via \`jq\`) against what your Pydantic model's
-  \`TypeAdapter.json_schema()\` produces. Common fixes:
-  - Flatten \`Type.Intersect\` / \`allOf\` into a single BaseModel
+- **If there are "BANNED NAME" errors:** your class names are wrong.
+  - For error classes: use the names from \`naming_hints.json\`
+  - For other types: read the TypeScript source for the correct name
+  - Names with 4+ consecutive uppercase letters (e.g. NOTFOUNDError) are
+    banned — use proper PascalCase (NotFoundError)
+
+- **If there are schema mismatches:** compare original JSON Schema
+  (\`jq '.services.<svc>.procedures.<proc>.<facet>' schema.json\`)
+  against \`TypeAdapter(Model).json_schema()\`.  Common fixes:
+  - Flatten \`allOf\` into a single BaseModel
   - Use \`bytes\` for Uint8Array fields
-  - Check that required vs optional fields match the original
-  - Check that field types match (float vs int, str vs bool, etc.)
+  - Check required vs optional fields match
+  - Check field types (float vs int, str vs bool)
 
-After fixing, re-run:
+After fixing, re-run: \`./verify schema.json generated\`
 
-    ./verify schema.json generated
-
-Keep fixing and re-running until verification passes.
-
-Remember: if the output is not clean, readable, and the types are not easily
-understood and used by Python consumers, the output will be discarded and the
-entire generation retried from scratch.
+Keep fixing until verification passes.
 `.trim();
 }
