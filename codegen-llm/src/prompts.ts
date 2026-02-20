@@ -109,8 +109,10 @@ verification fails immediately.
 - Custom \`json_schema()\` methods — only Pydantic's built-in is allowed
 - \`schema_override_json\`, \`schema_override\`, \`_schema_json\`
 - \`SimpleNamespace\`, \`_make_adapter\`, or any fake adapter objects
+- \`WithJsonSchema\` — do NOT attach raw JSON schemas to \`Any\` via annotations
+- \`json.loads(\` — do NOT embed raw JSON schema strings in generated code
 - Loading \`schema.json\` at runtime in \`_schema_map.py\` or any module
-- Raw JSON Schema dicts embedded as Python dict literals
+- Raw JSON Schema dicts embedded as Python dict literals or JSON strings
 - Any helper/utility that builds models from schema dicts at runtime
 
 **Banned naming patterns (regex-enforced):**
@@ -584,6 +586,17 @@ models are never tested.
 **The verifier checks that every adapter is a real \`TypeAdapter\` instance.**
 \`_schema_map.py\` MUST import TypeAdapter instances from service modules.
 Any fake adapter will be rejected.
+
+### Failure 9: WithJsonSchema + json.loads to bypass model verification
+
+The agent used \`TypeAdapter(Annotated[Any, WithJsonSchema(json.loads(...))])\`
+on EVERY adapter.  The raw JSON schema was embedded as a string and passed
+through \`WithJsonSchema\`.  The Pydantic models were decorative — never tested.
+
+**\`WithJsonSchema\` and \`json.loads\` are both banned.**  Every TypeAdapter
+must be \`TypeAdapter(ModelClass)\` where \`ModelClass\` is a BaseModel subclass
+or a union of BaseModel subclasses.  The adapter's \`.json_schema()\` must
+derive entirely from the Pydantic model structure.
 
 
 ## Important notes

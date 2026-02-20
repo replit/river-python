@@ -63,6 +63,8 @@ _BANNED_PATTERNS: list[tuple[str, str]] = [
     ('json.loads(Path', 'Do not load schema.json at runtime — models must produce schemas natively'),
     ('_schema_path', 'Do not reference schema.json at runtime — models must produce schemas natively'),
     ('_schema_doc', 'Do not load the schema document at runtime — models must produce schemas natively'),
+    ('WithJsonSchema', 'Do not use WithJsonSchema — adapters must derive schemas from actual Pydantic models'),
+    ('json.loads(', 'Do not embed raw JSON schemas via json.loads — models must produce schemas natively'),
 ]
 
 # Standard River error class names that must ONLY be defined in _errors.py.
