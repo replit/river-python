@@ -1,4 +1,4 @@
-import { Codex } from "@openai/codex-sdk";
+import { Codex, type ThreadEvent } from "@openai/codex-sdk";
 import { execSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
@@ -77,20 +77,10 @@ export async function runCodegen(opts: CodegenOptions): Promise<void> {
         log(opts, `Prompt length: ${prompt.length} chars`);
       }
 
-      const turn = await thread.run(prompt);
+      const { events } = await thread.runStreamed(prompt);
 
-      if (opts.verbose && turn.finalResponse) {
-        log(
-          opts,
-          `Agent response (truncated): ${turn.finalResponse.slice(0, 500)}`,
-        );
-      }
-
-      if (turn.usage) {
-        log(
-          opts,
-          `Token usage -- input: ${turn.usage.input_tokens}, output: ${turn.usage.output_tokens}`,
-        );
+      for await (const event of events) {
+        printEvent(event, opts);
       }
 
       // Run verification ourselves to confirm state.
@@ -267,5 +257,39 @@ function log(opts: CodegenOptions, msg: string): void {
   // Always print in verbose mode; otherwise only print non-indented lines
   if (opts.verbose || !msg.startsWith("  ")) {
     console.log(msg);
+  }
+}
+
+function printEvent(event: ThreadEvent, opts: CodegenOptions): void {
+  switch (event.type) {
+    case "item.completed": {
+      const item = event.item;
+      if (item.type === "agent_message") {
+        console.log(`\n[agent] ${item.text}\n`);
+      } else if (item.type === "command_execution") {
+        const cmd = "command" in item ? String(item.command) : "";
+        const exit = "exit_code" in item ? item.exit_code : undefined;
+        console.log(`[exec] ${cmd}  (exit ${exit ?? "?"})`);
+      } else if (item.type === "file_change") {
+        const file = "path" in item ? String(item.path) : "";
+        console.log(`[file] ${file}`);
+      } else if (item.type === "reasoning" && opts.verbose) {
+        const text = "text" in item ? String(item.text) : "";
+        console.log(`[think] ${text.slice(0, 200)}`);
+      }
+      break;
+    }
+    case "turn.completed":
+      if (event.usage) {
+        console.log(
+          `[usage] input: ${event.usage.input_tokens}, output: ${event.usage.output_tokens}`,
+        );
+      }
+      break;
+    case "turn.failed":
+      console.error(`[error] ${event.error.message}`);
+      break;
+    default:
+      break;
   }
 }
