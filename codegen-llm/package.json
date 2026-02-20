@@ -1,0 +1,41 @@
+{
+  "name": "@replit/river-codegen-llm",
+  "version": "0.1.0",
+  "description": "LLM-based Python Pydantic type generation from River TypeScript server schemas",
+  "type": "module",
+  "bin": {
+    "codegen-llm": "./bin/codegen-llm.mjs"
+  },
+  "module": "./dist/cli.js",
+  "types": "./dist/cli.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/codegen.js",
+      "types": "./dist/codegen.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "bin"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "build:watch": "tsup --watch",
+    "lint": "tsc --noEmit",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@openai/codex": "^0.104.0",
+    "@openai/codex-sdk": "^0.104.0",
+    "commander": "^13.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "ISC"
+}
