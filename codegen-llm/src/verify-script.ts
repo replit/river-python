@@ -51,7 +51,30 @@ _BANNED_PATTERNS: list[tuple[str, str]] = [
     ('SchemaAdapter', 'Do not use SchemaAdapter wrappers — use TypeAdapter directly'),
     ('make_schema_adapter', 'Do not use make_schema_adapter() — use TypeAdapter directly'),
     ('create_model(', 'Do not use create_model() — define BaseModel classes statically'),
+    ('schema_override_json', 'Do not use schema_override_json — models must produce correct schemas natively'),
+    ('schema_override', 'Do not override json_schema() output — models must produce correct schemas natively'),
+    ('_schema_json', 'Do not cache/embed raw JSON schemas — models must produce correct schemas natively'),
+    ('RiverTypeAdapter', 'Do not subclass TypeAdapter — use TypeAdapter directly with correct models'),
+    ('json.loads(self._', 'Do not return embedded JSON from json_schema() — fix the model instead'),
 ]
+
+# Standard River error class names that must ONLY be defined in _errors.py.
+_STANDARD_ERROR_CLASSES = frozenset({
+    'UncaughtError', 'UnexpectedDisconnectError', 'InvalidRequestError', 'CancelError',
+})
+
+# Regex for banned naming: class names ending in Variant + digits, or
+# names like Input2, Output2, ErrorsVariant3, etc.
+_BANNED_NAME_RE = re.compile(
+    r'^class\\s+'
+    r'('
+    r'\\w*Variant\\d+\\w*'        # any name with VariantN in it
+    r'|\\w*Errors?Variant\\d+'   # ErrorsVariant1, ErrorVariant2, ...
+    r'|(?:Input|Output|Init|Errors?)\\d+'  # Input2, Output3, Errors4
+    r')'
+    r'\\s*\\(',
+    re.MULTILINE,
+)
 
 
 def check_code_quality(generated_dir: Path) -> list[str]:
@@ -68,6 +91,27 @@ def check_code_quality(generated_dir: Path) -> list[str]:
         for pattern, msg in _BANNED_PATTERNS:
             if pattern in content:
                 errors.append(f'[{rel}] BANNED: {msg} (found \\"{pattern}\\")')
+
+        # Check for numbered variant names
+        for m in _BANNED_NAME_RE.finditer(content):
+            class_name = m.group(1)
+            errors.append(
+                f'[{rel}] BANNED NAME: "{class_name}" — class names must be '
+                f'meaningful, not numbered. Name error classes after their '
+                f'code literal (e.g. NotFoundError), $kind variants after '
+                f'their kind value (e.g. FinishedOutput), and types after '
+                f'their TypeScript schema name.'
+            )
+
+        # Check for standard error classes redefined outside _errors.py
+        if rel.name != '_errors.py':
+            for line in content.splitlines():
+                class_match = re.match(r'^class\\s+(\\w+)\\s*\\(', line)
+                if class_match and class_match.group(1) in _STANDARD_ERROR_CLASSES:
+                    errors.append(
+                        f'[{rel}] BANNED: class {class_match.group(1)} must not '
+                        f'be redefined — import it from _errors.py instead'
+                    )
     return errors
 
 
@@ -276,6 +320,69 @@ def _strip_null_variant(node: Any) -> Any:
     return node
 
 
+def _flatten_allof(node: Any) -> Any:
+    """
+    Flatten allOf into a single merged object schema.
+
+    TypeBox Type.Intersect produces allOf in JSON Schema.  Pydantic generates
+    a flat object with all properties merged.  Normalise both to the merged
+    form so they compare equal.
+    """
+    if isinstance(node, dict):
+        out = {}
+        for k, v in node.items():
+            out[k] = _flatten_allof(v)
+
+        if 'allOf' in out and isinstance(out['allOf'], list):
+            merged_props: dict[str, Any] = {}
+            merged_required: list[str] = []
+            merged_pattern_props: dict[str, Any] = {}
+            remaining: dict[str, Any] = {}
+
+            for sub in out['allOf']:
+                if not isinstance(sub, dict):
+                    continue
+                if 'properties' in sub:
+                    merged_props.update(sub['properties'])
+                if 'patternProperties' in sub:
+                    merged_pattern_props.update(sub['patternProperties'])
+                if 'required' in sub and isinstance(sub['required'], list):
+                    merged_required.extend(sub['required'])
+                for sk, sv in sub.items():
+                    if sk not in ('properties', 'patternProperties', 'required', 'type'):
+                        remaining[sk] = sv
+
+            # Carry over keys from the parent that aren't allOf
+            for pk, pv in out.items():
+                if pk == 'allOf':
+                    continue
+                if pk == 'properties':
+                    merged_props.update(pv)
+                elif pk == 'patternProperties':
+                    merged_pattern_props.update(pv)
+                elif pk == 'required' and isinstance(pv, list):
+                    merged_required.extend(pv)
+                elif pk != 'type':
+                    remaining[pk] = pv
+
+            result: dict[str, Any] = {'type': 'object'}
+            if merged_props:
+                result['properties'] = merged_props
+            if merged_pattern_props:
+                result['patternProperties'] = merged_pattern_props
+            if merged_required:
+                result['required'] = list(dict.fromkeys(merged_required))
+            result.update(remaining)
+            return result
+
+        return out
+
+    if isinstance(node, list):
+        return [_flatten_allof(item) for item in node]
+
+    return node
+
+
 def _sort_canonical(node: Any) -> Any:
     """Sort dict keys and union variant lists for stable comparison."""
     if isinstance(node, dict):
@@ -307,6 +414,7 @@ def prepare(schema: Any) -> Any:
     s = _normalise_enum_to_anyof(s)
     s = _normalise_nullable(s)
     s = _strip_null_variant(s)
+    s = _flatten_allof(s)
     s = _sort_canonical(s)
     return s
 

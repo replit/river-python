@@ -65,27 +65,44 @@ If ANY are found, verification fails immediately and you must rewrite.
 - \`SchemaAdapter\` or \`make_schema_adapter()\` wrapper classes
 - \`create_model()\` from pydantic — no dynamic model creation
 - Any "helper" or "utility" that builds models from schema dicts at runtime
+- \`RiverTypeAdapter\` or any custom TypeAdapter subclass — use plain
+  \`TypeAdapter\` only.  Do NOT override \`json_schema()\` in any way.
+- \`schema_override_json\`, \`schema_override\`, or \`_schema_json\` — do NOT
+  embed or cache raw JSON schemas to return from \`json_schema()\`
+- Redefining \`UncaughtError\`, \`UnexpectedDisconnectError\`,
+  \`InvalidRequestError\`, or \`CancelError\` outside of \`_errors.py\` — these
+  standard River errors must be defined ONCE and imported everywhere
 
-**Banned naming patterns:**
-- \`Input2\`, \`Output2\`, \`Init2\` — meaningless suffixed names
-- \`ErrorVariant1\`, \`ErrorVariant2\`, ... — numbered error classes
+**Banned naming patterns (the verifier enforces these with a regex):**
+- \`Variant\\d+\` anywhere in a class name — \`ErrorsVariant1\`, \`OutputVariant2\`,
+  \`AgentExecErrorsVariant3\`, \`ConnectErrorsVariant9\` are ALL banned
+- \`Input2\`, \`Output2\`, \`Init2\`, \`Errors3\` — numbered type suffixes
 - \`OutputVariant1Variant2\` — nested numbering
 - \`Input2ArtifactServicesItemDevelopmentRunVariant1\` — path-based names
   derived from JSON Schema structure
 - Any class name that a developer cannot understand without looking at
   the schema
 
+The verifier scans every class definition with a regex.  If ANY class
+name contains \`Variant\` followed by a digit, verification fails.
+Name error classes after their \`code\` literal, \`$kind\` variants after
+their kind value, and input/output types after the procedure or TS schema.
+
 **Required:**
 - Every Input, Output, and Error type MUST be a concrete \`BaseModel\` subclass
   with explicitly declared, typed fields
 - \`TypeAdapter(MyModel).json_schema()\` must produce correct schemas through
-  Pydantic's own schema generation — NOT through a hardcoded override
+  Pydantic's own native schema generation — NOT through hardcoded overrides
+  or JSON embedding
 - Every class MUST have a meaningful name derived from reading the TypeScript
   source code.  Examples:
   - Error with \`code: Literal['NOT_FOUND']\` → \`NotFoundError\`
   - Error with \`code: Literal['DISK_QUOTA_EXCEEDED']\` → \`DiskQuotaExceededError\`
   - Output with \`$kind: 'finished'\` → \`FinishedOutput\` or \`ExitInfo\` (from TS)
   - A ping procedure's output → \`PingOutput\`, not \`Output2\`
+- The four standard River error classes (UncaughtError, UnexpectedDisconnectError,
+  InvalidRequestError, CancelError) must be defined ONLY in \`_errors.py\` and
+  imported from there in every service module.  Do NOT redefine them.
 
 
 ## File access scope
@@ -442,6 +459,17 @@ utility functions, schema helpers, or dynamic class factories.
 
 8. **Intersections.** For \`Type.Intersect([A, B])\`, flatten all properties
    into a single BaseModel. Do NOT try to represent \`allOf\` in Pydantic.
+   The verifier normalises \`allOf\` by merging schemas, so a flat model
+   is correct.  Do NOT subclass TypeAdapter or embed raw JSON to handle
+   \`allOf\` — just merge all properties into one model.
+
+9. **Error deduplication within a service.** Many procedures in a service
+   share the same error types (e.g. all filesystem operations share
+   \`NotFoundError\`, \`PermissionDeniedError\`, etc.).  Define each unique
+   error class ONCE at the top of the service file, then reference it in
+   every procedure's error union.  Do NOT create separate copies like
+   \`ReadNotFoundError\`, \`WriteNotFoundError\`, \`MkdirNotFoundError\` — if
+   they have the same \`code\` literal and fields, they are the same class.
 
 
 ### The _schema_map.py module
@@ -519,6 +547,17 @@ Repeat until verification passes.**
 Because of these normalisations, use \`bytes\` for Uint8Array fields and your
 preferred Literal style for string unions. The verifier handles the rest.
 
+### How the verifier handles allOf (intersections)
+
+When comparing schemas with \`allOf\`, the verifier flattens/merges the
+\`allOf\` entries into a single object schema, then compares.  This means
+if you flatten an \`allOf\` into a single BaseModel (as recommended), the
+schemas will match.  You do NOT need to make Pydantic produce \`allOf\` —
+the verifier normalises both sides.
+
+Do NOT create custom TypeAdapter subclasses or embed raw JSON schemas
+to handle \`allOf\` cases.  Just flatten the properties into one model.
+
 
 ## How to approach this
 
@@ -540,10 +579,29 @@ This is a reasonable way to handle 50+ services efficiently.
   within a service (e.g. filesystem errors) should be defined ONCE at the
   top of the service file and reused.
 - Shared error types across ALL services (the four standard River errors)
-  must come from \`_errors.py\`.
+  must come from \`_errors.py\` — do NOT redefine them locally.
 
 If your final output still has numbered names like \`ErrorVariant1\`,
-\`Input2\`, \`OutputVariant1Variant2\`, it will be **discarded**.
+\`Input2\`, \`OutputVariant1Variant2\`, **the verifier will reject it**.
+The verifier enforces this with a regex — any class name containing
+\`Variant\` followed by a digit will fail.
+
+### Critical: the verifier WILL catch mechanical names
+
+Previous attempts failed because a scaffolding script generated all files
+with numbered names (e.g. \`ReadErrorsVariant1\` through \`ReadErrorsVariant16\`)
+and then never renamed them using the TypeScript source.
+
+The verifier now enforces:
+- **No \`Variant\\d+\` in any class name** (regex enforced)
+- **No redefinition of standard River errors** outside \`_errors.py\`
+- **No \`RiverTypeAdapter\` or \`schema_override\` patterns**
+
+If you write a scaffolding script, it MUST produce clean names from the
+start.  The easiest way: for error classes, read the \`code\` literal from
+the JSON Schema \`const\` field and convert it to PascalCase + "Error"
+(e.g. \`NOT_FOUND\` → \`NotFoundError\`).  For \`$kind\` variants, use the
+kind value.  For input/output, use \`<ProcedureName>Input/Output\`.
 
 ### Where names come from
 
