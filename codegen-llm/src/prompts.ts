@@ -195,26 +195,61 @@ This script:
 
 **If it fails, read the errors carefully and fix the mismatches.  Then re-run.**
 
+## How to approach this
+
+**Take your time.**  There are many services and many procedures.  That is
+expected — you should work through them methodically, one service at a time.
+Do NOT try to be clever by writing a meta-generator or a script that batch-
+produces models mechanically.  The whole point of using an LLM is that you
+read the TypeScript source for each service, understand how the types are
+named and structured, and write clean idiomatic Pydantic models that match.
+
+This is a large task and it is fine for it to take a long time.  Quality
+matters more than speed.  Work through every service, every procedure.
+
 ## Process
 
-1. Start by reading the service registry in the TypeScript source to get the
-   full list of services.
-2. Read the TypeScript source for a few representative services to understand
-   patterns (pick ones with varied procedure types: rpc, subscription, stream).
-3. Read the serialised schema.json to see the exact JSON Schema structure
-   (use \`head\`, \`jq\`, etc. — the file may be large).
-4. Identify shared types that appear across services.
-5. Generate \`_errors.py\` and \`_common.py\` first.
-6. Generate each service's types, reading the corresponding TypeScript source
-   for naming guidance.
-7. Generate \`_schema_map.py\`.
-8. Generate the top-level \`__init__.py\` with the \`${opts.clientName}\` client class.
+### Phase 1: Understand the landscape
+
+1. Read the service registry in the TypeScript source to get the full list
+   of services.
+2. Read a few representative services' TypeScript source to understand the
+   patterns (pick ones with varied procedure types: rpc, subscription,
+   upload, stream).
+3. Inspect a few services in schema.json via \`jq\` to see the exact JSON
+   Schema structure the verifier will compare against.
+
+### Phase 2: Shared types
+
+4. Identify the shared River error types (\`UNCAUGHT_ERROR\`, etc.) that
+   appear in every procedure.  Write \`_errors.py\`.
+5. Scan the TypeScript source for domain types that are reused across
+   multiple services.  Write \`_common.py\`.
+
+### Phase 3: Service-by-service generation
+
+6. For **each** service, one at a time:
+   a. Read the TypeScript source for that service (the \`index.ts\`,
+      \`schemas.ts\`, \`scaffold.ts\`, etc. in its directory).
+   b. Read the corresponding JSON Schema via
+      \`jq '.services.<serviceName>' schema.json\`.
+   c. Write the Pydantic models for each procedure in that service,
+      using names that mirror the TypeScript definitions.
+   d. Write the service class (\`__init__.py\`) with typed methods.
+
+   Do this for every single service.  Do not skip any.
+
+### Phase 4: Assembly and verification
+
+7. Write \`_schema_map.py\` covering every service and procedure.
+8. Write the top-level \`__init__.py\` with the \`${opts.clientName}\` client class.
 9. Run \`.venv/bin/python verify_schema.py schema.json generated\`
-10. Fix any errors and re-run until verification passes.
+10. If it fails, read the errors, fix the models, and re-run.
+    Repeat until verification passes.
 
 ## Important notes
 
-- The JSON schema file may be very large.  Don't try to read it all at once.
+- The JSON schema file is large.  Don't try to read it all at once.
   Use \`jq\`, \`head\`, \`grep\`, or read specific services.
 - Use \`jq '.services | keys' schema.json\` to list all service names.
 - Use \`jq '.services.<serviceName>' schema.json\` to inspect a specific service.
@@ -226,6 +261,8 @@ This script:
 - For \`Optional[X]\`, Pydantic produces
   \`{"anyOf": [{...X...}, {"type": "null"}]}\` — the verification script
   normalises this.
+- Do NOT write a Python script or code generator that mechanically produces
+  models.  You are the generator.  Read the TypeScript, write the Python.
 `.trim();
 }
 
