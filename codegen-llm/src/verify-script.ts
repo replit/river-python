@@ -58,6 +58,11 @@ _BANNED_PATTERNS: list[tuple[str, str]] = [
     ('json.loads(self._', 'Do not return embedded JSON from json_schema() — fix the model instead'),
     ('JsonAdapter', 'Do not define custom JsonAdapter wrappers — use TypeAdapter directly'),
     ('def json_schema(self', 'Do not define custom json_schema() methods — only Pydantic BaseModel.json_schema() is allowed'),
+    ('SimpleNamespace', 'Do not use SimpleNamespace — use real TypeAdapter instances'),
+    ('_make_adapter', 'Do not create fake adapter factories — use real TypeAdapter instances'),
+    ('json.loads(Path', 'Do not load schema.json at runtime — models must produce schemas natively'),
+    ('_schema_path', 'Do not reference schema.json at runtime — models must produce schemas natively'),
+    ('_schema_doc', 'Do not load the schema document at runtime — models must produce schemas natively'),
 ]
 
 # Standard River error class names that must ONLY be defined in _errors.py.
@@ -561,6 +566,8 @@ def main() -> None:
     sys.path.insert(0, str(generated_dir.parent))
     pkg = generated_dir.name
 
+    from pydantic import TypeAdapter
+
     try:
         sm = importlib.import_module(f'{pkg}._schema_map')
     except Exception as exc:
@@ -609,6 +616,16 @@ def main() -> None:
                     all_errors.append(
                         f'[{svc_name}.{proc_name}.{facet}] '
                         f'generated has no {facet} but original does'
+                    )
+                    continue
+
+                # Verify the adapter is a real pydantic TypeAdapter, not a
+                # duck-typed fake (e.g. SimpleNamespace with a json_schema method)
+                if not isinstance(gen_adapter, TypeAdapter):
+                    all_errors.append(
+                        f'[{svc_name}.{proc_name}.{facet}] adapter is '
+                        f'{type(gen_adapter).__name__}, not a TypeAdapter — '
+                        f'_schema_map.py must use real TypeAdapter instances'
                     )
                     continue
 

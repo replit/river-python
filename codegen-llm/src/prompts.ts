@@ -108,6 +108,8 @@ verification fails immediately.
 - \`JsonAdapter\` or any custom adapter/wrapper class
 - Custom \`json_schema()\` methods — only Pydantic's built-in is allowed
 - \`schema_override_json\`, \`schema_override\`, \`_schema_json\`
+- \`SimpleNamespace\`, \`_make_adapter\`, or any fake adapter objects
+- Loading \`schema.json\` at runtime in \`_schema_map.py\` or any module
 - Raw JSON Schema dicts embedded as Python dict literals
 - Any helper/utility that builds models from schema dicts at runtime
 
@@ -526,6 +528,17 @@ The agent defined a \`JsonAdapter\` class that wraps \`TypeAdapter\` and strips
 The agent produced \`Literal[0] | Literal[1] | Literal[2] | ... | Literal[8]\`
 instead of \`Literal[0, 1, 2, 3, 4, 5, 6, 7, 8]\`.  The chained form is banned.
 Use multi-value \`Literal[...]\` for cleaner, more readable code.
+
+### Failure 8: Fake adapters in _schema_map.py (SimpleNamespace cheat)
+
+The agent made \`_schema_map.py\` load \`schema.json\` at runtime and create
+\`SimpleNamespace\` objects with a \`json_schema()\` method that returns the raw
+schema directly.  This bypasses verification entirely — the actual Pydantic
+models are never tested.
+
+**The verifier checks that every adapter is a real \`TypeAdapter\` instance.**
+\`_schema_map.py\` MUST import TypeAdapter instances from service modules.
+Any fake adapter will be rejected.
 
 
 ## Important notes
