@@ -314,6 +314,51 @@ In Python, merge all properties into one BaseModel.  The verifier flattens
 \`allOf\` during normalisation, so a flat model matches correctly.
 
 
+### Example 7: Shared \`$kind\` with sub-discriminator
+
+Sometimes two variants share the same \`$kind\` value but differ by another
+field (e.g. \`status\`).  You CANNOT use \`Field(discriminator='kind')\` when
+two variants have the same \`kind\` value — Pydantic will raise an error.
+
+\`\`\`json
+{"anyOf": [
+  {"properties": {"$kind": {"const": "toolResult"}, "status": {"const": "ok"}, "result": {}}, ...},
+  {"properties": {"$kind": {"const": "toolResult"}, "status": {"const": "error"}, "error": {...}}, ...},
+  {"properties": {"$kind": {"const": "output"}, ...}, ...}
+]}
+\`\`\`
+
+Solution: nest the sub-discriminated variants into a union, then use the
+outer discriminator only on unique \`$kind\` values:
+
+\`\`\`python
+class ToolResultOk(BaseModel):
+    kind: Literal['toolResult'] = Field(alias='$kind')
+    status: Literal['ok']
+    invocationId: str
+    result: Any
+    model_config = ConfigDict(populate_by_name=True)
+
+class ToolResultError(BaseModel):
+    kind: Literal['toolResult'] = Field(alias='$kind')
+    status: Literal['error']
+    invocationId: str
+    error: ToolResultErrorDetail
+    model_config = ConfigDict(populate_by_name=True)
+
+# Sub-discriminate by status (unique within this group)
+ToolResult = Annotated[ToolResultOk | ToolResultError, Field(discriminator='status')]
+
+# For the outer union, do NOT use discriminator='kind' since
+# toolResult appears twice.  Use a plain union instead:
+EvaluateInput = ToolResultOk | ToolResultError | OutputMessage | ...
+\`\`\`
+
+If ALL \`$kind\` values are unique, you CAN use \`Field(discriminator='kind')\`.
+If ANY \`$kind\` value appears more than once, you MUST NOT use a \`kind\`
+discriminator — use a plain union instead.
+
+
 ## What to generate
 
 Write a complete Python package into: \`generated/\`
