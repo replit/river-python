@@ -52,9 +52,12 @@ You have access to these locations and ONLY these locations:
 1. **Your workspace** (current working directory):
    - \`schema.json\` — serialised River JSON schema (ground truth for verification)
    - \`naming_hints.json\` — pre-computed error and $kind class names (USE THESE)
-   - \`./verify\` — verification tool
+   - \`./verify\` — verification tool (only way to run Python)
    - \`generated/\` — output directory
-   - \`.venv/\` — Python venv with pydantic
+
+   **NOTE:** There is NO Python interpreter in the workspace.  You cannot run
+   Python scripts directly.  The ONLY way to execute Python is \`./verify\`.
+   Write each service file by hand — do not attempt to create or run scripts.
 
 2. **TypeScript server source** (READ-ONLY):
    \`${opts.serverSrcPath}\`
@@ -102,6 +105,8 @@ verification fails immediately.
 - \`RootModel\`, \`__get_pydantic_json_schema__\`, \`create_model()\`
 - \`SchemaAdapter\`, \`make_schema_model\`, \`make_schema_adapter\`
 - \`RiverTypeAdapter\` or any custom TypeAdapter subclass
+- \`JsonAdapter\` or any custom adapter/wrapper class
+- Custom \`json_schema()\` methods — only Pydantic's built-in is allowed
 - \`schema_override_json\`, \`schema_override\`, \`_schema_json\`
 - Raw JSON Schema dicts embedded as Python dict literals
 - Any helper/utility that builds models from schema dicts at runtime
@@ -110,7 +115,8 @@ verification fails immediately.
 - \`Variant\\d+\` anywhere in a class name — ALL banned
 - \`Input2\`, \`Output2\`, \`Errors3\` — numbered suffixes
 - 4+ consecutive uppercase letters: \`NOTFOUNDError\`, \`PTYERRORError\` — banned
-- Long path-derived names: \`CreateInputArtifactServicesItemDevelopmentRunVariant1\`
+- Class names > 60 characters — indicates mechanical path-derived naming
+- Chained \`Literal[x] | Literal[y] | Literal[z]\` — use \`Literal[x, y, z]\` instead
 
 **Banned redefinitions:**
 - Redefining \`UncaughtError\`, \`UnexpectedDisconnectError\`,
@@ -230,7 +236,7 @@ Python — use the **TypeScript names** (\`ExitInfo\`, \`OutputChunk\`):
 class ExitInfo(BaseModel):
     kind: Literal['finished'] = Field(alias='$kind')
     exitCode: int
-    reason: Literal['Errored'] | Literal['Exited'] | Literal['Stopped']
+    reason: Literal['Errored', 'Exited', 'Stopped']
     model_config = ConfigDict(populate_by_name=True)
 
 class OutputChunk(BaseModel):
@@ -345,8 +351,8 @@ generated/
 
 6. **Service classes** wrapping a River client with typed async methods.
 
-7. **String literal unions.** Use individual Literals: \`Literal['a'] | Literal['b']\`
-   (produces \`anyOf\` with \`const\` in JSON Schema, not \`enum\`).
+7. **String/int literal unions.** Use multi-value Literal: \`Literal['a', 'b', 'c']\`
+   or \`Literal[0, 1, 2]\`.  Do NOT chain single-value Literals with \`|\`.
 
 8. **Intersections.** Flatten all properties into a single BaseModel.
 
@@ -501,14 +507,37 @@ importing from \`_errors.py\`.
 
 **Import from _errors.py.**
 
+### Failure 5: Writing scaffolding scripts outside the workspace
+
+The agent wrote \`/tmp/gen_models.py\` — a scaffolding script placed OUTSIDE
+the workspace to dodge the ban.  It used \`.venv/bin/python\` to execute it.
+Result: same terrible mechanical names, stuttered class names 200+ chars long
+(\`ListInstalledPackagesOutputPackagesValueAllItemListInstalled...\`).
+
+**There is no Python interpreter available.  Write files directly.**
+
+### Failure 6: Custom JsonAdapter class to manipulate json_schema() output
+
+The agent defined a \`JsonAdapter\` class that wraps \`TypeAdapter\` and strips
+\`$defs\` keys to game verification.  This is banned — use plain \`TypeAdapter\`.
+
+### Failure 7: Chained Literal[x] | Literal[y] | Literal[z]
+
+The agent produced \`Literal[0] | Literal[1] | Literal[2] | ... | Literal[8]\`
+instead of \`Literal[0, 1, 2, 3, 4, 5, 6, 7, 8]\`.  The chained form is banned.
+Use multi-value \`Literal[...]\` for cleaner, more readable code.
+
 
 ## Important notes
 
+- **No Python in workspace.** You cannot run \`.venv/bin/python\`, \`python3\`,
+  or any Python scripts.  The only executable is \`./verify\`.  Do NOT create
+  venvs, install packages, or write Python scripts to run.
 - schema.json is large.  Use \`jq\` to read specific services.
 - \`jq '.services | keys' schema.json\` — list all service names
 - \`jq '.services.<name>' schema.json\` — inspect a specific service
-- When the verifier reports mismatches, compare original (from schema.json via
-  \`jq\`) against \`TypeAdapter(Model).json_schema()\` output.
+- When the verifier reports mismatches, read the error message carefully and
+  fix the model by hand.
 `.trim();
 }
 

@@ -56,6 +56,8 @@ _BANNED_PATTERNS: list[tuple[str, str]] = [
     ('_schema_json', 'Do not cache/embed raw JSON schemas — models must produce correct schemas natively'),
     ('RiverTypeAdapter', 'Do not subclass TypeAdapter — use TypeAdapter directly with correct models'),
     ('json.loads(self._', 'Do not return embedded JSON from json_schema() — fix the model instead'),
+    ('JsonAdapter', 'Do not define custom JsonAdapter wrappers — use TypeAdapter directly'),
+    ('def json_schema(self', 'Do not define custom json_schema() methods — only Pydantic BaseModel.json_schema() is allowed'),
 ]
 
 # Standard River error class names that must ONLY be defined in _errors.py.
@@ -87,6 +89,16 @@ _ALLCAPS_NAME_RE = re.compile(
 _ALLCAPS_WHITELIST = frozenset({
     # Add known abbreviation-heavy names that are actually correct
 })
+
+# Class names longer than 60 characters indicate mechanical path-derived naming
+# (e.g. ListInstalledPackagesOutputPackagesValueAllItem).
+_MAX_CLASS_NAME_LEN = 60
+
+# Chained single-value Literal pattern: Literal[x] | Literal[y] | Literal[z]
+# This is ugly and should be Literal[x, y, z] instead.
+_CHAINED_LITERAL_RE = re.compile(
+    r'Literal\\[[^\\]]+\\]\\s*\\|\\s*Literal\\[[^\\]]+\\]\\s*\\|\\s*Literal\\[',
+)
 
 
 def check_code_quality(generated_dir: Path) -> list[str]:
@@ -136,6 +148,28 @@ def check_code_quality(generated_dir: Path) -> list[str]:
                         f'[{rel}] BANNED: class {class_match.group(1)} must not '
                         f'be redefined — import it from _errors.py instead'
                     )
+
+        # Check for overly long class names (mechanical path-derived naming)
+        for line in content.splitlines():
+            class_match = re.match(r'^class\\s+(\\w+)\\s*[\\(:]', line)
+            if class_match:
+                name = class_match.group(1)
+                if len(name) > _MAX_CLASS_NAME_LEN:
+                    errors.append(
+                        f'[{rel}] BANNED NAME: "{name}" ({len(name)} chars) — '
+                        f'class names must be under {_MAX_CLASS_NAME_LEN} characters. '
+                        f'Use concise names from the TypeScript source, not '
+                        f'mechanical path-derived names.'
+                    )
+
+        # Check for chained Literal[x] | Literal[y] | Literal[z] (should be Literal[x, y, z])
+        for m in _CHAINED_LITERAL_RE.finditer(content):
+            line_num = content[:m.start()].count('\\n') + 1
+            errors.append(
+                f'[{rel}:{line_num}] BANNED STYLE: chained Literal[x] | Literal[y] | '
+                f'Literal[z] — use Literal[x, y, z] instead for cleaner code'
+            )
+
     return errors
 
 
