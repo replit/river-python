@@ -66,11 +66,26 @@ If ANY are found, verification fails immediately and you must rewrite.
 - \`create_model()\` from pydantic — no dynamic model creation
 - Any "helper" or "utility" that builds models from schema dicts at runtime
 
+**Banned naming patterns:**
+- \`Input2\`, \`Output2\`, \`Init2\` — meaningless suffixed names
+- \`ErrorVariant1\`, \`ErrorVariant2\`, ... — numbered error classes
+- \`OutputVariant1Variant2\` — nested numbering
+- \`Input2ArtifactServicesItemDevelopmentRunVariant1\` — path-based names
+  derived from JSON Schema structure
+- Any class name that a developer cannot understand without looking at
+  the schema
+
 **Required:**
 - Every Input, Output, and Error type MUST be a concrete \`BaseModel\` subclass
   with explicitly declared, typed fields
 - \`TypeAdapter(MyModel).json_schema()\` must produce correct schemas through
   Pydantic's own schema generation — NOT through a hardcoded override
+- Every class MUST have a meaningful name derived from reading the TypeScript
+  source code.  Examples:
+  - Error with \`code: Literal['NOT_FOUND']\` → \`NotFoundError\`
+  - Error with \`code: Literal['DISK_QUOTA_EXCEEDED']\` → \`DiskQuotaExceededError\`
+  - Output with \`$kind: 'finished'\` → \`FinishedOutput\` or \`ExitInfo\` (from TS)
+  - A ping procedure's output → \`PingOutput\`, not \`Output2\`
 
 
 ## File access scope
@@ -78,7 +93,7 @@ If ANY are found, verification fails immediately and you must rewrite.
 You have access to these locations and ONLY these locations:
 
 1. **Your workspace** (current working directory) — contains \`schema.json\`,
-   \`verify_schema.py\`, \`generated/\`, and \`.venv/\`
+    \`./verify\` (verification tool), \`generated/\`, and \`.venv/\`
 2. **TypeScript server source**: \`${opts.serverSrcPath}\`
 ${existingSection}
 **Do NOT attempt to browse, read, or access any other directories on the
@@ -351,11 +366,21 @@ generated/
   _errors.py               # Shared River error types: UncaughtError, UnexpectedDisconnectError,
                            #   InvalidRequestError, CancelError, and the StandardRiverError union
   _common.py               # Shared domain types (BaseModel classes) used across multiple services
-  <service_name>/
-    __init__.py             # Service class with typed async methods
-    <procedure_name>.py     # Input, Output, Errors types + TypeAdapters for that procedure
+  <service_name>.py         # ALL types + service class for that service (one file per service)
   _schema_map.py            # Verification mapping (see below)
 \`\`\`
+
+**One file per service** — each \`<service_name>.py\` contains:
+- All BaseModel classes for every procedure in that service (input, output,
+  init, error types)
+- The service class with typed async methods
+- TypeAdapter instances for each procedure
+- Shared error types for that service (not the standard River errors —
+  those come from \`_errors.py\`)
+
+This keeps related types together so developers can see the full API for a
+service in one place, and makes it natural to share types across procedures
+within a service (e.g. a \`FilesystemError\` union used by multiple procedures).
 
 **Important:** \`_common.py\` must contain ONLY shared BaseModel classes — NOT
 utility functions, schema helpers, or dynamic class factories.
@@ -379,12 +404,14 @@ utility functions, schema helpers, or dynamic class factories.
    \`Annotated[A | B, Field(discriminator='field')]\` where possible.
    For the \`$kind\` pattern, use \`Field(alias='$kind')\` on each variant.
 
-5. **TypeAdapters.** Each procedure module must export typed adapters:
-   \`\`\`python
-   InputAdapter: TypeAdapter[InputModel] = TypeAdapter(InputModel)
-   OutputAdapter: TypeAdapter[OutputModel] = TypeAdapter(OutputModel)
-   ErrorsAdapter: TypeAdapter[ErrorsUnion] = TypeAdapter(ErrorsUnion)
-   \`\`\`
+5. **TypeAdapters.** Each service module must define typed adapters for
+    every procedure in that service:
+    \`\`\`python
+    # Adapters for the "ping" procedure
+    PingInputAdapter: TypeAdapter[PingInput] = TypeAdapter(PingInput)
+    PingOutputAdapter: TypeAdapter[PingOutput] = TypeAdapter(PingOutput)
+    PingErrorsAdapter: TypeAdapter[PingErrors] = TypeAdapter(PingErrors)
+    \`\`\`
 
 6. **Service classes.** Each service wraps a River client and exposes typed
    async methods:
@@ -423,15 +450,19 @@ This is **critical for verification**. It must export \`SCHEMA_MAP\`:
 
 \`\`\`python
 from pydantic import TypeAdapter
-# Import adapters from each procedure module...
+# Import adapters from each service module...
+from .health_check import (
+    PingInputAdapter, PingOutputAdapter, PingErrorsAdapter,
+)
+# ... etc for every service
 
 SCHEMA_MAP: dict = {
     "<serviceName>": {
         "procedures": {
             "<procName>": {
-                "input": TypeAdapter(<InputModel>),
-                "output": TypeAdapter(<OutputModel>),
-                "errors": TypeAdapter(<ErrorsUnion>),
+                "input": <ProcNameInputAdapter>,
+                "output": <ProcNameOutputAdapter>,
+                "errors": <ProcNameErrorsAdapter>,
                 "type": "rpc",
             }
         }
@@ -449,10 +480,10 @@ and compare against the original.
 
 After generating all files, run:
 
-    .venv/bin/python verify_schema.py schema.json generated
+    ./verify schema.json generated
 
 A Python venv with pydantic is already set up at \`.venv/\`.
-Always use \`.venv/bin/python\` to run Python.
+Always use \`.venv/bin/python\` to run Python scripts directly.
 
 The verification script runs two checks:
 
@@ -491,20 +522,52 @@ preferred Literal style for string unions. The verifier handles the rest.
 
 ## How to approach this
 
-**Take your time.** There are many services and many procedures. Work through
+**Take your time.** There are many services and procedures. Work through
 them methodically, one service at a time. This is a LARGE task and it is
 expected to take a long time. Quality matters more than speed.
 
-Do NOT try to be clever:
-- Do NOT write a meta-generator or codegen script
-- Do NOT write a utility that reads JSON and produces classes dynamically
-- Do NOT create "helper functions" that build models from schema dicts
-- Do NOT look for existing codegen tools or utilities on the filesystem
-- DO read each service's TypeScript source, understand the types, and write
-  clean Pydantic BaseModel classes with explicit typed fields
+### Scaffolding is OK — but the final output must be clean
 
-You ARE the code generator. Read the TypeScript. Write the Python. Every model
-must have real fields that a developer can see and understand.
+You MAY write a helper script to scaffold the initial file structure from
+schema.json — creating files, stubbing out classes, wiring up the schema map.
+This is a reasonable way to handle 50+ services efficiently.
+
+**However**, the scaffolded output MUST then be improved:
+- Every class name must come from reading the TypeScript source, not from
+  JSON Schema paths.  \`NotFoundError\`, not \`ErrorVariant8\`.
+  \`PingOutput\`, not \`Output2\`.  \`ExitInfo\`, not \`OutputVariant1Variant1\`.
+- Error types with the same structure that appear in multiple procedures
+  within a service (e.g. filesystem errors) should be defined ONCE at the
+  top of the service file and reused.
+- Shared error types across ALL services (the four standard River errors)
+  must come from \`_errors.py\`.
+
+If your final output still has numbered names like \`ErrorVariant1\`,
+\`Input2\`, \`OutputVariant1Variant2\`, it will be **discarded**.
+
+### Where names come from
+
+- **Error classes**: Name them after their \`code\` literal.
+  \`code: Literal['NOT_FOUND']\` → \`NotFoundError\`.
+  \`code: Literal['PROCESS_IS_NOT_RUNNING']\` → \`ProcessIsNotRunningError\`.
+- **\`$kind\` variants**: Name them after their kind value, or use the
+  TypeScript schema name if one exists.
+  \`$kind: 'finished'\` → \`FinishedOutput\` or \`ExitInfo\` (from TS).
+- **Input/Output types**: Name them \`<ProcedureName>Input\`,
+  \`<ProcedureName>Output\`, or use the TypeScript schema name.
+  The ping procedure's output → \`PingOutput\`.
+  The artifact create input → \`CreateArtifactInput\` or \`CreateOptions\`
+  (from TS's \`CreateArtifactOptionsSchema\`).
+- **Nested types**: Name them after what they represent.
+  \`PingMetadata\`, \`ServiceConfig\`, \`HealthCheckConfig\` — not
+  \`Input2ArtifactServicesItemProductionHealth\`.
+
+### What NOT to do
+
+- Do NOT look for existing codegen tools or utilities on the filesystem
+- Do NOT leave scaffolded placeholder names in the final output
+- Do NOT create numbered classes (\`ErrorVariant1\`, \`ErrorVariant2\`, ...)
+- Do NOT create path-derived names (\`Input2ArtifactServicesItem...\`)
 
 
 ## Step-by-step process
@@ -533,9 +596,11 @@ must have real fields that a developer can see and understand.
       \`schemas.ts\`, etc. in its directory).
    b. Read the corresponding JSON Schema via
       \`jq '.services.<serviceName>' schema.json\`.
-   c. Write Pydantic models for each procedure in that service,
-      naming them after the TypeScript schema definitions.
-   d. Write the service class (\`__init__.py\`) with typed methods.
+   c. Write a single \`<service_name>.py\` file containing:
+      - All Pydantic models for every procedure (named after the TS schemas)
+      - Error types shared across the service's procedures (defined once)
+      - The service class with typed async methods
+      - TypeAdapter instances for each procedure
 
    Do this for every single service. Do not skip any.
 
@@ -543,7 +608,7 @@ must have real fields that a developer can see and understand.
 
 7. Write \`_schema_map.py\` covering every service and procedure.
 8. Write the top-level \`__init__.py\` with the \`${opts.clientName}\` client class.
-9. Run \`.venv/bin/python verify_schema.py schema.json generated\`
+9. Run \`./verify schema.json generated\`
 10. If it fails, read the errors, fix the models, and re-run.
     Repeat until verification passes.
 
@@ -588,7 +653,7 @@ Read the error messages carefully and fix every issue:
 
 After fixing, re-run:
 
-    .venv/bin/python verify_schema.py schema.json generated
+    ./verify schema.json generated
 
 Keep fixing and re-running until verification passes.
 

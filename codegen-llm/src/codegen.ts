@@ -166,10 +166,21 @@ function setupWorkspace(workDir: string, opts: CodegenOptions): void {
   // Copy the serialised schema
   fs.copyFileSync(opts.schemaPath, path.join(workDir, "schema.json"));
 
-  // Write the verification script
-  fs.writeFileSync(path.join(workDir, "verify_schema.py"), VERIFY_SCRIPT, {
-    mode: 0o755,
-  });
+  // Write the verification script OUTSIDE the workspace so the agent
+  // cannot read its source (workspace-write sandbox restricts reads to
+  // the workspace + additionalDirectories).  We place a thin shell
+  // wrapper inside the workspace that the agent can call.
+  const verifyDir = fs.mkdtempSync(path.join(os.tmpdir(), "codegen-verify-"));
+  const verifyScriptPath = path.join(verifyDir, "verify_schema.py");
+  fs.writeFileSync(verifyScriptPath, VERIFY_SCRIPT, { mode: 0o755 });
+
+  // Shell wrapper inside workspace — agent calls this but can't see the
+  // Python source.
+  const wrapper = [
+    "#!/usr/bin/env bash",
+    `exec .venv/bin/python "${verifyScriptPath}" "$@"`,
+  ].join("\n");
+  fs.writeFileSync(path.join(workDir, "verify"), wrapper, { mode: 0o755 });
 
   // Create the output directory the agent writes into
   fs.mkdirSync(path.join(workDir, "generated"), { recursive: true });
@@ -220,9 +231,10 @@ function runVerification(workDir: string): VerifyResult {
     };
   }
 
+  // Use the wrapper script (which calls the external verify_schema.py)
   try {
     const output = execSync(
-      ".venv/bin/python verify_schema.py schema.json generated",
+      "./verify schema.json generated",
       {
         cwd: workDir,
         encoding: "utf8",

@@ -90,13 +90,18 @@ def _resolve_refs(node: Any, defs: dict[str, Any], seen: set[str] | None = None)
     if isinstance(node, dict):
         if '$ref' in node:
             ref = node['$ref']
+            name = None
             if ref.startswith('#/$defs/'):
                 name = ref[len('#/$defs/'):]
-                if name in defs and name not in seen:
-                    seen = seen | {name}
-                    return _resolve_refs(copy.deepcopy(defs[name]), defs, seen)
-            # Unresolvable ref — keep as-is
-            return node
+            elif not ref.startswith('#') and not ref.startswith('http'):
+                # Bare ref like "$ref": "Skill" (TypeBox Type.Recursive $id)
+                name = ref
+            if name and name in defs and name not in seen:
+                seen = seen | {name}
+                return _resolve_refs(copy.deepcopy(defs[name]), defs, seen)
+            # Unresolvable ref — strip it (treat as unconstrained)
+            remaining = {k: v for k, v in node.items() if k != '$ref'}
+            return _resolve_refs(remaining, defs, seen) if remaining else node
 
         out: dict[str, Any] = {}
         local_defs = node.get('$defs', defs)  # prefer local $defs scope
