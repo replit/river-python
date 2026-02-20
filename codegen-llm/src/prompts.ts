@@ -179,7 +179,10 @@ compare against the original.
 
 After generating all files, run:
 
-    python verify_schema.py schema.json generated
+    .venv/bin/python verify_schema.py schema.json generated
+
+A Python venv with pydantic is already set up at \`.venv/\` in the workspace.
+Always use \`.venv/bin/python\` to run Python.
 
 This script:
 1. Loads the original schema.json
@@ -194,9 +197,6 @@ This script:
 
 ## Process
 
-0. First, make sure pydantic is installed:
-   \`pip install 'pydantic>=2.9.0'\`
-   (Skip if it's already available.)
 1. Start by reading the service registry in the TypeScript source to get the
    full list of services.
 2. Read the TypeScript source for a few representative services to understand
@@ -209,7 +209,7 @@ This script:
    for naming guidance.
 7. Generate \`_schema_map.py\`.
 8. Generate the top-level \`__init__.py\` with the \`${opts.clientName}\` client class.
-9. Run \`python verify_schema.py schema.json generated\`
+9. Run \`.venv/bin/python verify_schema.py schema.json generated\`
 10. Fix any errors and re-run until verification passes.
 
 ## Important notes
@@ -243,7 +243,7 @@ ${verificationOutput}
 Please read the error messages carefully, fix the generated Pydantic models
 to resolve every mismatch, and then re-run:
 
-    python verify_schema.py schema.json generated
+    .venv/bin/python verify_schema.py schema.json generated
 
 Keep fixing and re-running until verification passes.
 `.trim();

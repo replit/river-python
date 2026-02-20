@@ -160,20 +160,14 @@ function validatePrerequisites(opts: CodegenOptions): void {
     );
   }
 
-  // Check Python + pydantic are available.  Not fatal — the Codex agent has
-  // full access and can install pydantic itself during the run.
+  // uv must be available (used to manage the workspace venv).
   try {
-    const version = execSync(
-      'python3 -c "import pydantic; print(pydantic.VERSION)"',
-      { encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
-    ).trim();
-    log(opts, `Found pydantic ${version}`);
+    execSync("uv --version", {
+      encoding: "utf8",
+      stdio: ["pipe", "pipe", "pipe"],
+    });
   } catch {
-    console.warn(
-      "Warning: pydantic not found on the host Python.\n" +
-        "The Codex agent will attempt to install it, but you can also run:\n" +
-        "  pip install 'pydantic>=2.9.0'",
-    );
+    throw new Error("uv is required and was not found on PATH.");
   }
 }
 
@@ -188,6 +182,23 @@ function setupWorkspace(workDir: string, opts: CodegenOptions): void {
 
   // Create the output directory the agent writes into
   fs.mkdirSync(path.join(workDir, "generated"), { recursive: true });
+
+  // Create a venv with pydantic via uv so that both the agent and our
+  // host-side verification have a working Python regardless of whether
+  // the system Python is Nix-managed / immutable.
+  log(opts, "Creating Python venv with pydantic...");
+  execSync("uv venv .venv", { cwd: workDir, stdio: "pipe" });
+  execSync("uv pip install 'pydantic>=2.9.0'", {
+    cwd: workDir,
+    stdio: "pipe",
+    timeout: 120_000,
+    env: { ...process.env, VIRTUAL_ENV: `${workDir}/.venv` },
+  });
+  const version = execSync(
+    '.venv/bin/python -c "import pydantic; print(pydantic.VERSION)"',
+    { cwd: workDir, encoding: "utf8", stdio: ["pipe", "pipe", "pipe"] },
+  ).trim();
+  log(opts, `Installed pydantic ${version} in workspace venv`);
 
   // Minimal git init so Codex is happy (belt-and-suspenders alongside
   // skipGitRepoCheck)
@@ -220,7 +231,7 @@ function runVerification(workDir: string): VerifyResult {
 
   try {
     const output = execSync(
-      "python3 verify_schema.py schema.json generated",
+      ".venv/bin/python verify_schema.py schema.json generated",
       {
         cwd: workDir,
         encoding: "utf8",
