@@ -194,6 +194,9 @@ This script:
 
 ## Process
 
+0. First, make sure pydantic is installed:
+   \`pip install 'pydantic>=2.9.0'\`
+   (Skip if it's already available.)
 1. Start by reading the service registry in the TypeScript source to get the
    full list of services.
 2. Read the TypeScript source for a few representative services to understand

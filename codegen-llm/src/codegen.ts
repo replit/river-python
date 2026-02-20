@@ -160,7 +160,8 @@ function validatePrerequisites(opts: CodegenOptions): void {
     );
   }
 
-  // Check Python + pydantic are available
+  // Check Python + pydantic are available.  Not fatal — the Codex agent has
+  // full access and can install pydantic itself during the run.
   try {
     const version = execSync(
       'python3 -c "import pydantic; print(pydantic.VERSION)"',
@@ -168,9 +169,10 @@ function validatePrerequisites(opts: CodegenOptions): void {
     ).trim();
     log(opts, `Found pydantic ${version}`);
   } catch {
-    throw new Error(
-      "Python 3 with pydantic >= 2.9.0 is required.\n" +
-        "Install with:  pip install 'pydantic>=2.9.0'",
+    console.warn(
+      "Warning: pydantic not found on the host Python.\n" +
+        "The Codex agent will attempt to install it, but you can also run:\n" +
+        "  pip install 'pydantic>=2.9.0'",
     );
   }
 }
