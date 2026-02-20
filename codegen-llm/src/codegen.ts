@@ -41,7 +41,7 @@ export async function runCodegen(opts: CodegenOptions): Promise<void> {
     // -----------------------------------------------------------------------
     // 3. Start Codex session
     // -----------------------------------------------------------------------
-    const codex = new Codex({ apiKey: opts.apiKey });
+    const codex = new Codex(opts.apiKey ? { apiKey: opts.apiKey } : {});
 
     // The agent gets its own workspace as the working directory, with
     // additional read access to the server source (and existing client if
@@ -132,9 +132,12 @@ export async function runCodegen(opts: CodegenOptions): Promise<void> {
 // ---------------------------------------------------------------------------
 
 function validatePrerequisites(opts: CodegenOptions): void {
+  // API key is optional — if omitted the Codex CLI will use its locally
+  // stored session (from `codex` → "Sign in with ChatGPT").
   if (!opts.apiKey) {
-    throw new Error(
-      "API key required. Set OPENAI_API_KEY / CODEX_API_KEY or use --api-key.",
+    log(
+      opts,
+      "No API key provided; relying on local Codex CLI authentication.",
     );
   }
 

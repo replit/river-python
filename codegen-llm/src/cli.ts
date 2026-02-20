@@ -80,7 +80,7 @@ program
         rawOpts.apiKey ||
         process.env.OPENAI_API_KEY ||
         process.env.CODEX_API_KEY ||
-        "",
+        undefined,
       verbose: rawOpts.verbose,
     };
 

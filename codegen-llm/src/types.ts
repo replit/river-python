@@ -15,8 +15,8 @@ export interface CodegenOptions {
   effort: "low" | "medium" | "high" | "xhigh";
   /** Maximum number of generation + verification attempts */
   maxAttempts: number;
-  /** OpenAI API key */
-  apiKey: string;
+  /** OpenAI API key (optional — if omitted, uses local Codex CLI auth) */
+  apiKey?: string;
   /** Print verbose output */
   verbose: boolean;
 }
