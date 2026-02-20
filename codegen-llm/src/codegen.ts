@@ -53,7 +53,8 @@ export async function runCodegen(opts: CodegenOptions): Promise<void> {
 
     const thread = codex.startThread({
       model: opts.model,
-      sandboxMode: "danger-full-access",
+      sandboxMode: "workspace-write",
+      approvalPolicy: "never",
       modelReasoningEffort: opts.effort,
       workingDirectory: workDir,
       skipGitRepoCheck: true,
