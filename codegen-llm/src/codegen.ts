@@ -4,7 +4,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 
-import { buildInitialPrompt, buildRetryPrompt } from "./prompts.js";
+import {
+  buildInitialPrompt,
+  buildRetryPrompt,
+  buildPass2InitialPrompt,
+  buildPass2RetryPrompt,
+} from "./prompts.js";
 import type { CodegenOptions } from "./types.js";
 import { VERIFY_SCRIPT } from "./verify-script.js";
 
@@ -14,14 +19,19 @@ export type { CodegenOptions } from "./types.js";
 /**
  * Run the LLM-based code generation pipeline.
  *
- * 1. Validates prerequisites (Python, pydantic).
- * 2. Sets up a workspace directory with the schema + verification script.
- * 3. Launches a Codex agent session with access to the TypeScript server
- *    source and (optionally) the existing Python client.
- * 4. The agent reads the TypeScript source, generates Pydantic models, and
- *    runs the verification script.
- * 5. If verification fails, feeds errors back and retries (up to maxAttempts).
- * 6. On success, copies the generated package to the output directory.
+ * Two-pass architecture:
+ *
+ * **Pass 1 — Correctness:**
+ *   Generate Pydantic models that pass schema verification.  Names may be
+ *   mechanical.  This is the hard structural problem.
+ *
+ * **Pass 2 — Quality:**
+ *   Aggressively refactor the Pass 1 output: rename classes using TypeScript
+ *   source names, deduplicate shared errors, clean up imports.  Must still
+ *   pass verification after refactoring.
+ *
+ * Use `--pass1-only` to stop after Pass 1, or `--pass1-dir` to skip Pass 1
+ * and refactor an existing output.
  */
 export async function runCodegen(opts: CodegenOptions): Promise<void> {
   // -----------------------------------------------------------------------
@@ -30,92 +40,300 @@ export async function runCodegen(opts: CodegenOptions): Promise<void> {
   validatePrerequisites(opts);
 
   // -----------------------------------------------------------------------
-  // 2. Set up workspace
+  // 2. Pass 1 — Correctness
   // -----------------------------------------------------------------------
-  const workDir = fs.mkdtempSync(path.join(os.tmpdir(), "codegen-llm-"));
-  log(opts, `Workspace: ${workDir}`);
+  let pass1WorkDir: string;
+
+  if (opts.pass1Dir) {
+    // Skip Pass 1 — use existing output
+    log(opts, `Skipping Pass 1 — using existing output: ${opts.pass1Dir}`);
+    pass1WorkDir = opts.pass1Dir;
+  } else {
+    pass1WorkDir = fs.mkdtempSync(path.join(os.tmpdir(), "codegen-llm-"));
+    log(opts, `Pass 1 workspace: ${pass1WorkDir}`);
+
+    setupWorkspace(pass1WorkDir, opts);
+
+    const pass1Passed = await runPass1(pass1WorkDir, opts);
+    if (!pass1Passed) {
+      console.error(
+        `\nPass 1 did not pass verification after ${opts.maxAttempts} attempts.`,
+      );
+      console.error(`Partial output preserved at: ${pass1WorkDir}`);
+      // Still copy whatever we have
+      copyOutput(pass1WorkDir, opts);
+      return;
+    }
+
+    // Copy Pass 1 output for reference
+    const pass1OutputDir = opts.outputPath + "-pass1";
+    copyOutput(pass1WorkDir, { ...opts, outputPath: pass1OutputDir });
+    log(opts, `Pass 1 output saved to: ${pass1OutputDir}`);
+  }
+
+  if (opts.pass1Only) {
+    copyOutput(pass1WorkDir, opts);
+    log(opts, `\nPass 1 output written to: ${opts.outputPath} (Pass 2 skipped)`);
+    return;
+  }
+
+  // -----------------------------------------------------------------------
+  // 3. Pass 2 — Quality refactoring
+  // -----------------------------------------------------------------------
+  const pass2WorkDir = fs.mkdtempSync(path.join(os.tmpdir(), "codegen-llm-p2-"));
+  log(opts, `\nPass 2 workspace: ${pass2WorkDir}`);
 
   try {
-    setupWorkspace(workDir, opts);
+    setupPass2Workspace(pass2WorkDir, pass1WorkDir, opts);
 
-    // -----------------------------------------------------------------------
-    // 3. Start Codex session
-    // -----------------------------------------------------------------------
-    const codex = new Codex(opts.apiKey ? { apiKey: opts.apiKey } : {});
+    const pass2Passed = await runPass2(pass2WorkDir, opts);
 
-    // The agent gets its own workspace as the working directory, with
-    // additional read access to the server source (and existing client if
-    // provided) so it can inspect the TypeScript definitions.
-    const additionalDirs: string[] = [opts.serverSrcPath];
-    if (opts.existingClientPath) {
-      additionalDirs.push(opts.existingClientPath);
-    }
-
-    const thread = codex.startThread({
-      model: opts.model,
-      sandboxMode: "workspace-write",
-      approvalPolicy: "never",
-      modelReasoningEffort: opts.effort,
-      workingDirectory: workDir,
-      skipGitRepoCheck: true,
-      additionalDirectories: additionalDirs,
-    });
-
-    // -----------------------------------------------------------------------
-    // 4. Run generation loop
-    // -----------------------------------------------------------------------
-    const initialPrompt = buildInitialPrompt(opts);
-    let lastVerifyOutput = "";
-    let passed = false;
-
-    for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
-      log(opts, `\n--- Attempt ${attempt}/${opts.maxAttempts} ---`);
-
-      const prompt =
-        attempt === 1 ? initialPrompt : buildRetryPrompt(lastVerifyOutput);
-
-      if (opts.verbose) {
-        log(opts, `Prompt length: ${prompt.length} chars`);
-      }
-
-      const { events } = await thread.runStreamed(prompt);
-
-      for await (const event of events) {
-        printEvent(event, opts);
-      }
-
-      // Run verification ourselves to confirm state.
-      const verifyResult = runVerification(workDir);
-      if (verifyResult.passed) {
-        log(opts, "\nVerification PASSED.");
-        passed = true;
-        break;
-      }
-
-      lastVerifyOutput = verifyResult.output;
-      log(
-        opts,
-        `Verification failed (${verifyResult.errorCount} errors). ${
-          attempt < opts.maxAttempts ? "Retrying..." : "No more attempts."
-        }`,
-      );
-    }
-
-    if (!passed) {
+    if (!pass2Passed) {
       console.error(
-        `\nCode generation did not pass verification after ${opts.maxAttempts} attempts.`,
+        `\nPass 2 did not pass verification after ${opts.pass2MaxAttempts ?? opts.maxAttempts} attempts.`,
       );
-      console.error("Partial output preserved for inspection.");
+      console.error("Falling back to Pass 1 output.");
+      // Fall back to Pass 1 output
+      if (!opts.pass1Dir) {
+        copyOutput(pass1WorkDir, opts);
+      }
+    } else {
+      copyOutput(pass2WorkDir, opts);
     }
 
-    // -----------------------------------------------------------------------
-    // 5. Copy output
-    // -----------------------------------------------------------------------
-    copyOutput(workDir, opts);
     log(opts, `\nGenerated package written to: ${opts.outputPath}`);
   } finally {
-    log(opts, `Workspace preserved at: ${workDir}`);
+    log(opts, `Pass 2 workspace preserved at: ${pass2WorkDir}`);
+    if (!opts.pass1Dir) {
+      log(opts, `Pass 1 workspace preserved at: ${pass1WorkDir}`);
+    }
   }
+}
+
+
+/**
+ * Run Pass 1 — correctness-focused generation.
+ * Returns true if verification passed.
+ */
+async function runPass1(workDir: string, opts: CodegenOptions): Promise<boolean> {
+  log(opts, "\n========== PASS 1: Correctness ==========\n");
+
+  const codex = new Codex(opts.apiKey ? { apiKey: opts.apiKey } : {});
+
+  const additionalDirs: string[] = [opts.serverSrcPath];
+  if (opts.existingClientPath) {
+    additionalDirs.push(opts.existingClientPath);
+  }
+
+  const thread = codex.startThread({
+    model: opts.model,
+    sandboxMode: "workspace-write",
+    approvalPolicy: "never",
+    modelReasoningEffort: opts.effort,
+    workingDirectory: workDir,
+    skipGitRepoCheck: true,
+    additionalDirectories: additionalDirs,
+  });
+
+  const initialPrompt = buildInitialPrompt(opts);
+  let lastVerifyOutput = "";
+
+  for (let attempt = 1; attempt <= opts.maxAttempts; attempt++) {
+    log(opts, `\n--- Pass 1 Attempt ${attempt}/${opts.maxAttempts} ---`);
+
+    const prompt =
+      attempt === 1 ? initialPrompt : buildRetryPrompt(lastVerifyOutput);
+
+    if (opts.verbose) {
+      log(opts, `Prompt length: ${prompt.length} chars`);
+    }
+
+    const { events } = await thread.runStreamed(prompt);
+
+    for await (const event of events) {
+      printEvent(event, opts);
+    }
+
+    const verifyResult = runVerification(workDir);
+    if (verifyResult.passed) {
+      log(opts, "\nPass 1 verification PASSED.");
+      return true;
+    }
+
+    lastVerifyOutput = verifyResult.output;
+    log(
+      opts,
+      `Pass 1 verification failed (${verifyResult.errorCount} errors). ${
+        attempt < opts.maxAttempts ? "Retrying..." : "No more attempts."
+      }`,
+    );
+  }
+
+  return false;
+}
+
+
+/**
+ * Set up the Pass 2 workspace by copying Pass 1 output + schema + verify.
+ */
+function setupPass2Workspace(
+  pass2WorkDir: string,
+  pass1WorkDir: string,
+  opts: CodegenOptions,
+): void {
+  // Copy schema.json — try pass1WorkDir first, fall back to opts.schemaPath
+  const pass1Schema = path.join(pass1WorkDir, "schema.json");
+  if (fs.existsSync(pass1Schema)) {
+    fs.copyFileSync(pass1Schema, path.join(pass2WorkDir, "schema.json"));
+  } else {
+    // --pass1-dir points to a standalone package; schema comes from CLI arg
+    fs.copyFileSync(opts.schemaPath, path.join(pass2WorkDir, "schema.json"));
+  }
+
+  // Copy naming_hints.json — try pass1WorkDir, else regenerate
+  const hintsPath = path.join(pass1WorkDir, "naming_hints.json");
+  if (fs.existsSync(hintsPath)) {
+    fs.copyFileSync(hintsPath, path.join(pass2WorkDir, "naming_hints.json"));
+  } else {
+    // Regenerate from schema
+    const namingHints = extractNamingHints(opts.schemaPath);
+    fs.writeFileSync(
+      path.join(pass2WorkDir, "naming_hints.json"),
+      JSON.stringify(namingHints, null, 2),
+    );
+  }
+
+  // Copy the verify wrapper (it points to the external venv/script, so
+  // we need to copy it verbatim)
+  const verifyPath = path.join(pass1WorkDir, "verify");
+  if (fs.existsSync(verifyPath)) {
+    fs.copyFileSync(verifyPath, path.join(pass2WorkDir, "verify"));
+    fs.chmodSync(path.join(pass2WorkDir, "verify"), 0o755);
+  } else {
+    // --pass1-dir was user-supplied; set up fresh verify infrastructure
+    setupVerifyInfra(pass2WorkDir, opts);
+  }
+
+  // Copy the Pass 1 generated package into generated/
+  const pass1Generated = path.join(pass1WorkDir, "generated");
+  const pass1OutputFallback = pass1WorkDir; // --pass1-dir might point directly at the package
+  const srcDir = fs.existsSync(pass1Generated) ? pass1Generated : pass1OutputFallback;
+
+  const destDir = path.join(pass2WorkDir, "generated");
+  fs.cpSync(srcDir, destDir, { recursive: true });
+
+  // Clean up __pycache__ dirs
+  cleanPycache(destDir);
+
+  // Git init for Codex
+  try {
+    execSync("git init && git add -A && git commit -m init --allow-empty", {
+      cwd: pass2WorkDir,
+      stdio: "pipe",
+    });
+  } catch {
+    // Non-fatal
+  }
+}
+
+
+/**
+ * Set up verify infrastructure (venv + wrapper) when not inherited from Pass 1.
+ */
+function setupVerifyInfra(workDir: string, opts: CodegenOptions): void {
+  const verifyDir = fs.mkdtempSync(path.join(os.tmpdir(), "codegen-verify-"));
+  const verifyScriptPath = path.join(verifyDir, "verify_schema.py");
+  fs.writeFileSync(verifyScriptPath, VERIFY_SCRIPT, { mode: 0o755 });
+
+  log(opts, "Creating Python venv with pydantic for verification...");
+  const venvDir = path.join(verifyDir, ".venv");
+  execSync(`uv venv "${venvDir}"`, { cwd: verifyDir, stdio: "pipe" });
+  execSync("uv pip install 'pydantic>=2.9.0'", {
+    cwd: verifyDir,
+    stdio: "pipe",
+    timeout: 120_000,
+    env: { ...process.env, VIRTUAL_ENV: venvDir },
+  });
+  const venvPython = path.join(venvDir, "bin", "python");
+
+  const wrapper = [
+    "#!/usr/bin/env bash",
+    `exec "${venvPython}" "${verifyScriptPath}" "$@"`,
+  ].join("\n");
+  fs.writeFileSync(path.join(workDir, "verify"), wrapper, { mode: 0o755 });
+}
+
+
+/** Recursively remove __pycache__ directories. */
+function cleanPycache(dir: string): void {
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      if (entry.name === "__pycache__") {
+        fs.rmSync(full, { recursive: true });
+      } else {
+        cleanPycache(full);
+      }
+    }
+  }
+}
+
+
+/**
+ * Run Pass 2 — quality-focused refactoring.
+ * Returns true if verification passed after refactoring.
+ */
+async function runPass2(workDir: string, opts: CodegenOptions): Promise<boolean> {
+  log(opts, "\n========== PASS 2: Quality Refactoring ==========\n");
+
+  const codex = new Codex(opts.apiKey ? { apiKey: opts.apiKey } : {});
+  const maxAttempts = opts.pass2MaxAttempts ?? opts.maxAttempts;
+
+  const thread = codex.startThread({
+    model: opts.model,
+    sandboxMode: "workspace-write",
+    approvalPolicy: "never",
+    modelReasoningEffort: opts.effort,
+    workingDirectory: workDir,
+    skipGitRepoCheck: true,
+    additionalDirectories: [opts.serverSrcPath],
+  });
+
+  const initialPrompt = buildPass2InitialPrompt({ serverSrcPath: opts.serverSrcPath });
+  let lastVerifyOutput = "";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    log(opts, `\n--- Pass 2 Attempt ${attempt}/${maxAttempts} ---`);
+
+    const prompt =
+      attempt === 1 ? initialPrompt : buildPass2RetryPrompt(lastVerifyOutput);
+
+    if (opts.verbose) {
+      log(opts, `Prompt length: ${prompt.length} chars`);
+    }
+
+    const { events } = await thread.runStreamed(prompt);
+
+    for await (const event of events) {
+      printEvent(event, opts);
+    }
+
+    const verifyResult = runVerification(workDir);
+    if (verifyResult.passed) {
+      log(opts, "\nPass 2 verification PASSED.");
+      return true;
+    }
+
+    lastVerifyOutput = verifyResult.output;
+    log(
+      opts,
+      `Pass 2 verification failed (${verifyResult.errorCount} errors). ${
+        attempt < maxAttempts ? "Retrying..." : "No more attempts."
+      }`,
+    );
+  }
+
+  return false;
 }
 
 // ---------------------------------------------------------------------------

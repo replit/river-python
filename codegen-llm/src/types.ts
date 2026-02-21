@@ -19,4 +19,20 @@ export interface CodegenOptions {
   apiKey?: string;
   /** Print verbose output */
   verbose: boolean;
+  /**
+   * If set, skip Pass 1 and use this directory as the Pass 1 output.
+   * The directory should contain a previously-generated Python package
+   * that already passes verification.
+   */
+  pass1Dir?: string;
+  /** Maximum attempts for Pass 2 (quality refactoring). Defaults to maxAttempts. */
+  pass2MaxAttempts?: number;
+  /** Skip Pass 2 entirely — only run Pass 1. */
+  pass1Only?: boolean;
+}
+
+/** Options for the Pass 2 quality refactoring prompt builder. */
+export interface Pass2Options {
+  /** Path to the TypeScript server source (for naming context) */
+  serverSrcPath: string;
 }

@@ -21,7 +21,12 @@ program
 program
   .command("generate")
   .description(
-    "Generate a Python Pydantic client from a TypeScript River server",
+    "Generate a Python Pydantic client from a TypeScript River server.\n\n" +
+      "Runs a two-pass pipeline:\n" +
+      "  Pass 1: Generate schema-correct models (names may be mechanical)\n" +
+      "  Pass 2: Aggressively refactor for quality (TS-derived names, dedup)\n\n" +
+      "Use --pass1-only to stop after Pass 1, or --pass1-dir to skip Pass 1\n" +
+      "and refactor an existing output.",
   )
   .requiredOption(
     "--server-src <path>",
@@ -56,8 +61,21 @@ program
   )
   .option(
     "--max-attempts <n>",
-    "Maximum generation + verification attempts",
+    "Maximum generation + verification attempts (Pass 1)",
     "3",
+  )
+  .option(
+    "--pass2-max-attempts <n>",
+    "Maximum verification attempts for Pass 2 (defaults to --max-attempts)",
+  )
+  .option(
+    "--pass1-dir <path>",
+    "Skip Pass 1 — use this directory as pre-generated Pass 1 output",
+  )
+  .option(
+    "--pass1-only",
+    "Only run Pass 1 (correctness), skip Pass 2 (quality refactoring)",
+    false,
   )
   .option(
     "--api-key <key>",
@@ -76,6 +94,13 @@ program
       model: rawOpts.model,
       effort: rawOpts.effort,
       maxAttempts: parseInt(rawOpts.maxAttempts, 10),
+      pass2MaxAttempts: rawOpts.pass2MaxAttempts
+        ? parseInt(rawOpts.pass2MaxAttempts, 10)
+        : undefined,
+      pass1Dir: rawOpts.pass1Dir
+        ? path.resolve(rawOpts.pass1Dir)
+        : undefined,
+      pass1Only: rawOpts.pass1Only,
       apiKey:
         rawOpts.apiKey ||
         process.env.OPENAI_API_KEY ||
