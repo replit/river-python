@@ -65,6 +65,11 @@ _BANNED_PATTERNS: list[tuple[str, str]] = [
     ('_schema_doc', 'Do not load the schema document at runtime — models must produce schemas natively'),
     ('WithJsonSchema', 'Do not use WithJsonSchema — adapters must derive schemas from actual Pydantic models'),
     ('json.loads(', 'Do not embed raw JSON schemas via json.loads — models must produce schemas natively'),
+    ('_bind_reference', 'Do not bind/replace json_schema methods with reference schema data'),
+    ('_load_reference', 'Do not load reference schema data at runtime'),
+    ('.json_schema = ', 'Do not monkey-patch .json_schema on TypeAdapter instances'),
+    ('frozen_schema', 'Do not cache frozen schema copies — models must produce correct schemas natively'),
+    ('adapter.json_schema', 'Do not reassign adapter.json_schema — TypeAdapters must derive schemas from models'),
 ]
 
 # Standard River error class names that must ONLY be defined in _errors.py.
@@ -80,6 +85,8 @@ _BANNED_NAME_RE = re.compile(
     r'\\w*Variant\\d+\\w*'        # any name with VariantN in it
     r'|\\w*Errors?Variant\\d+'   # ErrorsVariant1, ErrorVariant2, ...
     r'|(?:Input|Output|Init|Errors?)\\d+'  # Input2, Output3, Errors4
+    r'|\\w+Duplicate\\w*'         # FooDuplicate — reuse the same class instead
+    r'|\\w+Triplicate\\w*'        # FooTriplicate — reuse the same class instead
     r')'
     r'\\s*\\(',
     re.MULTILINE,
@@ -176,6 +183,52 @@ def check_code_quality(generated_dir: Path) -> list[str]:
                 f'[{rel}:{line_num}] BANNED STYLE: chained Literal[x] | Literal[y] | '
                 f'Literal[z] — use Literal[x, y, z] instead for cleaner code'
             )
+
+        # Check for duplicate field declarations within a class
+        _field_re = re.compile(r'^    (\\w+)\\s*:', re.MULTILINE)
+        current_class: str | None = None
+        class_fields: dict[str, list[int]] = {}
+        for line_idx, line in enumerate(content.splitlines(), 1):
+            class_match = re.match(r'^class\\s+(\\w+)', line)
+            if class_match:
+                # Report duplicates from previous class
+                if current_class and class_fields:
+                    for field_name, lines in class_fields.items():
+                        if len(lines) > 1:
+                            errors.append(
+                                f'[{rel}:{lines[1]}] DUPLICATE FIELD: '
+                                f'{current_class}.{field_name} declared on lines '
+                                f'{", ".join(str(ln) for ln in lines)} — remove the duplicate'
+                            )
+                current_class = class_match.group(1)
+                class_fields = {}
+            elif current_class and line and not line.startswith(' ') and not line.startswith('#'):
+                # End of class body (non-indented, non-empty line)
+                if class_fields:
+                    for field_name, lines in class_fields.items():
+                        if len(lines) > 1:
+                            errors.append(
+                                f'[{rel}:{lines[1]}] DUPLICATE FIELD: '
+                                f'{current_class}.{field_name} declared on lines '
+                                f'{", ".join(str(ln) for ln in lines)} — remove the duplicate'
+                            )
+                current_class = None
+                class_fields = {}
+            elif current_class:
+                field_match = _field_re.match(line)
+                if field_match:
+                    fname = field_match.group(1)
+                    if fname != 'model_config':  # model_config is special
+                        class_fields.setdefault(fname, []).append(line_idx)
+        # Check the last class in the file
+        if current_class and class_fields:
+            for field_name, lines in class_fields.items():
+                if len(lines) > 1:
+                    errors.append(
+                        f'[{rel}:{lines[1]}] DUPLICATE FIELD: '
+                        f'{current_class}.{field_name} declared on lines '
+                        f'{", ".join(str(ln) for ln in lines)} — remove the duplicate'
+                    )
 
     return errors
 
@@ -448,6 +501,42 @@ def _flatten_allof(node: Any) -> Any:
     return node
 
 
+def _dedup_anyof(node: Any) -> Any:
+    """
+    Deduplicate structurally identical variants in anyOf/oneOf arrays.
+
+    The original schema.json sometimes contains the same error variant
+    multiple times in an anyOf (e.g. UNCAUGHT_ERROR appears in both the
+    service-specific error union and the standard River errors, and when
+    these are composed, duplicates appear).  Pydantic discriminated unions
+    require unique types per discriminator value, so the agent was forced
+    to create FooErrorDuplicate / FooErrorTriplicate classes — which is ugly.
+
+    By deduplicating at normalisation time, the agent can reuse the same
+    error class in a plain union and verification still passes.
+    """
+    if isinstance(node, dict):
+        out = {}
+        for k, v in node.items():
+            if k in ('anyOf', 'oneOf') and isinstance(v, list):
+                deduped: list[Any] = []
+                seen: set[str] = set()
+                for item in (_dedup_anyof(i) for i in v):
+                    key = json.dumps(item, sort_keys=True)
+                    if key not in seen:
+                        seen.add(key)
+                        deduped.append(item)
+                out[k] = deduped
+            else:
+                out[k] = _dedup_anyof(v)
+        return out
+
+    if isinstance(node, list):
+        return [_dedup_anyof(item) for item in node]
+
+    return node
+
+
 def _sort_canonical(node: Any) -> Any:
     """Sort dict keys and union variant lists for stable comparison."""
     if isinstance(node, dict):
@@ -480,6 +569,7 @@ def prepare(schema: Any) -> Any:
     s = _normalise_nullable(s)
     s = _strip_null_variant(s)
     s = _flatten_allof(s)
+    s = _dedup_anyof(s)
     s = _sort_canonical(s)
     return s
 

@@ -85,12 +85,29 @@ code and every \`$kind\` value found in schema.json:
     "output": "Output",
     "result": "Result",
     ...
+  },
+  "tsExportNames": {
+    "shellExec": ["ExitInfo", "OutputChunk", "MonitorResponse", "ShellOutput", ...],
+    "artifact": ["Artifact", "CreateArtifactOptions", ...],
+    ...
+  },
+  "tsSharedExportNames": {
+    "lib/fs": ["FilesystemError"],
+    "lib/shell": ["ShellOutput", "ShellError"],
+    ...
   }
 }
 \`\`\`
 
 **You MUST use the exact class names from this file** for error classes and
 \`$kind\` variants.  Do NOT invent your own PascalCase conversion.
+
+**For data types**, check \`tsExportNames\` and \`tsSharedExportNames\`.  These
+are names extracted from the TypeScript source (with the "Schema" suffix
+removed).  When you see a TypeBox schema in a service's \`schemas.ts\` named
+e.g. \`ExitInfo\`, the matching entry will appear in
+\`tsExportNames["shellExec"]\` as \`"ExitInfo"\`.  **Use these names for your
+Python classes** instead of mechanical path-derived names.
 
 The verifier rejects class names with 4+ consecutive uppercase letters
 (e.g. \`NOTFOUNDError\`, \`CGROUPCLEANUPERRORError\` — these are BANNED).
@@ -112,10 +129,14 @@ verification fails immediately.
 - \`WithJsonSchema\` — do NOT attach raw JSON schemas to \`Any\` via annotations
 - \`json.loads(\` — do NOT embed raw JSON schema strings in generated code
 - Loading \`schema.json\` at runtime in \`_schema_map.py\` or any module
+- Monkey-patching \`.json_schema\` on TypeAdapter instances (\`.json_schema = \`)
+- \`_bind_reference\`, \`_load_reference\`, \`frozen_schema\` — do NOT replace
+  adapter schemas with reference data from schema.json
 - Raw JSON Schema dicts embedded as Python dict literals or JSON strings
 - Any helper/utility that builds models from schema dicts at runtime
 
 **Banned naming patterns (regex-enforced):**
+- \`Duplicate\` or \`Triplicate\` in a class name — reuse the same class instead
 - \`Variant\\d+\` anywhere in a class name — ALL banned
 - \`Input2\`, \`Output2\`, \`Errors3\` — numbered suffixes
 - 4+ consecutive uppercase letters: \`NOTFOUNDError\`, \`PTYERRORError\` — banned
@@ -406,7 +427,10 @@ generated/
 8. **Intersections.** Flatten all properties into a single BaseModel.
 
 9. **Error deduplication.** Same \`code\` literal + same fields = same class.
-   Define once at the top of the service file.
+   Define once at the top of the service file.  The verifier deduplicates
+   structurally identical \`anyOf\` variants, so if the same error appears
+   multiple times in a composed union, **reuse the same class** — do NOT
+   create \`FooDuplicate\` or \`FooTriplicate\` copies.
 
 
 ### The _schema_map.py module
@@ -430,6 +454,16 @@ SCHEMA_MAP: dict = {
 
 Every service and procedure from schema.json must be represented.
 
+**CRITICAL:** \`_schema_map.py\` must ONLY import TypeAdapter instances from
+the service modules and assemble them into the dict.  It must NOT:
+- Load \`schema.json\` at runtime
+- Monkey-patch \`.json_schema\` methods on adapters
+- Use \`copy.deepcopy\` to cache reference schemas
+- Contain any function named \`_bind_reference_schemas\` or \`_load_reference_services\`
+
+The adapters' \`.json_schema()\` output must come entirely from the Pydantic
+models they wrap.  If verification fails, fix the **models**, not the schema map.
+
 
 ## Verification
 
@@ -452,6 +486,13 @@ Exit codes: 0 = success, 1 = mismatches, 2 = import error or banned patterns.
 - \`additionalProperties\` — stripped
 - \`enum\` → normalised to \`anyOf\` with \`const\` entries
 - \`allOf\` → flattened into merged object
+- \`anyOf\` / \`oneOf\` → structurally identical variants deduplicated
+
+The verifier deduplicates \`anyOf\` variants, so if the same error type
+(e.g. \`UncaughtError\`) appears multiple times in a composed error union,
+**reuse the same Python class** — do NOT create \`UncaughtErrorDuplicate\`
+or similar copies.  Use a plain union (not discriminated) when the same
+discriminator value appears more than once.
 
 Use \`bytes\` for Uint8Array fields.  The verifier handles the rest.
 
@@ -721,6 +762,27 @@ actual models are never tested through the schema map.  After refactoring,
 Many files import \`StringConstraints\`, \`ConfigDict\`, etc. without using them.
 Clean up.
 
+### 7. Duplicate/Triplicate error classes
+Classes like \`UncaughtErrorDuplicate\`, \`NotFoundErrorDuplicate\`,
+\`UncaughtErrorTriplicate\` exist because the same error code appears
+multiple times in composed \`anyOf\` unions, and Pydantic discriminated
+unions require unique types.  The verifier now **deduplicates structurally
+identical anyOf variants**, so you can reuse the same error class.
+**Delete all \`*Duplicate\` and \`*Triplicate\` classes.**  Use the original
+class in a plain union (without \`Field(discriminator=...)\`) when the same
+discriminator value appears more than once.
+
+### 8. Duplicate field declarations
+Some classes have the same field declared twice (e.g. \`extras: Foo\` on two
+consecutive lines).  Python silently shadows the first.  The verifier now
+catches this.  **Remove duplicate field declarations.**
+
+### 9. Data type names not from TypeScript source
+Top-level schema names like \`ExitInfo\`, \`MonitorResponse\`, \`ShellOutput\`
+from the TypeScript source don't appear — everything has path-derived names.
+Check \`naming_hints.json\` → \`tsExportNames\` for pre-extracted names per
+service, and \`tsSharedExportNames\` for shared lib/ types.
+
 
 ## File access scope
 
@@ -739,25 +801,35 @@ Python is \`./verify\`.  Do NOT write or run Python scripts.
 
 ## How to approach the refactoring
 
-### Phase 1: Study the TypeScript source to build a naming map
+### Phase 1: Study naming_hints.json and TypeScript source
 
-Before changing any Python code, read the TypeScript source systematically:
+Before changing any Python code:
 
-1. Read \`${opts.serverSrcPath}/index.ts\` to get the service list.
+1. **Read \`naming_hints.json\`** — it contains:
+   - \`errorCodeToClassName\`: error code → Python class name mapping
+   - \`kindValueToClassName\`: \`$kind\` value → class name prefix
+   - \`tsExportNames\`: per-service list of TypeBox schema names from TS source
+     (e.g. \`"shellExec": ["ExitInfo", "OutputChunk", "MonitorResponse"]\`)
+   - \`tsSharedExportNames\`: shared lib/ TypeBox schema names
+     (e.g. \`"lib/fs": ["FilesystemError"]\`)
 
-2. For each service, read its \`schemas.ts\` and \`index.ts\`.  Build a mental
-   map of:
-   - **Named exports**: \`export const ExitInfo = Type.Object({...})\` →
-     the Python class should be called \`ExitInfo\`
+   **Use these names** to rename Python classes.  The \`tsExportNames\` entries
+   are the authoritative TypeScript names with "Schema" suffix already removed.
+
+2. Read \`${opts.serverSrcPath}/index.ts\` to get the service list.
+
+3. For each service, read its \`schemas.ts\` and \`index.ts\`.  Cross-reference
+   with \`tsExportNames[serviceName]\` to confirm which TS names map to which
+   Python classes.  Look for:
+   - **Named exports**: match to entries in \`tsExportNames\`
    - **Union variant names**: if TS has \`const MonitorResponse = Type.Union([
      NotStartedState, RunningState, FinishedState])\`, those variant names
      should appear in Python
-   - **Shared types in lib/**: \`lib/fs/errors.ts\`, \`lib/shell/schemas.ts\`
-     — these define types used across many services
+   - **Shared types in lib/**: match to entries in \`tsSharedExportNames\`
 
-3. Read the shared \`lib/\` directories:
+4. Read the shared \`lib/\` directories:
    - \`${opts.serverSrcPath}/../lib/\` or \`${opts.serverSrcPath}/lib/\` if it exists
-   - Note which error types and data types are shared
+   - Cross-reference with \`tsSharedExportNames\`
 
 ### Phase 2: Refactor shared types
 
@@ -806,8 +878,15 @@ For **each** service file:
 
 ### Phase 4: Rebuild _schema_map.py and verify
 
-14. **Rewrite \`_schema_map.py\`** to import TypeAdapters from the refactored
-    service modules.  Do NOT use monkey-patched adapters or raw dicts.
+14. **Rewrite \`_schema_map.py\`** to be a simple import-and-assemble module:
+    - Import TypeAdapter instances from each service module
+    - Assemble them into the \`SCHEMA_MAP\` dict
+    - Do NOT load \`schema.json\` at runtime
+    - Do NOT use AST parsing, \`inspect\`, or runtime introspection
+    - Do NOT monkey-patch \`.json_schema\` on any adapter
+    - Do NOT use \`_bind_reference_schemas\`, \`_load_reference_services\`,
+      \`frozen_schema\`, \`copy.deepcopy\`, or any schema override mechanism
+    - The \`_schema_map.py\` should be ~200 lines of straightforward imports
 
 15. **Update \`__init__.py\`** if any service class names changed.
 
@@ -855,6 +934,25 @@ Exit 0 = pass.  Must pass when you're done.
 - Don't skip services.  Every service file must be reviewed and improved.
 - Don't break imports.  If you move a class from \`service.py\` to
   \`_errors.py\`, update every file that used the local definition.
+
+### Run 10 failures (most recent):
+
+- **\`*Duplicate\` / \`*Triplicate\` error classes** — \`UncaughtErrorDuplicate\`,
+  \`NotFoundErrorDuplicate\`, etc.  These are BANNED.  The verifier now
+  deduplicates \`anyOf\` variants, so just reuse the same class.  If the same
+  discriminator value appears more than once in a union, use a plain union
+  (no \`Field(discriminator=...)\`).
+
+- **Monkey-patched \`_schema_map.py\`** — \`_bind_reference_schemas()\` loaded
+  \`schema.json\` and replaced each adapter's \`.json_schema\` with a lambda.
+  This is BANNED.  Write a simple import-and-assemble schema map.
+
+- **Duplicate field declarations** — \`ParseError\` had \`extras: ParseErrorExtras\`
+  on two consecutive lines.  This is now caught by the verifier.
+
+- **TS export names still missing** — Classes were still named with path-derived
+  mechanical names instead of \`ExitInfo\`, \`MonitorResponse\`, etc.  Use
+  \`naming_hints.json\` → \`tsExportNames\` for the correct names.
 `.trim();
 }
 

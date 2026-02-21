@@ -391,6 +391,17 @@ interface NamingHints {
   standardErrorCodes: string[];
   /** Maps $kind literal values to suggested variant class name prefixes. */
   kindValueToClassName: Record<string, string>;
+  /**
+   * TypeScript export names extracted from the server source.
+   * Maps service directory name → list of exported TypeBox schema names.
+   * e.g. { "shellExec": ["ExitInfo", "OutputChunk", "MonitorResponse", "ShellOutput"] }
+   */
+  tsExportNames: Record<string, string[]>;
+  /**
+   * Shared TypeScript export names from lib/ directories.
+   * e.g. { "lib/fs/errors": ["FilesystemError"], "lib/shell/schemas": ["ShellOutput"] }
+   */
+  tsSharedExportNames: Record<string, string[]>;
 }
 
 /**
@@ -438,7 +449,17 @@ function extractNamingHints(schemaPath: string): NamingHints {
     "CANCEL",
   ];
 
-  return { errorCodeToClassName, standardErrorCodes, kindValueToClassName };
+  // Extract TS export names (empty if no server source provided)
+  const tsExportNames: Record<string, string[]> = {};
+  const tsSharedExportNames: Record<string, string[]> = {};
+
+  return {
+    errorCodeToClassName,
+    standardErrorCodes,
+    kindValueToClassName,
+    tsExportNames,
+    tsSharedExportNames,
+  };
 }
 
 /** Recursively find all `const` values under `properties.code` in error schemas. */
@@ -517,6 +538,116 @@ function kindValueToPascal(kind: string): string {
   return kind.charAt(0).toUpperCase() + kind.slice(1);
 }
 
+/**
+ * Regex to match TypeBox schema exports in TypeScript source files.
+ *
+ * Matches patterns like:
+ *   export const FooSchema = Type.Object({
+ *   export const MonitorResponse = Type.Union([
+ *   const ExitInfo = Type.Object({
+ */
+const TS_SCHEMA_EXPORT_RE =
+  /(?:export\s+)?const\s+(\w+)\s*=\s*Type\.\w+\s*[<([\{]/g;
+
+/**
+ * Scan TypeScript source files for exported TypeBox schema names.
+ *
+ * Returns a map of service directory name → list of schema names found,
+ * and a separate map for shared lib/ directory exports.
+ */
+function extractTsExportNames(
+  serverSrcPath: string,
+): { services: Record<string, string[]>; shared: Record<string, string[]> } {
+  const services: Record<string, string[]> = {};
+  const shared: Record<string, string[]> = {};
+
+  if (!fs.existsSync(serverSrcPath)) {
+    return { services, shared };
+  }
+
+  // Scan service directories
+  const entries = fs.readdirSync(serverSrcPath, { withFileTypes: true });
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+
+    const dirPath = path.join(serverSrcPath, entry.name);
+    const names = scanDirForTypeBoxExports(dirPath);
+    if (names.length > 0) {
+      if (entry.name === "lib") {
+        // Recurse into lib subdirectories
+        const libEntries = fs.readdirSync(dirPath, { withFileTypes: true });
+        for (const libEntry of libEntries) {
+          if (!libEntry.isDirectory()) continue;
+          const libDirPath = path.join(dirPath, libEntry.name);
+          const libNames = scanDirForTypeBoxExports(libDirPath);
+          if (libNames.length > 0) {
+            shared[`lib/${libEntry.name}`] = libNames;
+          }
+        }
+      } else {
+        services[entry.name] = names;
+      }
+    }
+  }
+
+  // Also scan lib/ one level up from serverSrcPath (common pattern)
+  const parentLib = path.join(serverSrcPath, "..", "lib");
+  if (fs.existsSync(parentLib)) {
+    const libEntries = fs.readdirSync(parentLib, { withFileTypes: true });
+    for (const libEntry of libEntries) {
+      if (!libEntry.isDirectory()) continue;
+      const libDirPath = path.join(parentLib, libEntry.name);
+      const libNames = scanDirForTypeBoxExports(libDirPath);
+      if (libNames.length > 0) {
+        const key = `lib/${libEntry.name}`;
+        shared[key] = [...(shared[key] ?? []), ...libNames];
+      }
+    }
+  }
+
+  return { services, shared };
+}
+
+/**
+ * Scan a directory's .ts files for TypeBox export names.
+ * Returns deduplicated list of names, dropping "Schema" suffix.
+ */
+function scanDirForTypeBoxExports(dirPath: string): string[] {
+  const names = new Set<string>();
+
+  let files: string[];
+  try {
+    files = fs.readdirSync(dirPath).filter((f) => f.endsWith(".ts"));
+  } catch {
+    return [];
+  }
+
+  for (const file of files) {
+    const filePath = path.join(dirPath, file);
+    let content: string;
+    try {
+      content = fs.readFileSync(filePath, "utf8");
+    } catch {
+      continue;
+    }
+
+    TS_SCHEMA_EXPORT_RE.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = TS_SCHEMA_EXPORT_RE.exec(content)) !== null) {
+      const name = match[1]!;
+      // Drop "Schema" suffix for the Python class name suggestion
+      const pythonName = name.replace(/Schema$/, "");
+      // Skip if the name looks like a local variable (starts with lowercase
+      // single letter) or is too short to be meaningful
+      if (pythonName.length >= 3 && /^[A-Z]/.test(pythonName)) {
+        names.add(pythonName);
+      }
+    }
+  }
+
+  return [...names].sort();
+}
+
 function setupWorkspace(workDir: string, opts: CodegenOptions): void {
   // Copy the serialised schema
   fs.copyFileSync(opts.schemaPath, path.join(workDir, "schema.json"));
@@ -525,6 +656,18 @@ function setupWorkspace(workDir: string, opts: CodegenOptions): void {
   // implement PascalCase conversion (which it keeps getting wrong).
   log(opts, "Extracting naming hints from schema...");
   const namingHints = extractNamingHints(opts.schemaPath);
+
+  // Scan TypeScript source for exported schema names
+  log(opts, "Scanning TypeScript source for export names...");
+  const tsNames = extractTsExportNames(opts.serverSrcPath);
+  namingHints.tsExportNames = tsNames.services;
+  namingHints.tsSharedExportNames = tsNames.shared;
+
+  const totalTsNames = Object.values(tsNames.services).reduce(
+    (s, names) => s + names.length,
+    0,
+  ) + Object.values(tsNames.shared).reduce((s, names) => s + names.length, 0);
+
   fs.writeFileSync(
     path.join(workDir, "naming_hints.json"),
     JSON.stringify(namingHints, null, 2),
@@ -532,7 +675,8 @@ function setupWorkspace(workDir: string, opts: CodegenOptions): void {
   log(
     opts,
     `Extracted ${Object.keys(namingHints.errorCodeToClassName).length} error names, ` +
-      `${Object.keys(namingHints.kindValueToClassName).length} $kind variant names`,
+      `${Object.keys(namingHints.kindValueToClassName).length} $kind variant names, ` +
+      `${totalTsNames} TS export names`,
   );
 
   // Write the verification script OUTSIDE the workspace so the agent
