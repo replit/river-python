@@ -20,7 +20,7 @@ from typing import (
 
 import grpc
 from aiochannel import Channel, ChannelClosed
-from opentelemetry.propagators.textmap import Setter
+from opentelemetry.propagators.textmap import Getter, Setter
 from pydantic import BaseModel, ConfigDict, Field
 
 from replit_river.error_schema import (
@@ -124,6 +124,36 @@ class TransportMessageTracingSetter(Setter[TransportMessage]):
                 carrier.tracing.tracestate = value
             case _:
                 logger.warning("unknown trace propagation key", extra={"key": key})
+
+
+class TransportMessageTracingGetter(Getter[TransportMessage]):
+    """
+    Handles extracting tracing context from an incoming transport message.
+    """
+
+    def get(self, carrier: TransportMessage, key: str) -> list[str] | None:
+        if not carrier.tracing:
+            return None
+        match key:
+            case "traceparent":
+                value = carrier.tracing.traceparent
+            case "tracestate":
+                value = carrier.tracing.tracestate
+            case _:
+                return None
+        if not value:
+            return None
+        return [value]
+
+    def keys(self, carrier: TransportMessage) -> list[str]:
+        if not carrier.tracing:
+            return []
+        keys: list[str] = []
+        if carrier.tracing.traceparent:
+            keys.append("traceparent")
+        if carrier.tracing.tracestate:
+            keys.append("tracestate")
+        return keys
 
 
 class GrpcContext(grpc.aio.ServicerContext, Generic[RequestType, ResponseType]):

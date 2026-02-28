@@ -4,6 +4,8 @@ from typing import Any, Callable, Coroutine, assert_never
 
 import websockets
 from aiochannel import Channel, ChannelClosed
+from opentelemetry import context, trace
+from opentelemetry.trace import SpanKind
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from websockets.exceptions import ConnectionClosed
 
@@ -24,6 +26,7 @@ from .rpc import (
     STREAM_OPEN_BIT,
     GenericRpcHandlerBuilder,
     TransportMessage,
+    TransportMessageTracingGetter,
     TransportMessageTracingSetter,
 )
 
@@ -32,9 +35,11 @@ STREAM_CLOSED_BIT = 0x0004  # Synonymous with the cancel bit in v2
 
 logger = logging.getLogger(__name__)
 
+tracer = trace.get_tracer(__name__)
 
 trace_propagator = TraceContextTextMapPropagator()
 trace_setter = TransportMessageTracingSetter()
+trace_getter = TransportMessageTracingGetter()
 
 
 class ServerSession(Session):
@@ -216,6 +221,23 @@ class ServerSession(Session):
             "upload-stream",  # subscription
             "stream",
         )
+
+        # Extract trace context from the incoming message and create a server span.
+        extracted_context = trace_propagator.extract(
+            carrier=msg, getter=trace_getter
+        )
+        span = tracer.start_span(
+            f"river.server.{method_type}.{msg.serviceName}.{msg.procedureName}",
+            context=extracted_context,
+            kind=SpanKind.SERVER,
+        )
+        span.set_attribute("river.service_name", msg.serviceName)
+        span.set_attribute("river.procedure_name", msg.procedureName)
+        span.set_attribute("river.method_type", method_type)
+        span.set_attribute("river.stream_id", msg.streamId)
+        span.set_attribute("river.client_id", msg.from_)
+        handler_ctx = trace.set_span_in_context(span, extracted_context)
+
         # New channel pair.
         input_stream: Channel[Any] = Channel(
             MAX_MESSAGE_BUFFER_SIZE if is_streaming_input else 1
@@ -231,9 +253,13 @@ class ServerSession(Session):
                 await input_stream.put(msg.payload)
             except (RuntimeError, ChannelClosed) as e:
                 raise InvalidMessageException(e) from e
-        # Start the handler.
+        # Start the handler with the extracted trace context.
         self._task_manager.create_task(
-            handler_func(msg.from_, input_stream, output_stream), tg
+            self._run_handler_with_tracing(
+                handler_func, msg.from_, input_stream, output_stream,
+                span, handler_ctx,
+            ),
+            tg,
         )
         self._task_manager.create_task(
             self._send_responses_from_output_stream(
@@ -242,6 +268,29 @@ class ServerSession(Session):
             tg,
         )
         return input_stream
+
+    async def _run_handler_with_tracing(
+        self,
+        handler_func: GenericRpcHandlerBuilder,
+        peer: str,
+        input_stream: Channel[Any],
+        output_stream: Channel[Any],
+        span: trace.Span,
+        handler_ctx: context.Context,
+    ) -> None:
+        """Run an RPC handler within the extracted trace context, ending the span
+        when the handler completes."""
+        token = context.attach(handler_ctx)
+        try:
+            await handler_func(peer, input_stream, output_stream)
+            span.set_status(trace.StatusCode.OK)
+        except Exception as e:
+            span.set_status(trace.StatusCode.ERROR, str(e))
+            span.record_exception(e)
+            raise
+        finally:
+            span.end()
+            context.detach(token)
 
     async def _send_responses_from_output_stream(
         self,
