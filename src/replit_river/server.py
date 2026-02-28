@@ -3,6 +3,7 @@ import logging
 from typing import Mapping
 
 import websockets
+from opentelemetry import context, propagate
 from websockets.exceptions import ConnectionClosed
 from websockets.server import WebSocketServerProtocol
 
@@ -68,34 +69,48 @@ class Server(object):
         logger.debug(
             "River server started establishing session with ws: %s", websocket.id
         )
-        grace_ms = self._transport_options.handshake_timeout_ms
-        try:
-            session = await asyncio.wait_for(
-                self._handshake_to_get_session(websocket),
-                grace_ms / 1000,  # wait_for unit is seconds
-            )
-            if not session:
-                return
-        except asyncio.TimeoutError:
-            logger.error(f"Handshake timeout after {grace_ms}ms, closing websocket")
-            await websocket.close()
-            return
-        except asyncio.CancelledError:
-            logger.error("Handshake cancelled, closing websocket")
-            await websocket.close()
-            return
-        logger.debug("River server session established, start serving messages")
+
+        # Extract OTel context (traceparent, tracestate, baggage) from the
+        # WebSocket HTTP upgrade request headers and make it the ambient
+        # context for the lifetime of this connection.
+        otel_context = propagate.extract(websocket.request_headers)
+        token = context.attach(otel_context)
 
         try:
-            # Session serve will be closed in two cases
-            #   1. websocket is closed
-            #   2. exception thrown
-            # session should be kept in order to be reused by the reconnect within the
-            # grace period.
-            await session.serve()
-        except ConnectionClosed:
-            logger.debug("ConnectionClosed while serving", exc_info=True)
-            # We don't have to close the websocket here, it is already closed.
-        except Exception:
-            logger.exception("River transport error in server %s", self._server_id)
-            await websocket.close()
+            grace_ms = self._transport_options.handshake_timeout_ms
+            try:
+                session = await asyncio.wait_for(
+                    self._handshake_to_get_session(websocket),
+                    grace_ms / 1000,  # wait_for unit is seconds
+                )
+                if not session:
+                    return
+            except asyncio.TimeoutError:
+                logger.error(
+                    f"Handshake timeout after {grace_ms}ms, closing websocket"
+                )
+                await websocket.close()
+                return
+            except asyncio.CancelledError:
+                logger.error("Handshake cancelled, closing websocket")
+                await websocket.close()
+                return
+            logger.debug("River server session established, start serving messages")
+
+            try:
+                # Session serve will be closed in two cases
+                #   1. websocket is closed
+                #   2. exception thrown
+                # session should be kept in order to be reused by the reconnect within
+                # the grace period.
+                await session.serve()
+            except ConnectionClosed:
+                logger.debug("ConnectionClosed while serving", exc_info=True)
+                # We don't have to close the websocket here, it is already closed.
+            except Exception:
+                logger.exception(
+                    "River transport error in server %s", self._server_id
+                )
+                await websocket.close()
+        finally:
+            context.detach(token)

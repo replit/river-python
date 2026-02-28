@@ -5,6 +5,7 @@ from typing import Generic, assert_never
 
 import nanoid
 import websockets
+from opentelemetry import propagate
 from pydantic import ValidationError
 from websockets import (
     WebSocketCommonProtocol,
@@ -170,7 +171,13 @@ class ClientTransport(Generic[HandshakeMetadataType]):
 
             try:
                 uri_and_metadata = await self._uri_and_metadata_factory()
-                ws = await websockets.connect(uri_and_metadata["uri"], max_size=None)
+                otel_headers: dict[str, str] = {}
+                propagate.inject(otel_headers)
+                ws = await websockets.connect(
+                    uri_and_metadata["uri"],
+                    max_size=None,
+                    extra_headers=otel_headers,
+                )
                 session_id = (
                     self.generate_nanoid()
                     if not old_session
