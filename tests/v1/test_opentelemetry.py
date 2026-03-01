@@ -251,7 +251,7 @@ baggage_echo_handlers: HandlerMapping = {
 
 
 @pytest.fixture
-def _enable_baggage_propagator():
+def _enable_baggage_propagator() -> Iterator[None]:
     """Temporarily install a composite propagator that includes both
     W3C TraceContext and W3C Baggage propagation so that
     ``propagate.inject()`` / ``propagate.extract()`` handle the
