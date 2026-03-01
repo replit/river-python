@@ -23,6 +23,7 @@ import nanoid
 import websockets.asyncio.client
 from aiochannel import Channel, ChannelEmpty, ChannelFull
 from aiochannel.errors import ChannelClosed
+from opentelemetry import propagate
 from opentelemetry.trace import Span, use_span
 from opentelemetry.trace.propagation.tracecontext import TraceContextTextMapPropagator
 from pydantic import ValidationError
@@ -1133,9 +1134,12 @@ async def _do_ensure_connected[HandshakeMetadata](
         ws: ClientConnection | None = None
         try:
             uri_and_metadata = await uri_and_metadata_factory()
+            otel_headers: dict[str, str] = {}
+            propagate.inject(otel_headers)
             ws = await websockets.asyncio.client.connect(
                 uri_and_metadata["uri"],
                 max_size=None,
+                additional_headers=otel_headers,
             )
             transition_connecting(ws)
 
