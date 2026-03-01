@@ -234,9 +234,7 @@ async def test_stream_method_span_generator_exit_not_recorded(
 
 
 # A handler that reads OTel baggage from the ambient context and returns it.
-async def baggage_echo_handler(
-    request: str, ctx: grpc.aio.ServicerContext
-) -> str:
+async def baggage_echo_handler(request: str, ctx: grpc.aio.ServicerContext) -> str:
     all_baggage = baggage.get_all()
     # Return baggage as a comma-separated "key=value" string
     return ",".join(f"{k}={v}" for k, v in sorted(all_baggage.items()))
@@ -245,7 +243,9 @@ async def baggage_echo_handler(
 baggage_echo_handlers: HandlerMapping = {
     ("test_service", "baggage_echo"): (
         "rpc",
-        rpc_method_handler(baggage_echo_handler, deserialize_request, serialize_response),
+        rpc_method_handler(
+            baggage_echo_handler, deserialize_request, serialize_response
+        ),
     )
 }
 
@@ -258,10 +258,12 @@ def _enable_baggage_propagator():
     ``baggage`` HTTP header."""
     previous = propagate.get_global_textmap()
     propagate.set_global_textmap(
-        CompositePropagator([
-            TraceContextTextMapPropagator(),
-            W3CBaggagePropagator(),
-        ])
+        CompositePropagator(
+            [
+                TraceContextTextMapPropagator(),
+                W3CBaggagePropagator(),
+            ]
+        )
     )
     yield
     propagate.set_global_textmap(previous)
@@ -395,7 +397,7 @@ async def test_traceparent_propagated_via_ws_headers(
     the trace."""
     tracer = trace.get_tracer(__name__)
 
-    with tracer.start_as_current_span("client-operation") as client_span:
+    with tracer.start_as_current_span("client-operation"):
         # Also set some baggage
         ctx = baggage.set_baggage("trace-test", "yes")
         token = context.attach(ctx)

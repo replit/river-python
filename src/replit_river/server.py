@@ -86,9 +86,7 @@ class Server(object):
                 if not session:
                     return
             except asyncio.TimeoutError:
-                logger.error(
-                    f"Handshake timeout after {grace_ms}ms, closing websocket"
-                )
+                logger.error(f"Handshake timeout after {grace_ms}ms, closing websocket")
                 await websocket.close()
                 return
             except asyncio.CancelledError:
@@ -108,9 +106,7 @@ class Server(object):
                 logger.debug("ConnectionClosed while serving", exc_info=True)
                 # We don't have to close the websocket here, it is already closed.
             except Exception:
-                logger.exception(
-                    "River transport error in server %s", self._server_id
-                )
+                logger.exception("River transport error in server %s", self._server_id)
                 await websocket.close()
         finally:
             context.detach(token)
