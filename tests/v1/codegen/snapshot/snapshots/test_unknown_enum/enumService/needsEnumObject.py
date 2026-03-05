@@ -7,6 +7,7 @@ from typing import (
     Mapping,
     NotRequired,
     TypedDict,
+    cast,
 )
 from typing_extensions import Annotated
 
@@ -71,9 +72,13 @@ def encode_NeedsenumobjectInput(
     x: "NeedsenumobjectInput",
 ) -> Any:
     return (
-        encode_NeedsenumobjectInputOneOf_in_first(x)
+        encode_NeedsenumobjectInputOneOf_in_first(
+            cast("NeedsenumobjectInputOneOf_in_first", x)
+        )
         if x["kind"] == "in_first"
-        else encode_NeedsenumobjectInputOneOf_in_second(x)
+        else encode_NeedsenumobjectInputOneOf_in_second(
+            cast("NeedsenumobjectInputOneOf_in_second", x)
+        )
     )
 
 
