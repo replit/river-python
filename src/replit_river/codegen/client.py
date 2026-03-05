@@ -80,6 +80,7 @@ from typing import (
     Mapping,
     NotRequired,
     TypedDict,
+    cast,
 )
 from typing_extensions import Annotated
 
@@ -301,9 +302,10 @@ def encode_type(
                                 # "encoder_names" is only a TypedDict thing
                                 encoder_names.add(encoder_name)
                             _field_name = render_literal_type(encoder_name)
+                            _type_name = render_literal_type(type_name)
                             typeddict_encoder.append(
                                 f"""\
-                                {_field_name}(x) # type: ignore[arg-type]
+                                {_field_name}(cast('{_type_name}', x))
                                 """.strip()
                             )
                             if local_discriminators:
@@ -333,8 +335,10 @@ def encode_type(
                         # TODO(dstewart): Figure out why uncommenting this breaks
                         #                 generated code
                         # encoder_names.add(encoder_name)
+                        _type_name = render_literal_type(type_name)
                         typeddict_encoder.append(
-                            f"{render_literal_type(encoder_name)}(x)"
+                            f"{render_literal_type(encoder_name)}"
+                            f"(cast('{_type_name}', x))"
                         )
                     typeddict_encoder.append(
                         f"""
