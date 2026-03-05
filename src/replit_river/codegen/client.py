@@ -342,7 +342,7 @@ def encode_type(
                         )
                     typeddict_encoder.append(
                         f"""
-                            if x[{repr(discriminator_name)}]
+                            if x.get({repr(discriminator_name)})
                             == {repr(discriminator_value)}
                             else
                         """,

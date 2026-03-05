@@ -75,7 +75,7 @@ def encode_NeedsenumobjectInput(
         encode_NeedsenumobjectInputOneOf_in_first(
             cast("NeedsenumobjectInputOneOf_in_first", x)
         )
-        if x["kind"] == "in_first"
+        if x.get("kind") == "in_first"
         else encode_NeedsenumobjectInputOneOf_in_second(
             cast("NeedsenumobjectInputOneOf_in_second", x)
         )
