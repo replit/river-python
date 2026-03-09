@@ -166,6 +166,11 @@ def test_init_special_chars_typeddict() -> None:
     )
 
 
+class UnclosableStringIO(StringIO):
+    def close(self) -> None:
+        pass
+
+
 def test_python_keyword_field_names_basemodel() -> None:
     """Handles Python reserved keywords as field names for BaseModel."""
 
@@ -204,10 +209,10 @@ def test_python_keyword_field_names_basemodel() -> None:
         }
     }
 
-    files: dict[Path, StringIO] = {}
+    files: dict[Path, UnclosableStringIO] = {}
 
-    def file_opener(path: Path) -> StringIO:
-        buf = StringIO()
+    def file_opener(path: Path) -> UnclosableStringIO:
+        buf = UnclosableStringIO()
         files[path] = buf
         return buf
 
@@ -271,10 +276,10 @@ def test_python_keyword_field_names_typeddict() -> None:
         }
     }
 
-    files: dict[Path, StringIO] = {}
+    files: dict[Path, UnclosableStringIO] = {}
 
-    def file_opener(path: Path) -> StringIO:
-        buf = StringIO()
+    def file_opener(path: Path) -> UnclosableStringIO:
+        buf = UnclosableStringIO()
         files[path] = buf
         return buf
 
