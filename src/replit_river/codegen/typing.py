@@ -1,3 +1,4 @@
+import keyword
 from dataclasses import dataclass
 from typing import NewType, assert_never, cast
 
@@ -165,7 +166,11 @@ def _flatten_nested_unions(value: TypeExpression) -> TypeExpression:
 def normalize_special_chars(value: str) -> str:
     for char in SPECIAL_CHARS:
         value = value.replace(char, "_")
-    return value.lstrip("_")
+    value = value.lstrip("_")
+    # Append underscore to Python keywords (e.g., "from" -> "from_")
+    if keyword.iskeyword(value):
+        value = value + "_"
+    return value
 
 
 def render_type_expr(value: TypeExpression) -> str:

@@ -164,3 +164,142 @@ def test_init_special_chars_typeddict() -> None:
         method_filter=None,
         protocol_version="v2.0",
     )
+
+
+class UnclosableStringIO(StringIO):
+    def close(self) -> None:
+        pass
+
+
+def test_python_keyword_field_names_basemodel() -> None:
+    """Handles Python reserved keywords as field names for BaseModel."""
+
+    import ast
+    import json
+    from pathlib import Path
+
+    keyword_schema = {
+        "services": {
+            "test_service": {
+                "procedures": {
+                    "rpc_method": {
+                        "input": {
+                            "type": "object",
+                            "properties": {
+                                "from": {"type": "string"},
+                                "to": {"type": "string"},
+                                "class": {"type": "number"},
+                                "import": {"type": "boolean"},
+                            },
+                            "required": ["from", "to"],
+                        },
+                        "output": {
+                            "type": "object",
+                            "properties": {
+                                "from": {"type": "string"},
+                                "to": {"type": "string"},
+                            },
+                            "required": ["from", "to"],
+                        },
+                        "errors": {"not": {}},
+                        "type": "rpc",
+                    }
+                }
+            }
+        }
+    }
+
+    files: dict[Path, UnclosableStringIO] = {}
+
+    def file_opener(path: Path) -> UnclosableStringIO:
+        buf = UnclosableStringIO()
+        files[path] = buf
+        return buf
+
+    schema_to_river_client_codegen(
+        read_schema=lambda: StringIO(json.dumps(keyword_schema)),
+        target_path="test_keyword_bm",
+        client_name="KeywordBMClient",
+        typed_dict_inputs=False,
+        file_opener=file_opener,
+        method_filter=None,
+        protocol_version="v1.1",
+    )
+
+    # Verify all generated files are valid Python
+    for path, buf in files.items():
+        buf.seek(0)
+        content = buf.read()
+        try:
+            ast.parse(content)
+        except SyntaxError as e:
+            raise AssertionError(
+                f"Generated file {path} has invalid syntax: {e}\n{content}"
+            )
+
+
+def test_python_keyword_field_names_typeddict() -> None:
+    """Handles Python reserved keywords as field names for TypedDict."""
+
+    import ast
+    import json
+    from pathlib import Path
+
+    keyword_schema = {
+        "services": {
+            "test_service": {
+                "procedures": {
+                    "rpc_method": {
+                        "input": {
+                            "type": "object",
+                            "properties": {
+                                "from": {"type": "string"},
+                                "to": {"type": "string"},
+                                "class": {"type": "number"},
+                                "import": {"type": "boolean"},
+                            },
+                            "required": ["from", "to"],
+                        },
+                        "output": {
+                            "type": "object",
+                            "properties": {
+                                "from": {"type": "string"},
+                                "to": {"type": "string"},
+                            },
+                            "required": ["from", "to"],
+                        },
+                        "errors": {"not": {}},
+                        "type": "rpc",
+                    }
+                }
+            }
+        }
+    }
+
+    files: dict[Path, UnclosableStringIO] = {}
+
+    def file_opener(path: Path) -> UnclosableStringIO:
+        buf = UnclosableStringIO()
+        files[path] = buf
+        return buf
+
+    schema_to_river_client_codegen(
+        read_schema=lambda: StringIO(json.dumps(keyword_schema)),
+        target_path="test_keyword_td",
+        client_name="KeywordTDClient",
+        typed_dict_inputs=True,
+        file_opener=file_opener,
+        method_filter=None,
+        protocol_version="v1.1",
+    )
+
+    # Verify all generated files are valid Python
+    for path, buf in files.items():
+        buf.seek(0)
+        content = buf.read()
+        try:
+            ast.parse(content)
+        except SyntaxError as e:
+            raise AssertionError(
+                f"Generated file {path} has invalid syntax: {e}\n{content}"
+            )
