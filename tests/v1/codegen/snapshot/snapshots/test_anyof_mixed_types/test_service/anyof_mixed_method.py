@@ -66,6 +66,8 @@ def encode_Anyof_Mixed_MethodInputRun_Command(
         else x
         if isinstance(x, str)
         else list(x)
+        if isinstance(x, list)
+        else cast(Any, x)
     )
 
 

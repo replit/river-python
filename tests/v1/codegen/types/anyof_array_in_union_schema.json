@@ -1,0 +1,49 @@
+{
+  "services": {
+    "test_service": {
+      "procedures": {
+        "exec_sql_method": {
+          "input": {
+            "type": "object",
+            "properties": {
+              "params": {
+                "description": "Parameterized query values. Each entry is either a scalar or an array of scalars (for ANY($1::text[]) etc.).",
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    { "type": "string" },
+                    { "type": "number" },
+                    { "type": "boolean" },
+                    { "type": "null" },
+                    {
+                      "type": "array",
+                      "items": {
+                        "anyOf": [
+                          { "type": "string" },
+                          { "type": "number" },
+                          { "type": "boolean" },
+                          { "type": "null" }
+                        ]
+                      }
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "output": {
+            "type": "object",
+            "properties": {
+              "ok": { "type": "boolean" }
+            },
+            "required": ["ok"]
+          },
+          "errors": {
+            "not": {}
+          },
+          "type": "rpc"
+        }
+      }
+    }
+  }
+}
