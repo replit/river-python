@@ -457,16 +457,35 @@ def encode_type(
                         case _:
                             encoder_parts.append((None, "x"))
 
-        # Build the ternary chain from encoder_parts
+        # Build the ternary chain from encoder_parts.
+        #
+        # Every entry that has a `type_check` (isinstance / `x is None`) gets
+        # its own guard, including the last one. Falling off the end means the
+        # input did not match any declared anyOf variant, which should not
+        # happen for a well-formed value; we emit a `cast(Any, x)` so mypy
+        # doesn't try to narrow the value through the chain.
+        #
+        # Previously the last entry was emitted unconditionally as the `else`
+        # branch. That works for simple unions (object | str | list), but
+        # breaks down when the last variant's encoder requires iteration
+        # (e.g. `[encode_X(y) for y in x]` when the variant is an array) and
+        # mypy fails to fully narrow `x` through the prior `isinstance`
+        # checks. The unguarded final branch then triggers `union-attr`
+        # errors like "Item 'float' has no attribute '__iter__'".
         typeddict_encoder = list[str]()
-        for i, (type_check, encoder_expr) in enumerate(encoder_parts):
-            is_last = i == len(encoder_parts) - 1
-            if is_last or type_check is None:
-                # Last item or no type check - just the expression
+        has_unguarded_terminal = False
+        for type_check, encoder_expr in encoder_parts:
+            if type_check is None:
+                # No type check available — emit the bare expression and stop;
+                # nothing after it could be reached anyway.
                 typeddict_encoder.append(encoder_expr)
-            else:
-                # Add expression with type check
-                typeddict_encoder.append(f"{encoder_expr} if {type_check} else")
+                has_unguarded_terminal = True
+                break
+            typeddict_encoder.append(f"{encoder_expr} if {type_check} else")
+        if not has_unguarded_terminal and encoder_parts:
+            # Unreachable in practice (every declared variant was guarded
+            # above), but mypy needs a concrete final expression.
+            typeddict_encoder.append("cast(Any, x)")
         if permit_unknown_members:
             union = _make_open_union_type_expr(any_of)
         else:
