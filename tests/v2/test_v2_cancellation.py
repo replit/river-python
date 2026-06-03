@@ -10,6 +10,7 @@ from typing import (
 import msgpack
 import nanoid
 import pytest
+from pydantic import TypeAdapter
 
 from replit_river.messages import parse_transport_msg
 from replit_river.rpc import (
@@ -23,6 +24,8 @@ from replit_river.transport_options import TransportOptions
 from replit_river.v2.client import Client
 from replit_river.v2.session import STREAM_CANCEL_BIT, STREAM_CLOSED_BIT
 from tests.v2.fixtures.raw_ws_server import OuterPayload, WsServerFixture
+
+logger = logging.getLogger(__file__)
 
 
 async def test_rpc_cancel(ws_server: WsServerFixture) -> None:
@@ -226,7 +229,7 @@ async def test_stream_cancel(
             lambda x: x,
             lambda x: x,
         ):
-            print(repr(chunk))
+            logger.debug(repr(chunk))
 
     receive_task = asyncio.create_task(receive_chunks())
     request_msg = parse_transport_msg(await recv.get())
@@ -277,9 +280,9 @@ async def test_subscription_cancel(ws_server: WsServerFixture) -> None:
 
     assert not isinstance(request_msg, str)
     assert (serverconn := conn())
-    handshake_request: ControlMessageHandshakeRequest[None] = (
-        ControlMessageHandshakeRequest(**request_msg.payload)
-    )
+    handshake_request = TypeAdapter(
+        ControlMessageHandshakeRequest[None]
+    ).validate_python(request_msg.payload)
 
     handshake_resp = ControlMessageHandshakeResponse(
         status=HandShakeStatus(
@@ -358,7 +361,7 @@ async def test_subscription_cancel(ws_server: WsServerFixture) -> None:
             lambda x: x,
             lambda x: x,
         ):
-            print(repr(chunk))
+            logger.debug(repr(chunk))
 
     receive_task = asyncio.create_task(receive_chunks())
 
@@ -373,6 +376,9 @@ async def test_subscription_cancel(ws_server: WsServerFixture) -> None:
 
     await client.close()
     await connecting
+
+    # Wait until the close signal makes it back to the server
+    await asyncio.sleep(0.1)
 
     # Ensure we're listening to close messages as well
     server_handler.cancel()
